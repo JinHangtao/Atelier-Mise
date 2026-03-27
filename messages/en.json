@@ -1,0 +1,27 @@
+{
+  "nav": {
+    "schools": "Schools",
+    "projects": "Projects",
+    "roadmap": "Roadmap",
+    "aiTools": "AI Tools",
+    "settings": "Settings"
+  },
+  "hero": {
+    "badge": "Open Source · Free Forever",
+    "title1": "Your creative work,",
+    "title2": "planned",
+    "title3": "end to end.",
+    "desc": "Plan projects, build workflows, organize your portfolio, write your artist statement, and map out your art & design school application.",
+    "cta": "Get Started",
+    "github": "View on GitHub"
+  },
+  "features": {
+    "schools": { "title": "School Database", "desc": "Curated art & design schools worldwide, filtered by discipline and culture." },
+    "projects": { "title": "Project Planner", "desc": "Track in-school and personal projects. Attach images, video, PDF." },
+    "ai": { "title": "AI Statement", "desc": "Generate artist statements and portfolio narratives with AI guidance." },
+    "export": { "title": "Multi-format Export", "desc": "Export as HTML, PDF, or ebook. Three.js viewer coming soon." }
+  },
+  "footer": {
+    "label": "Portfolio Sensei — open source"
+  }
+}

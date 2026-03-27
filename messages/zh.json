@@ -1,0 +1,27 @@
+{
+  "nav": {
+    "schools": "院校",
+    "projects": "项目",
+    "roadmap": "路线图",
+    "aiTools": "AI工具",
+    "settings": "设置"
+  },
+  "hero": {
+    "badge": "开源 · 永久免费",
+    "title1": "作坊，",
+    "title2": "流程实验室",
+    "title3": "全程可控。",
+    "desc": "计划项目、整理作品、制定工作流程、撰写创作自述、规划艺术与设计院校申请。",
+    "cta": "开始使用",
+    "github": "在GitHub查看"
+  },
+  "features": {
+    "schools": { "title": "院校数据库", "desc": "全球精选艺术与设计院校，按专业方向和文化背景筛选。" },
+    "projects": { "title": "项目管理", "desc": "记录在校及个人项目，附加图片、视频、PDF。" },
+    "ai": { "title": "AI创作自述", "desc": "在AI引导下生成艺术家自述和作品集叙事。" },
+    "export": { "title": "多格式导出", "desc": "导出为HTML、PDF或电子书，Three.js展示即将上线。" }
+  },
+  "footer": {
+    "label": "Portfolio Sensei — 开源项目"
+  }
+}
