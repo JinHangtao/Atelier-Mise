@@ -2,6 +2,7 @@
 import { useTranslations } from 'next-intl'
 import { useRouter, usePathname } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 
 export default function Home() {
   const t = useTranslations()
@@ -11,9 +12,19 @@ export default function Home() {
 
   useEffect(() => { setMounted(true) }, [])
 
+  const isZh = pathname.startsWith('/zh')
+  const locale = isZh ? 'zh' : 'en'
+
   const switchLang = () => {
-    const isZh = pathname.startsWith('/zh')
     router.push(isZh ? '/en' : '/zh')
+  }
+
+  const navLinks: Record<string, string> = {
+    schools: `/${locale}/schools`,
+    projects: `/${locale}/projects`,
+    roadmap: `/${locale}/roadmap`,
+    aiTools: `/${locale}/ai-tools`,
+    settings: `/${locale}/settings`,
   }
 
   return (
@@ -51,7 +62,6 @@ export default function Home() {
 
         {/* ── 背景圆圈动画 ── */}
         <div aria-hidden style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0 }}>
-          {/* 右上 大圆组 */}
           <div style={{
             position: 'absolute', top: '-160px', right: '-120px',
             width: '600px', height: '600px', borderRadius: '50%',
@@ -71,8 +81,6 @@ export default function Home() {
             border: '1.5px solid rgba(26,26,26,0.18)',
             animation: 'floatB 14s ease-in-out infinite',
           }}/>
-
-          {/* 左下 大圆组 */}
           <div style={{
             position: 'absolute', bottom: '-140px', left: '-140px',
             width: '560px', height: '560px', borderRadius: '50%',
@@ -92,8 +100,6 @@ export default function Home() {
             border: '1.5px solid rgba(26,26,26,0.2)',
             animation: 'floatC 10s ease-in-out infinite',
           }}/>
-
-          {/* 中央超大淡圆 */}
           <div style={{
             position: 'absolute', top: '50%', left: '50%',
             width: '1000px', height: '1000px', borderRadius: '50%',
@@ -102,8 +108,6 @@ export default function Home() {
             transform: 'translate(-50%,-50%)',
             animation: 'floatC 30s ease-in-out infinite',
           }}/>
-
-          {/* 右下小圆 */}
           <div style={{
             position: 'absolute', bottom: '40px', right: '80px',
             width: '160px', height: '160px', borderRadius: '50%',
@@ -124,12 +128,12 @@ export default function Home() {
           backdropFilter: 'blur(20px)',
           WebkitBackdropFilter: 'blur(20px)',
         }}>
-          <span className="font-mono" style={{ fontSize: '0.75rem', letterSpacing: '0.1em', color: '#1a1a1a' }}>
+          <Link href={`/${locale}`} className="font-mono" style={{ fontSize: '0.75rem', letterSpacing: '0.1em', color: '#1a1a1a', textDecoration: 'none' }}>
             PORTFOLIO_SENSEI
-          </span>
+          </Link>
           <div style={{ display: 'flex', gap: '28px', alignItems: 'center' }}>
             {(['schools','projects','roadmap','aiTools','settings'] as const).map(key => (
-              <a key={key} href="#" style={{
+              <Link key={key} href={navLinks[key]} style={{
                 fontFamily: 'Space Mono, monospace',
                 fontSize: '0.56rem',
                 letterSpacing: '0.16em',
@@ -142,7 +146,7 @@ export default function Home() {
                 onMouseLeave={e => (e.currentTarget.style.color = '#888884')}
               >
                 {t(`nav.${key}`)}
-              </a>
+              </Link>
             ))}
             <button onClick={switchLang} style={{
               background: 'transparent',
@@ -159,7 +163,7 @@ export default function Home() {
               onMouseEnter={e => { e.currentTarget.style.borderColor = '#1a1a1a'; e.currentTarget.style.color = '#1a1a1a' }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(26,26,26,0.2)'; e.currentTarget.style.color = '#888884' }}
             >
-              {pathname.startsWith('/zh') ? 'EN' : '中文'}
+              {isZh ? 'EN' : '中文'}
             </button>
           </div>
         </nav>
@@ -214,7 +218,7 @@ export default function Home() {
           </p>
 
           <div className="fade-up fade-up-4" style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
-            <button style={{
+            <Link href={`/${locale}/schools`} style={{
               background: '#1a1a1a',
               color: '#f7f7f5',
               border: 'none',
@@ -226,33 +230,41 @@ export default function Home() {
               textTransform: 'uppercase',
               fontWeight: 700,
               cursor: 'pointer',
+              textDecoration: 'none',
+              display: 'inline-block',
               transition: 'opacity 0.15s, transform 0.15s',
             }}
               onMouseEnter={e => { e.currentTarget.style.opacity = '0.85'; e.currentTarget.style.transform = 'translateY(-1px)' }}
               onMouseLeave={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(0)' }}
             >
               {t('hero.cta')}
-            </button>
-            <button style={{
-              background: 'rgba(255,255,255,0.7)',
-              color: '#1a1a1a',
-              border: '1px solid rgba(26,26,26,0.14)',
-              padding: '12px 28px',
-              borderRadius: '14px',
-              fontFamily: 'Space Mono, monospace',
-              fontSize: '0.58rem',
-              letterSpacing: '0.16em',
-              textTransform: 'uppercase',
-              fontWeight: 400,
-              cursor: 'pointer',
-              backdropFilter: 'blur(8px)',
-              transition: 'all 0.15s',
-            }}
+            </Link>
+            <a
+              href="https://github.com/JinHangtao/portfolio-sensei"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                background: 'rgba(255,255,255,0.7)',
+                color: '#1a1a1a',
+                border: '1px solid rgba(26,26,26,0.14)',
+                padding: '12px 28px',
+                borderRadius: '14px',
+                fontFamily: 'Space Mono, monospace',
+                fontSize: '0.58rem',
+                letterSpacing: '0.16em',
+                textTransform: 'uppercase',
+                fontWeight: 400,
+                cursor: 'pointer',
+                backdropFilter: 'blur(8px)',
+                textDecoration: 'none',
+                display: 'inline-block',
+                transition: 'all 0.15s',
+              }}
               onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.95)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
               onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.7)'; e.currentTarget.style.transform = 'translateY(0)' }}
             >
               {t('hero.github')}
-            </button>
+            </a>
           </div>
         </section>
 
@@ -267,8 +279,13 @@ export default function Home() {
           width: '100%',
           position: 'relative', zIndex: 1,
         }}>
-          {(['schools','projects','ai','export'] as const).map((key, i) => (
-            <div key={key} style={{
+          {([
+            { key: 'schools', href: `/${locale}/schools` },
+            { key: 'projects', href: `/${locale}/projects` },
+            { key: 'ai', href: `/${locale}/ai-tools` },
+            { key: 'export', href: `/${locale}/projects` },
+          ] as const).map(({ key }, i) => (
+            <Link key={key} href={`/${locale}/${key === 'ai' ? 'ai-tools' : key === 'export' ? 'projects' : key}`} style={{
               background: 'rgba(255,255,255,0.72)',
               border: '1px solid rgba(26,26,26,0.08)',
               borderRadius: '20px',
@@ -278,11 +295,11 @@ export default function Home() {
               gap: '12px',
               backdropFilter: 'blur(12px)',
               WebkitBackdropFilter: 'blur(12px)',
+              textDecoration: 'none',
               transition: 'transform 0.2s, box-shadow 0.2s',
-              cursor: 'default',
             }}
-              onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-3px)'; (e.currentTarget as HTMLDivElement).style.boxShadow = '0 8px 32px rgba(0,0,0,0.07)' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLDivElement).style.boxShadow = 'none' }}
+              onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-3px)'; e.currentTarget.style.boxShadow = '0 8px 32px rgba(0,0,0,0.07)' }}
+              onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none' }}
             >
               <span className="font-mono" style={{ fontSize: '0.52rem', color: '#b8b8b4', letterSpacing: '0.2em' }}>
                 0{i + 1}
@@ -299,7 +316,7 @@ export default function Home() {
               <p style={{ fontSize: '0.74rem', color: '#888884', lineHeight: 1.8, fontWeight: 300 }}>
                 {t(`features.${key}.desc`)}
               </p>
-            </div>
+            </Link>
           ))}
         </section>
 
