@@ -96,7 +96,7 @@ Clone the repository, connect your own AI API keys, and adapt the project to you
 
 - **Node.js** `>= 18.17.0` — [download](https://nodejs.org/)
 - **Package manager** — npm, yarn, pnpm, or bun
-- **API key** — [Google AI Studio](https://aistudio.google.com/) or [OpenRouter](https://openrouter.ai/)
+- **API key** — [Google AI Studio](https://aistudio.google.com/), [OpenRouter](https://openrouter.ai/), or [Groq](https://console.groq.com/keys) *(recommended — free tier, extremely fast)*
 
 ### Installation
 
@@ -123,11 +123,17 @@ Open `.env.local` and fill in your credentials:
 
 ```env
 # Pick one AI provider
+
 GEMINI_API_KEY=your_gemini_api_key_here
 
 # or
 
 OPENROUTER_API_KEY=your_openrouter_api_key_here
+
+# or — recommended (free tier available, extremely fast inference)
+# Get your key at: https://console.groq.com/keys
+
+GROQ_API_KEY=your_groq_api_key_here
 ```
 
 **4. Start the development server**
