@@ -154,7 +154,18 @@ export default function SchoolsPage() {
 
   useEffect(() => {
     const raw = localStorage.getItem('ps-schools')
-    if (raw) setSchools(JSON.parse(raw))
+    if (raw) {
+      setSchools(JSON.parse(raw))
+    } else {
+      // First visit: load preset school database
+      fetch('/data/schools-preset.json')
+        .then(r => r.json())
+        .then((preset: School[]) => {
+          setSchools(preset)
+          localStorage.setItem('ps-schools', JSON.stringify(preset))
+        })
+        .catch(() => {}) // fail silently if file missing
+    }
     const rawP = localStorage.getItem('ps-projects')
     if (rawP) setProjects(JSON.parse(rawP))
   }, [])
