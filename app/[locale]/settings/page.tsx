@@ -11,6 +11,7 @@ export default function SettingsPage() {
   const [geminiKey, setGeminiKey] = useLocalStorage('ps-gemini-key', '')
   const [githubKey, setGithubKey] = useLocalStorage('ps-github-key', '')
   const [openrouterKey, setOpenrouterKey] = useLocalStorage('ps-openrouter-key', '')
+  const [groqKey, setGroqKey] = useLocalStorage('ps-groq-key', '')
 
   const [saved, setSaved] = useState(false)
 
@@ -29,9 +30,11 @@ export default function SettingsPage() {
     gemini:   'Google Gemini API',
     github:   'GitHub Models API',
     openrouter: 'OpenRouter API',
-    geminiDesc:   isZh ? '免费tier，推荐首选' : 'Free tier available — recommended',
-    githubDesc:   isZh ? '有GitHub账号即可使用' : 'Available with any GitHub account',
+    groq:     'Groq API',
+    geminiDesc:     isZh ? '免费tier，推荐首选' : 'Free tier available — recommended',
+    githubDesc:     isZh ? '有GitHub账号即可使用' : 'Available with any GitHub account',
     openrouterDesc: isZh ? '聚合多家模型' : 'Access to multiple AI models',
+    groqDesc:       isZh ? '极速推理，免费tier可用' : 'Extremely fast inference — free tier available',
     placeholder: isZh ? '粘贴你的API密钥' : 'Paste your API key here',
     getKey:   isZh ? '获取密钥 →' : 'Get key →',
   }
@@ -44,6 +47,14 @@ export default function SettingsPage() {
       setKey: setGeminiKey,
       link: 'https://aistudio.google.com/app/apikey',
       color: '#4285f4',
+    },
+    {
+      name: tx.groq,
+      desc: tx.groqDesc,
+      key: groqKey,
+      setKey: setGroqKey,
+      link: 'https://console.groq.com/keys',
+      color: '#f55036',
     },
     {
       name: tx.github,
