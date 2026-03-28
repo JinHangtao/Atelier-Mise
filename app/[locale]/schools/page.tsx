@@ -133,6 +133,23 @@ const TX = {
   },
 }
 
+
+const COUNTRY_ZH: Record<string, string> = {
+  'USA': '美国', 'UK': '英国', 'France': '法国', 'Italy': '意大利',
+  'Sweden': '瑞典', 'Australia': '澳大利亚', 'Singapore': '新加坡',
+}
+
+// Dot positions on the map (as % of container width/height)
+const COUNTRY_DOTS: Record<string, { x: number; y: number }> = {
+  'USA':       { x: 18, y: 42 },
+  'UK':        { x: 46, y: 30 },
+  'France':    { x: 48, y: 35 },
+  'Italy':     { x: 51, y: 37 },
+  'Sweden':    { x: 52, y: 23 },
+  'Australia': { x: 80, y: 72 },
+  'Singapore': { x: 76, y: 57 },
+}
+
 function getDeadlineInfo(deadline: string, isZh: boolean, t: typeof TX.en) {
   if (!deadline) return { label: t.noDeadline, color: '#c8c8c4', bg: 'transparent', urgent: false }
   const diff = Math.ceil((new Date(deadline).getTime() - Date.now()) / 86400000)
@@ -159,6 +176,7 @@ export default function SchoolsPage() {
   const [aiLoading, setAiLoading] = useState(false)
   const [copied, setCopied] = useState(false)
   const [localStatement, setLocalStatement] = useState('')
+  const [selectedCountry, setSelectedCountry] = useState<string | null>(null)
 
   useEffect(() => {
     const SCHEMA_VERSION = 'v2-bilingual'
@@ -304,11 +322,15 @@ Requirements: The statement should be sincere and specific, highlighting alignme
   const displayStatement = localStatement || detail?.aiStatement || ''
 
   const filtered = schools
-    .filter(s => !search ||
-      s.name.toLowerCase().includes(search.toLowerCase()) ||
-      (s.nameZh || '').toLowerCase().includes(search.toLowerCase()) ||
-      s.country.toLowerCase().includes(search.toLowerCase())
-    )
+    .filter(s => {
+      if (selectedCountry && s.country !== selectedCountry) return false
+      if (!search) return true
+      return (
+        s.name.toLowerCase().includes(search.toLowerCase()) ||
+        (s.nameZh || '').toLowerCase().includes(search.toLowerCase()) ||
+        s.country.toLowerCase().includes(search.toLowerCase())
+      )
+    })
     .sort((a, b) => {
       if (sort === 'deadline') {
         if (!a.deadline) return 1
@@ -546,6 +568,7 @@ Requirements: The statement should be sincere and specific, highlighting alignme
     <>
       <style>{`
         @keyframes fadeUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes pulse { 0%,100%{transform:scale(1);opacity:0.3} 50%{transform:scale(1.8);opacity:0} }
         @keyframes modalIn { from{opacity:0;transform:scale(0.97) translateY(10px)} to{opacity:1;transform:scale(1) translateY(0)} }
         .school-card { transition: transform 0.2s cubic-bezier(.4,0,.2,1), box-shadow 0.2s; cursor: pointer; }
         .school-card:hover { transform: translateY(-5px); box-shadow: 0 14px 48px rgba(0,0,0,0.09); }
@@ -580,6 +603,96 @@ Requirements: The statement should be sincere and specific, highlighting alignme
           <p style={{ fontSize: '0.78rem', letterSpacing: '0.3em', color: '#b8b8b4', textTransform: 'uppercase', marginBottom: '12px' }}>{t.section}</p>
           <h1 style={{ fontSize: 'clamp(2rem, 3vw, 3rem)', fontWeight: 700, color: '#1a1a1a', letterSpacing: '-0.02em', marginBottom: '10px' }}>{t.title}</h1>
           <p style={{ fontSize: '1rem', color: '#888884', marginBottom: '32px' }}>{t.subtitle}</p>
+
+          {/* 世界地图 */}
+          {(() => {
+            const activeCountries = [...new Set(schools.map(s => s.country))]
+            return (
+              <div style={{ position: 'relative', width: '100%', maxWidth: '700px', height: '200px', marginBottom: '28px', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(26,26,26,0.08)', borderRadius: '20px', overflow: 'hidden' }}>
+                {/* 简洁世界地图背景 SVG */}
+                <svg viewBox="0 0 1000 500" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.12 }} xmlns="http://www.w3.org/2000/svg">
+                  {/* North America */}
+                  <path d="M80,80 L200,60 L240,100 L220,180 L180,220 L120,200 L80,160 Z" fill="#1a1a1a"/>
+                  {/* South America */}
+                  <path d="M160,240 L220,230 L240,320 L200,400 L150,380 L140,300 Z" fill="#1a1a1a"/>
+                  {/* Europe */}
+                  <path d="M420,80 L520,70 L540,130 L480,160 L420,140 Z" fill="#1a1a1a"/>
+                  {/* Africa */}
+                  <path d="M440,180 L540,170 L560,300 L500,380 L430,340 L420,260 Z" fill="#1a1a1a"/>
+                  {/* Asia */}
+                  <path d="M540,60 L820,50 L840,200 L760,260 L620,240 L540,180 Z" fill="#1a1a1a"/>
+                  {/* Australia */}
+                  <path d="M740,310 L860,300 L880,390 L800,420 L730,390 Z" fill="#1a1a1a"/>
+                </svg>
+
+                {/* 国家点 */}
+                {Object.entries(COUNTRY_DOTS).map(([country, pos]) => {
+                  const isActive = activeCountries.includes(country)
+                  const isSelected = selectedCountry === country
+                  const count = schools.filter(s => s.country === country).length
+                  if (!isActive) return null
+                  return (
+                    <div key={country}
+                      onClick={() => setSelectedCountry(isSelected ? null : country)}
+                      style={{
+                        position: 'absolute',
+                        left: `${pos.x}%`, top: `${pos.y}%`,
+                        transform: 'translate(-50%, -50%)',
+                        cursor: 'pointer',
+                        zIndex: 10,
+                      }}
+                    >
+                      {/* 脉冲圈 */}
+                      {isSelected && (
+                        <div style={{ position: 'absolute', inset: '-8px', borderRadius: '50%', background: 'rgba(26,26,26,0.12)', animation: 'pulse 1.5s infinite' }}/>
+                      )}
+                      <div style={{
+                        width: isSelected ? '14px' : '10px',
+                        height: isSelected ? '14px' : '10px',
+                        borderRadius: '50%',
+                        background: isSelected ? '#1a1a1a' : 'rgba(26,26,26,0.5)',
+                        border: '2px solid #1a1a1a',
+                        transition: 'all 0.2s',
+                        position: 'relative',
+                      }}/>
+                      {/* 标签 */}
+                      <div style={{
+                        position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)',
+                        background: isSelected ? '#1a1a1a' : 'rgba(255,255,255,0.95)',
+                        color: isSelected ? '#f7f7f5' : '#1a1a1a',
+                        padding: '3px 8px', borderRadius: '6px',
+                        fontSize: '0.65rem', letterSpacing: '0.08em',
+                        fontFamily: 'Space Mono, monospace',
+                        whiteSpace: 'nowrap',
+                        border: '1px solid rgba(26,26,26,0.12)',
+                        pointerEvents: 'none',
+                      }}>
+                        {isZh ? (COUNTRY_ZH[country] || country) : country} ({count})
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {/* 提示文字 */}
+                <div style={{ position: 'absolute', bottom: '12px', right: '16px', fontSize: '0.65rem', color: '#c8c8c4', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em' }}>
+                  {isZh ? '点击国家筛选' : 'Click to filter by country'}
+                </div>
+
+                {/* 已选中提示 */}
+                {selectedCountry && (
+                  <div style={{ position: 'absolute', top: '12px', left: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '0.72rem', fontFamily: 'Space Mono, monospace', color: '#1a1a1a', letterSpacing: '0.08em' }}>
+                      {isZh ? (COUNTRY_ZH[selectedCountry] || selectedCountry) : selectedCountry}
+                    </span>
+                    <button onClick={() => setSelectedCountry(null)}
+                      style={{ fontSize: '0.65rem', color: '#888884', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: '4px', background: 'rgba(26,26,26,0.06)' }}>
+                      {isZh ? '清除' : 'Clear'} ✕
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
 
           {/* 搜索 + 排序 */}
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
