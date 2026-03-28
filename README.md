@@ -96,7 +96,7 @@ Clone the repository, connect your own AI API keys, and adapt the project to you
 
 - **Node.js** `>= 18.17.0` — [download](https://nodejs.org/)
 - **Package manager** — npm, yarn, pnpm, or bun
-- **API key** — [Google AI Studio](https://aistudio.google.com/), [OpenRouter](https://openrouter.ai/), or [Groq](https://console.groq.com/keys) *(recommended — free tier, extremely fast)*
+- **API key** — [Google AI Studio](https://aistudio.google.com/), [OpenRouter](https://openrouter.ai/), [Groq](https://console.groq.com/keys) 
 
 ### Installation
 
