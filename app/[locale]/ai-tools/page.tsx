@@ -9,7 +9,7 @@ const TX = {
   en: {
     section: '06 / AI TOOLS',
     title: 'AI TOOLS',
-    subtitle: 'Three tools for artists — powered by Gemini.',
+    subtitle: 'Three tools for artists — powered by Groq.',
     tabs: [
       { id: 'plan',      n: '01', name: 'PROJECT PLAN',     desc: 'Turn a raw idea into a full creative roadmap.' },
       { id: 'statement', n: '02', name: 'ARTIST STATEMENT', desc: 'Describe your work, get a polished statement.' },
@@ -38,12 +38,12 @@ const TX = {
     clearChat: 'CLEAR',
     you: 'YOU',
     ai: 'AI',
-    error: 'Error — check your API key in Settings.',
+    error: 'Something went wrong. Please try again.',
   },
   zh: {
     section: '06 / AI 工具',
     title: 'AI 工具',
-    subtitle: '三个为艺术家设计的工具，由 Gemini 驱动。',
+    subtitle: '三个为艺术家设计的工具，由 Groq 驱动。',
     tabs: [
       { id: 'plan',      n: '01', name: '项目方案',   desc: '将粗糙想法变成完整的创作路线图。' },
       { id: 'statement', n: '02', name: '艺术家陈述', desc: '描述你的作品，生成精炼的艺术家陈述。' },
@@ -72,7 +72,7 @@ const TX = {
     clearChat: '清空',
     you: '你',
     ai: 'AI',
-    error: '出错了，请在设置中检查 API 密钥。',
+    error: '出错了，请稍后再试。',
   },
 }
 
@@ -129,9 +129,8 @@ export default function AIToolsPage() {
   const [copied, setCopied] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  const [userKey, setUserKey] = useState('')
+  
   useEffect(() => {
-    setUserKey(localStorage.getItem('ps-gemini-key') || '')
   }, [])
 
   useEffect(() => {
@@ -142,7 +141,7 @@ export default function AIToolsPage() {
     const res = await fetch('/api/ai', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userKey, systemPrompt: system, messages: msgs }),
+      body: JSON.stringify({ systemPrompt: system, messages: msgs }),
     })
     const data = await res.json()
     return data.result || data.error || 'Error'
@@ -181,7 +180,7 @@ export default function AIToolsPage() {
       const res = await fetch('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userKey, messages: [{ role: 'user', content: prompt }] }),
+        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }),
       })
       const data = await res.json()
       setOutput(data.result || data.error || 'Error')
