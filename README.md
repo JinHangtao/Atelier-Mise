@@ -32,9 +32,7 @@ Breaking into a competitive art or design program requires more than talent — 
 
 No installation. No configuration. Open the app and start working.
 
-```
-https://portfolio-sensei-ruby.vercel.app/en/
-```
+[![Open App](https://img.shields.io/badge/Open_App-portfolio--sensei-black?style=for-the-badge&logo=vercel&logoColor=white)](https://portfolio-sensei-ruby.vercel.app/en/)
 
 Suitable for applicants who want immediate access to the tool without any technical setup.
 
