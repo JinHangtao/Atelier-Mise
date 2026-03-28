@@ -685,7 +685,7 @@ Requirements: The statement should be sincere and specific, highlighting alignme
                       {isZh ? (COUNTRY_ZH[selectedCountry] || selectedCountry) : selectedCountry}
                     </span>
                     <button onClick={() => setSelectedCountry(null)}
-                      style={{ fontSize: '0.65rem', color: '#888884', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: '4px', background: 'rgba(26,26,26,0.06)' }}>
+                      style={{ fontSize: '0.65rem', color: '#888884', border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: '4px', background: 'rgba(26,26,26,0.06)' }}>
                       {isZh ? '清除' : 'Clear'} ✕
                     </button>
                   </div>
