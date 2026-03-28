@@ -161,18 +161,32 @@ export default function SchoolsPage() {
   const [localStatement, setLocalStatement] = useState('')
 
   useEffect(() => {
+    const SCHEMA_VERSION = 'v2-bilingual'
+    const cachedVersion = localStorage.getItem('ps-schools-version')
     const raw = localStorage.getItem('ps-schools')
-    if (raw) {
-      setSchools(JSON.parse(raw))
-    } else {
-      // First visit: load preset school database
+
+    const loadPreset = () =>
       fetch('/data/schools-preset.json')
         .then(r => r.json())
         .then((preset: School[]) => {
           setSchools(preset)
           localStorage.setItem('ps-schools', JSON.stringify(preset))
+          localStorage.setItem('ps-schools-version', SCHEMA_VERSION)
         })
-        .catch(() => {}) // fail silently if file missing
+        .catch(() => {})
+
+    if (!raw || cachedVersion !== SCHEMA_VERSION) {
+      // No cache or outdated schema: reload from preset
+      loadPreset()
+    } else {
+      const parsed: School[] = JSON.parse(raw)
+      // Extra guard: if name contains Chinese, cache is stale
+      const stale = parsed[0] && /[一-鿿]/.test(parsed[0].name)
+      if (stale) {
+        loadPreset()
+      } else {
+        setSchools(parsed)
+      }
     }
     const rawP = localStorage.getItem('ps-projects')
     if (rawP) setProjects(JSON.parse(rawP))
