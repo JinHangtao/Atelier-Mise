@@ -5,8 +5,10 @@ import { usePathname, useRouter } from 'next/navigation'
 interface School {
   id: string
   name: string
+  nameZh: string
   country: string
   department: string
+  departmentZh: string
   deadline: string
   requirements: string
   notes: string
@@ -30,8 +32,10 @@ function generateId() {
 
 const EMPTY_FORM: Omit<School, 'id' | 'createdAt' | 'aiStatement' | 'aiGeneratedAt'> = {
   name: '',
+  nameZh: '',
   country: '',
   department: '',
+  departmentZh: '',
   deadline: '',
   requirements: '',
   notes: '',
@@ -50,9 +54,11 @@ const TX = {
     cancel: 'Cancel',
     delete: 'Delete',
     edit: 'Edit',
-    nameLabel: 'Institution Name *',
+    nameLabel: 'Institution Name (EN) *',
+    nameZhLabel: 'Institution Name (中文)',
     countryLabel: 'Country',
-    deptLabel: 'Department / Program',
+    deptLabel: 'Department / Program (EN)',
+    deptZhLabel: 'Department / Program (中文)',
     deadlineLabel: 'Application Deadline',
     reqLabel: 'Requirements / Portfolio Notes',
     notesLabel: 'Personal Notes',
@@ -92,9 +98,11 @@ const TX = {
     cancel: '取消',
     delete: '删除',
     edit: '编辑',
-    nameLabel: '院校名称 *',
+    nameLabel: '院校名称（英文）*',
+    nameZhLabel: '院校名称（中文）',
     countryLabel: '国家/地区',
-    deptLabel: '学院 / 专业方向',
+    deptLabel: '学院 / 专业方向（英文）',
+    deptZhLabel: '学院 / 专业方向（中文）',
     deadlineLabel: '申请截止日期',
     reqLabel: '申请要求 / 作品集备注',
     notesLabel: '个人备注',
@@ -183,7 +191,8 @@ export default function SchoolsPage() {
 
   const openEdit = (s: School) => {
     setForm({
-      name: s.name, country: s.country, department: s.department,
+      name: s.name, nameZh: s.nameZh || '', country: s.country,
+      department: s.department, departmentZh: s.departmentZh || '',
       deadline: s.deadline, requirements: s.requirements,
       notes: s.notes, website: s.website,
     })
@@ -194,11 +203,16 @@ export default function SchoolsPage() {
   const save = () => {
     if (!form.name.trim()) return
     const now = new Date().toISOString()
+    const normalized = {
+      ...form,
+      nameZh: form.nameZh || form.name,
+      departmentZh: form.departmentZh || form.department,
+    }
     if (editId) {
-      persist(schools.map(s => s.id === editId ? { ...s, ...form } : s))
+      persist(schools.map(s => s.id === editId ? { ...s, ...normalized } : s))
     } else {
       persist([{
-        id: generateId(), ...form,
+        id: generateId(), ...normalized,
         aiStatement: '', aiGeneratedAt: '', createdAt: now,
       }, ...schools])
     }
@@ -220,9 +234,9 @@ export default function SchoolsPage() {
     const prompt = isZh
       ? `你是一位专业的艺术留学申请顾问。请根据以下信息，为申请者生成一份针对特定院校的申请文书草稿（300-400字）。
 
-目标院校：${school.name}
+目标院校：${school.nameZh || school.name}
 国家：${school.country}
-专业方向：${school.department}
+专业方向：${school.departmentZh || school.department}
 申请要求：${school.requirements || '未指定'}
 
 申请者的主要项目：
@@ -276,7 +290,11 @@ Requirements: The statement should be sincere and specific, highlighting alignme
   const displayStatement = localStatement || detail?.aiStatement || ''
 
   const filtered = schools
-    .filter(s => !search || s.name.toLowerCase().includes(search.toLowerCase()) || s.country.toLowerCase().includes(search.toLowerCase()))
+    .filter(s => !search ||
+      s.name.toLowerCase().includes(search.toLowerCase()) ||
+      (s.nameZh || '').toLowerCase().includes(search.toLowerCase()) ||
+      s.country.toLowerCase().includes(search.toLowerCase())
+    )
     .sort((a, b) => {
       if (sort === 'deadline') {
         if (!a.deadline) return 1
@@ -338,10 +356,12 @@ Requirements: The statement should be sincere and specific, highlighting alignme
                 )}
               </div>
               <h1 style={{ fontFamily: 'Space Mono, monospace', fontSize: 'clamp(1.8rem, 3vw, 2.8rem)', fontWeight: 700, color: '#1a1a1a', letterSpacing: '-0.02em', marginBottom: '10px', lineHeight: 1.2 }}>
-                {detail.name}
+                {isZh ? (detail.nameZh || detail.name) : detail.name}
               </h1>
-              {detail.department && (
-                <p style={{ fontSize: '1.1rem', color: '#666', lineHeight: 1.7 }}>{detail.department}</p>
+              {(detail.department || detail.departmentZh) && (
+                <p style={{ fontSize: '1.1rem', color: '#666', lineHeight: 1.7 }}>
+                  {isZh ? (detail.departmentZh || detail.department) : detail.department}
+                </p>
               )}
             </div>
 
@@ -473,8 +493,10 @@ Requirements: The statement should be sincere and specific, highlighting alignme
           </h2>
           {[
             { label: t.nameLabel, key: 'name', type: 'text' },
+            { label: t.nameZhLabel, key: 'nameZh', type: 'text' },
             { label: t.countryLabel, key: 'country', type: 'text' },
             { label: t.deptLabel, key: 'department', type: 'text' },
+            { label: t.deptZhLabel, key: 'departmentZh', type: 'text' },
             { label: t.deadlineLabel, key: 'deadline', type: 'date' },
             { label: t.websiteLabel, key: 'website', type: 'url' },
           ].map(f => (
@@ -593,11 +615,15 @@ Requirements: The statement should be sincere and specific, highlighting alignme
                   </div>
 
                   {/* 院校名 */}
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1a1a1a', letterSpacing: '-0.01em', lineHeight: 1.3 }}>{s.name}</h3>
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1a1a1a', letterSpacing: '-0.01em', lineHeight: 1.3 }}>
+                    {isZh ? (s.nameZh || s.name) : s.name}
+                  </h3>
 
                   {/* 专业 */}
-                  {s.department && (
-                    <p style={{ fontSize: '0.9rem', color: '#888884', lineHeight: 1.6 }}>{s.department}</p>
+                  {(s.department || s.departmentZh) && (
+                    <p style={{ fontSize: '0.9rem', color: '#888884', lineHeight: 1.6 }}>
+                      {isZh ? (s.departmentZh || s.department) : s.department}
+                    </p>
                   )}
 
                   {/* 底部状态 */}
