@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function POST(req: NextRequest) {
   try {
     const { messages, systemPrompt } = await req.json()
-    
+
     const groq = createOpenAI({
       apiKey: process.env.GROQ_API_KEY || '',
       baseURL: 'https://api.groq.com/openai/v1',
