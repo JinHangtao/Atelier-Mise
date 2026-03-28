@@ -1,6 +1,14 @@
 'use client'
 import Link from 'next/link'
 
+const navLinks: Record<string, string> = {
+  Schools: '/en/schools',
+  Projects: '/en/projects',
+  Roadmap: '/en/roadmap',
+  'AI Tools': '/en/ai-tools',
+  Settings: '/en/settings',
+}
+
 export default function Home() {
   return (
     <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -13,12 +21,12 @@ export default function Home() {
         alignItems: 'center',
         borderBottom: '1px solid var(--line)',
       }}>
-        <span className="font-serif" style={{ color: 'var(--gold)', fontSize: '1.1rem', fontStyle: 'italic' }}>
+        <Link href="/en" className="font-serif" style={{ color: 'var(--gold)', fontSize: '1.1rem', fontStyle: 'italic', textDecoration: 'none' }}>
           Portfolio Sensei
-        </span>
+        </Link>
         <div style={{ display: 'flex', gap: '32px' }}>
           {['Schools', 'Projects', 'Roadmap', 'AI Tools', 'Settings'].map(item => (
-            <a key={item} href="#" style={{
+            <Link key={item} href={navLinks[item]} style={{
               fontSize: '0.6rem',
               letterSpacing: '0.24em',
               textTransform: 'uppercase',
@@ -30,7 +38,7 @@ export default function Home() {
               onMouseLeave={e => (e.currentTarget.style.color = 'var(--fg-d)')}
             >
               {item}
-            </a>
+            </Link>
           ))}
         </div>
       </nav>
@@ -83,7 +91,7 @@ export default function Home() {
         </p>
 
         <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
-          <button style={{
+          <Link href="/en/schools" style={{
             background: 'var(--gold)',
             color: 'var(--bg)',
             border: 'none',
@@ -95,24 +103,32 @@ export default function Home() {
             fontWeight: 500,
             cursor: 'pointer',
             fontFamily: 'inherit',
+            textDecoration: 'none',
+            display: 'inline-block',
           }}>
             Get Started
-          </button>
-          <button style={{
-            background: 'transparent',
-            color: 'var(--fg)',
-            border: '1px solid var(--line2)',
-            padding: '12px 28px',
-            borderRadius: '8px',
-            fontSize: '0.62rem',
-            letterSpacing: '0.22em',
-            textTransform: 'uppercase',
-            fontWeight: 400,
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-          }}>
+          </Link>
+          <a
+            href="https://github.com/JinHangtao/portfolio-sensei"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              background: 'transparent',
+              color: 'var(--fg)',
+              border: '1px solid var(--line2)',
+              padding: '12px 28px',
+              borderRadius: '8px',
+              fontSize: '0.62rem',
+              letterSpacing: '0.22em',
+              textTransform: 'uppercase',
+              fontWeight: 400,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              textDecoration: 'none',
+              display: 'inline-block',
+            }}>
             View on GitHub
-          </button>
+          </a>
         </div>
       </section>
 
@@ -127,12 +143,12 @@ export default function Home() {
         width: '100%',
       }}>
         {[
-          { icon: '◎', title: 'School Database', desc: 'Curated art & design schools worldwide, filtered by discipline and culture.' },
-          { icon: '◈', title: 'Project Planner', desc: 'Track in-school and personal projects. Attach images, video, PDF.' },
-          { icon: '◇', title: 'AI Statement', desc: 'Generate artist statements and portfolio narratives with AI guidance.' },
-          { icon: '◉', title: 'Multi-format Export', desc: 'Export as HTML, PDF, or ebook. Three.js viewer coming soon.' },
+          { icon: '◎', title: 'School Database', desc: 'Curated art & design schools worldwide, filtered by discipline and culture.', href: '/en/schools' },
+          { icon: '◈', title: 'Project Planner', desc: 'Track in-school and personal projects. Attach images, video, PDF.', href: '/en/projects' },
+          { icon: '◇', title: 'AI Statement', desc: 'Generate artist statements and portfolio narratives with AI guidance.', href: '/en/ai-tools' },
+          { icon: '◉', title: 'Multi-format Export', desc: 'Export as HTML, PDF, or ebook. Three.js viewer coming soon.', href: '/en/projects' },
         ].map(f => (
-          <div key={f.title} style={{
+          <Link key={f.title} href={f.href} style={{
             background: 'var(--card)',
             border: '1px solid var(--line2)',
             borderRadius: '14px',
@@ -140,13 +156,18 @@ export default function Home() {
             display: 'flex',
             flexDirection: 'column',
             gap: '12px',
-          }}>
+            textDecoration: 'none',
+            transition: 'border-color 0.2s',
+          }}
+            onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--gold-d)')}
+            onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--line2)')}
+          >
             <span style={{ fontSize: '1.2rem', color: 'var(--gold)' }}>{f.icon}</span>
             <h3 className="font-serif" style={{ fontSize: '0.95rem', color: 'var(--cream)', fontStyle: 'italic' }}>
               {f.title}
             </h3>
             <p style={{ fontSize: '0.75rem', color: 'var(--fg-d)', lineHeight: 1.7 }}>{f.desc}</p>
-          </div>
+          </Link>
         ))}
       </section>
 
