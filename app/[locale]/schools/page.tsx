@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
+import { ComposableMap, Geographies, Geography, Marker } from 'react-simple-maps'
 
 interface School {
   id: string
@@ -139,15 +140,15 @@ const COUNTRY_ZH: Record<string, string> = {
   'Sweden': '瑞典', 'Australia': '澳大利亚', 'Singapore': '新加坡',
 }
 
-// Dot positions on the map (as % of container width/height)
-const COUNTRY_DOTS: Record<string, { x: number; y: number }> = {
-  'USA':       { x: 18, y: 42 },
-  'UK':        { x: 46, y: 30 },
-  'France':    { x: 48, y: 35 },
-  'Italy':     { x: 51, y: 37 },
-  'Sweden':    { x: 52, y: 23 },
-  'Australia': { x: 80, y: 72 },
-  'Singapore': { x: 76, y: 57 },
+// Longitude, Latitude for each country
+const COUNTRY_COORDS: Record<string, [number, number]> = {
+  'USA':       [-100, 40],
+  'UK':        [-2, 54],
+  'France':    [2, 46],
+  'Italy':     [12, 42],
+  'Sweden':    [18, 62],
+  'Australia': [134, -25],
+  'Singapore': [104, 1],
 }
 
 function getDeadlineInfo(deadline: string, isZh: boolean, t: typeof TX.en) {
@@ -607,71 +608,73 @@ Requirements: The statement should be sincere and specific, highlighting alignme
           {/* 世界地图 */}
           {(() => {
             const activeCountries = [...new Set(schools.map(s => s.country))]
+            const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json'
+            const COUNTRY_ISO: Record<string, string> = {
+              'USA': '840', 'UK': '826', 'France': '250', 'Italy': '380',
+              'Sweden': '752', 'Australia': '036', 'Singapore': '702',
+            }
             return (
-              <div style={{ position: 'relative', width: '100%', maxWidth: '700px', height: '200px', marginBottom: '28px', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(26,26,26,0.08)', borderRadius: '20px', overflow: 'hidden' }}>
-                {/* 简洁世界地图背景 SVG */}
-                <svg viewBox="0 0 1000 500" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.12 }} xmlns="http://www.w3.org/2000/svg">
-                  {/* North America */}
-                  <path d="M80,80 L200,60 L240,100 L220,180 L180,220 L120,200 L80,160 Z" fill="#1a1a1a"/>
-                  {/* South America */}
-                  <path d="M160,240 L220,230 L240,320 L200,400 L150,380 L140,300 Z" fill="#1a1a1a"/>
-                  {/* Europe */}
-                  <path d="M420,80 L520,70 L540,130 L480,160 L420,140 Z" fill="#1a1a1a"/>
-                  {/* Africa */}
-                  <path d="M440,180 L540,170 L560,300 L500,380 L430,340 L420,260 Z" fill="#1a1a1a"/>
-                  {/* Asia */}
-                  <path d="M540,60 L820,50 L840,200 L760,260 L620,240 L540,180 Z" fill="#1a1a1a"/>
-                  {/* Australia */}
-                  <path d="M740,310 L860,300 L880,390 L800,420 L730,390 Z" fill="#1a1a1a"/>
-                </svg>
-
-                {/* 国家点 */}
-                {Object.entries(COUNTRY_DOTS).map(([country, pos]) => {
-                  const isActive = activeCountries.includes(country)
-                  const isSelected = selectedCountry === country
-                  const count = schools.filter(s => s.country === country).length
-                  if (!isActive) return null
-                  return (
-                    <div key={country}
-                      onClick={() => setSelectedCountry(isSelected ? null : country)}
-                      style={{
-                        position: 'absolute',
-                        left: `${pos.x}%`, top: `${pos.y}%`,
-                        transform: 'translate(-50%, -50%)',
-                        cursor: 'pointer',
-                        zIndex: 10,
-                      }}
-                    >
-                      {/* 脉冲圈 */}
-                      {isSelected && (
-                        <div style={{ position: 'absolute', inset: '-8px', borderRadius: '50%', background: 'rgba(26,26,26,0.12)', animation: 'pulse 1.5s infinite' }}/>
-                      )}
-                      <div style={{
-                        width: isSelected ? '14px' : '10px',
-                        height: isSelected ? '14px' : '10px',
-                        borderRadius: '50%',
-                        background: isSelected ? '#1a1a1a' : 'rgba(26,26,26,0.5)',
-                        border: '2px solid #1a1a1a',
-                        transition: 'all 0.2s',
-                        position: 'relative',
-                      }}/>
-                      {/* 标签 */}
-                      <div style={{
-                        position: 'absolute', top: '-28px', left: '50%', transform: 'translateX(-50%)',
-                        background: isSelected ? '#1a1a1a' : 'rgba(255,255,255,0.95)',
-                        color: isSelected ? '#f7f7f5' : '#1a1a1a',
-                        padding: '3px 8px', borderRadius: '6px',
-                        fontSize: '0.65rem', letterSpacing: '0.08em',
-                        fontFamily: 'Space Mono, monospace',
-                        whiteSpace: 'nowrap',
-                        border: '1px solid rgba(26,26,26,0.12)',
-                        pointerEvents: 'none',
-                      }}>
-                        {isZh ? (COUNTRY_ZH[country] || country) : country} ({count})
-                      </div>
-                    </div>
-                  )
-                })}
+              <div style={{ position: 'relative', width: '100%', maxWidth: '860px', height: '260px', marginBottom: '28px', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(26,26,26,0.08)', borderRadius: '20px', overflow: 'hidden' }}>
+                <ComposableMap
+                  projectionConfig={{ scale: 140, center: [20, 10] }}
+                  style={{ width: '100%', height: '100%' }}
+                >
+                  <Geographies geography={GEO_URL}>
+                    {({ geographies }: { geographies: any[] }) =>
+                      geographies.map((geo) => {
+                        const isoNum = geo.id?.toString()
+                        const matchedCountry = Object.entries(COUNTRY_ISO).find(([, iso]) => iso === isoNum)?.[0]
+                        const isActive = matchedCountry && activeCountries.includes(matchedCountry)
+                        const isSelected = matchedCountry && selectedCountry === matchedCountry
+                        return (
+                          <Geography
+                            key={geo.rsmKey}
+                            geography={geo}
+                            onClick={() => {
+                              if (isActive && matchedCountry) {
+                                setSelectedCountry(isSelected ? null : matchedCountry)
+                              }
+                            }}
+                            style={{
+                              default: {
+                                fill: isSelected ? '#1a1a1a' : isActive ? '#888884' : '#e8e8e4',
+                                stroke: '#fff',
+                                strokeWidth: 0.5,
+                                outline: 'none',
+                                transition: 'fill 0.2s',
+                              },
+                              hover: {
+                                fill: isActive ? (isSelected ? '#333' : '#555') : '#e0e0dc',
+                                stroke: '#fff',
+                                strokeWidth: 0.5,
+                                outline: 'none',
+                                cursor: isActive ? 'pointer' : 'default',
+                              },
+                              pressed: { fill: '#1a1a1a', outline: 'none' },
+                            }}
+                          />
+                        )
+                      })
+                    }
+                  </Geographies>
+                  {/* 院校数量标记 */}
+                  {Object.entries(COUNTRY_COORDS).map(([country, coords]) => {
+                    if (!activeCountries.includes(country)) return null
+                    const count = schools.filter(s => s.country === country).length
+                    const isSelected = selectedCountry === country
+                    return (
+                      <Marker key={country} coordinates={coords}>
+                        <circle r={isSelected ? 8 : 6} fill={isSelected ? '#f7f7f5' : '#1a1a1a'} stroke={isSelected ? '#1a1a1a' : '#f7f7f5'} strokeWidth={1.5} style={{ cursor: 'pointer' }}
+                          onClick={() => setSelectedCountry(isSelected ? null : country)}
+                        />
+                        <text textAnchor="middle" y={-12}
+                          style={{ fontFamily: 'Space Mono, monospace', fontSize: '7px', fill: '#1a1a1a', pointerEvents: 'none', fontWeight: 600 }}>
+                          {isZh ? (COUNTRY_ZH[country] || country) : country} {count}
+                        </text>
+                      </Marker>
+                    )
+                  })}
+                </ComposableMap>
 
                 {/* 提示文字 */}
                 <div style={{ position: 'absolute', bottom: '12px', right: '16px', fontSize: '0.65rem', color: '#c8c8c4', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em' }}>
