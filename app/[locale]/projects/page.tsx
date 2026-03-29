@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef } from 'react'
+import React, { useState, useRef } from 'react'
 import { useLocalStorage } from '../../../hooks/useLocalStorage'
 import { Project, ProjectStatus, ProjectCategory, Milestone, Proposal, Note, NoteVisibility } from '../../../types'
 import { usePathname, useRouter } from 'next/navigation'
@@ -66,6 +66,8 @@ export default function ProjectsPage() {
   const [aiResult, setAiResult] = useState('')
   const [aiType, setAiType] = useState<'plan' | 'statement' | null>(null)
   const [lightboxImg, setLightboxImg] = useState<string | null>(null)
+  const [imageEditorUrl, setImageEditorUrl] = useState<string | null>(null)
+  const [imageEditorIdx, setImageEditorIdx] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // ── 新增：日期内联编辑 state ──
@@ -243,12 +245,29 @@ export default function ProjectsPage() {
           .img-card { position:relative; overflow:hidden; border-radius:14px; aspect-ratio:1; cursor:pointer; }
           .img-card img { width:100%; height:100%; object-fit:cover; transition:transform 0.3s; }
           .img-card:hover img { transform:scale(1.04); }
+          .img-edit { position:absolute; top:8px; left:8px; background:rgba(0,0,0,0.5); color:#fff; border:none; border-radius:50%; width:30px; height:30px; cursor:pointer; display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity 0.2s; font-size:12px; }
+          .img-card:hover .img-edit { opacity:1; }
           .img-del { position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.5); color:#fff; border:none; border-radius:50%; width:30px; height:30px; cursor:pointer; display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity 0.2s; font-size:13px; }
           .img-card:hover .img-del { opacity:1; }
           .note-pill { transition: all 0.15s; cursor: pointer; border-radius: 20px; }
           .note-pill:hover { opacity: 0.8; }
           .date-btn:hover { color: #4a8abf !important; }
         `}</style>
+
+        {imageEditorUrl !== null && imageEditorIdx !== null && detail && (
+          <ImageEditor
+            src={imageEditorUrl}
+            isZh={isZh}
+            onSave={dataUrl => {
+              const urls = [...(detail.mediaUrls || [])]
+              urls[imageEditorIdx!] = dataUrl
+              updateProject({ ...detail, mediaUrls: urls, updatedAt: new Date().toISOString() })
+              setImageEditorUrl(null)
+              setImageEditorIdx(null)
+            }}
+            onClose={() => { setImageEditorUrl(null); setImageEditorIdx(null) }}
+          />
+        )}
 
         {lightboxImg && (
           <div onClick={() => setLightboxImg(null)} style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}>
@@ -334,6 +353,7 @@ export default function ProjectsPage() {
                   {mediaUrls.map((url, idx) => (
                     <div key={idx} className="img-card" onClick={() => setLightboxImg(url)}>
                       <img src={url} alt={`artwork ${idx + 1}`} />
+                      <button className="img-edit" onClick={e => { e.stopPropagation(); setImageEditorUrl(url); setImageEditorIdx(idx) }}>✎</button>
                       <button className="img-del" onClick={e => { e.stopPropagation(); deleteImage(idx) }}>✕</button>
                     </div>
                   ))}
@@ -905,5 +925,293 @@ export default function ProjectsPage() {
         )}
       </main>
     </>
+  )
+}
+
+// ── Image Editor Component ────────────────────────────────────────────────────
+function ImageEditor({
+  src,
+  isZh,
+  onSave,
+  onClose,
+}: {
+  src: string
+  isZh: boolean
+  onSave: (dataUrl: string) => void
+  onClose: () => void
+}) {
+  const canvasRef = React.useRef<HTMLCanvasElement>(null)
+  const overlayInputRef = React.useRef<HTMLInputElement>(null)
+
+  const [brightness, setBrightness] = React.useState(100)
+  const [contrast, setContrast] = React.useState(100)
+  const [saturate, setSaturate] = React.useState(100)
+  const [rotation, setRotation] = React.useState(0)
+  const [flipH, setFlipH] = React.useState(false)
+
+  // Crop state
+  const [cropMode, setCropMode] = React.useState(false)
+  const [cropStart, setCropStart] = React.useState<{x:number,y:number}|null>(null)
+  const [cropRect, setCropRect] = React.useState<{x:number,y:number,w:number,h:number}|null>(null)
+  const [isDragging, setIsDragging] = React.useState(false)
+
+  // Overlay image
+  const [overlayImg, setOverlayImg] = React.useState<string|null>(null)
+  const [overlayPos, setOverlayPos] = React.useState({x:40,y:40})
+  const [overlayScale, setOverlayScale] = React.useState(50)
+  const [draggingOverlay, setDraggingOverlay] = React.useState(false)
+  const overlayDragStart = React.useRef<{mx:number,my:number,ox:number,oy:number}|null>(null)
+
+  const [imgEl, setImgEl] = React.useState<HTMLImageElement|null>(null)
+  const [canvasSize, setCanvasSize] = React.useState({w:0,h:0})
+
+  // Load image
+  React.useEffect(() => {
+    const img = new Image()
+    img.onload = () => {
+      const maxW = Math.min(img.naturalWidth, 800)
+      const scale = maxW / img.naturalWidth
+      setCanvasSize({ w: maxW, h: img.naturalHeight * scale })
+      setImgEl(img)
+    }
+    img.src = src
+  }, [src])
+
+  // Redraw canvas
+  React.useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || !imgEl || canvasSize.w === 0) return
+    canvas.width = canvasSize.w
+    canvas.height = canvasSize.h
+    const ctx = canvas.getContext('2d')!
+    ctx.save()
+    ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%)`
+    ctx.translate(canvasSize.w/2, canvasSize.h/2)
+    ctx.rotate((rotation * Math.PI) / 180)
+    if (flipH) ctx.scale(-1, 1)
+    ctx.drawImage(imgEl, -canvasSize.w/2, -canvasSize.h/2, canvasSize.w, canvasSize.h)
+    ctx.restore()
+
+    // Draw overlay image
+    if (overlayImg) {
+      const ov = new Image()
+      ov.onload = () => {
+        const ow = (canvasSize.w * overlayScale) / 100
+        const oh = (ov.naturalHeight / ov.naturalWidth) * ow
+        ctx.globalAlpha = 0.9
+        ctx.drawImage(ov, overlayPos.x, overlayPos.y, ow, oh)
+        ctx.globalAlpha = 1
+      }
+      ov.src = overlayImg
+    }
+
+    // Draw crop rect
+    if (cropRect) {
+      ctx.strokeStyle = '#fff'
+      ctx.lineWidth = 2
+      ctx.setLineDash([6, 3])
+      ctx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h)
+      ctx.fillStyle = 'rgba(0,0,0,0.25)'
+      ctx.fillRect(0, 0, canvasSize.w, canvasSize.h)
+      ctx.clearRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h)
+      ctx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h)
+    }
+  }, [imgEl, brightness, contrast, saturate, rotation, flipH, overlayImg, overlayPos, overlayScale, cropRect, canvasSize])
+
+  const getCanvasPos = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = canvasRef.current!.getBoundingClientRect()
+    const scaleX = canvasSize.w / rect.width
+    const scaleY = canvasSize.h / rect.height
+    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY }
+  }
+
+  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!cropMode) return
+    const pos = getCanvasPos(e)
+    setCropStart(pos)
+    setCropRect(null)
+    setIsDragging(true)
+  }
+  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDragging || !cropStart || !cropMode) return
+    const pos = getCanvasPos(e)
+    setCropRect({
+      x: Math.min(cropStart.x, pos.x),
+      y: Math.min(cropStart.y, pos.y),
+      w: Math.abs(pos.x - cropStart.x),
+      h: Math.abs(pos.y - cropStart.y),
+    })
+  }
+  const handleCanvasMouseUp = () => setIsDragging(false)
+
+  const applyCrop = () => {
+    if (!cropRect || !canvasRef.current) return
+    const canvas = canvasRef.current
+    const tmp = document.createElement('canvas')
+    tmp.width = cropRect.w
+    tmp.height = cropRect.h
+    tmp.getContext('2d')!.drawImage(canvas, cropRect.x, cropRect.y, cropRect.w, cropRect.h, 0, 0, cropRect.w, cropRect.h)
+    const newSrc = tmp.toDataURL('image/jpeg', 0.92)
+    const img = new Image()
+    img.onload = () => {
+      setImgEl(img)
+      setCanvasSize({ w: cropRect.w, h: cropRect.h })
+      setCropRect(null)
+      setCropMode(false)
+    }
+    img.src = newSrc
+  }
+
+  const handleSave = () => {
+    if (!canvasRef.current) return
+    onSave(canvasRef.current.toDataURL('image/jpeg', 0.92))
+  }
+
+  const handleOverlayUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => setOverlayImg(ev.target?.result as string)
+    reader.readAsDataURL(file)
+  }
+
+  const sliders = [
+    { label: isZh ? '亮度' : 'Brightness', value: brightness, set: setBrightness, min: 20, max: 200 },
+    { label: isZh ? '对比度' : 'Contrast', value: contrast, set: setContrast, min: 20, max: 200 },
+    { label: isZh ? '饱和度' : 'Saturate', value: saturate, set: setSaturate, min: 0, max: 200 },
+  ]
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(20,20,20,0.96)', display: 'flex', flexDirection: 'column' }}>
+      {/* Header */}
+      <div style={{ height: '56px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', flexShrink: 0 }}>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.82rem', letterSpacing: '0.1em' }}>
+          {isZh ? '← 取消' : '← Cancel'}
+        </button>
+        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.78rem', letterSpacing: '0.15em', color: '#aaa', textTransform: 'uppercase' }}>
+          {isZh ? '图片编辑器' : 'Image Editor'}
+        </span>
+        <button onClick={handleSave} style={{ background: '#f7f7f5', color: '#1a1a1a', border: 'none', padding: '10px 24px', borderRadius: '10px', fontFamily: 'Space Mono, monospace', fontSize: '0.82rem', letterSpacing: '0.1em', cursor: 'pointer' }}>
+          {isZh ? '保存' : 'Save'}
+        </button>
+      </div>
+
+      {/* Body */}
+      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 280px', overflow: 'hidden' }}>
+        {/* Canvas */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '32px', overflow: 'auto' }}>
+          <canvas
+            ref={canvasRef}
+            style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: '10px', cursor: cropMode ? 'crosshair' : 'default', boxShadow: '0 8px 40px rgba(0,0,0,0.5)' }}
+            onMouseDown={handleCanvasMouseDown}
+            onMouseMove={handleCanvasMouseMove}
+            onMouseUp={handleCanvasMouseUp}
+          />
+        </div>
+
+        {/* Tools */}
+        <div style={{ borderLeft: '1px solid rgba(255,255,255,0.08)', overflowY: 'auto', padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+
+          {/* Adjustments */}
+          <div>
+            <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.65rem', letterSpacing: '0.2em', color: '#666', textTransform: 'uppercase', marginBottom: '14px' }}>
+              {isZh ? '调色' : 'Adjustments'}
+            </p>
+            {sliders.map(s => (
+              <div key={s.label} style={{ marginBottom: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#888' }}>{s.label}</span>
+                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#555' }}>{s.value}%</span>
+                </div>
+                <input type="range" min={s.min} max={s.max} value={s.value}
+                  onChange={e => s.set(Number(e.target.value))}
+                  style={{ width: '100%', accentColor: '#f7f7f5' }}
+                />
+              </div>
+            ))}
+            <button onClick={() => { setBrightness(100); setContrast(100); setSaturate(100) }}
+              style={{ fontSize: '0.68rem', color: '#555', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em', marginTop: '4px' }}>
+              {isZh ? '重置' : 'Reset'}
+            </button>
+          </div>
+
+          {/* Rotate / Flip */}
+          <div>
+            <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.65rem', letterSpacing: '0.2em', color: '#666', textTransform: 'uppercase', marginBottom: '14px' }}>
+              {isZh ? '旋转 / 翻转' : 'Rotate / Flip'}
+            </p>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {[90, 180, 270].map(deg => (
+                <button key={deg} onClick={() => setRotation(r => (r + deg) % 360)}
+                  style={{ padding: '8px 12px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', background: 'transparent', color: '#aaa', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>
+                  +{deg}°
+                </button>
+              ))}
+              <button onClick={() => setFlipH(f => !f)}
+                style={{ padding: '8px 12px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', background: flipH ? 'rgba(255,255,255,0.1)' : 'transparent', color: '#aaa', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>
+                ⇄ {isZh ? '翻转' : 'Flip'}
+              </button>
+            </div>
+          </div>
+
+          {/* Crop */}
+          <div>
+            <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.65rem', letterSpacing: '0.2em', color: '#666', textTransform: 'uppercase', marginBottom: '14px' }}>
+              {isZh ? '裁剪' : 'Crop'}
+            </p>
+            {!cropMode ? (
+              <button onClick={() => { setCropMode(true); setCropRect(null) }}
+                style={{ width: '100%', padding: '10px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '9px', background: 'transparent', color: '#aaa', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.75rem', letterSpacing: '0.08em' }}>
+                {isZh ? '✂ 开始裁剪' : '✂ Start Crop'}
+              </button>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#666' }}>
+                  {isZh ? '在画布上拖动选区' : 'Drag on canvas to select'}
+                </p>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button onClick={applyCrop} disabled={!cropRect}
+                    style={{ flex: 1, padding: '9px', background: cropRect ? '#f7f7f5' : 'rgba(255,255,255,0.1)', color: cropRect ? '#1a1a1a' : '#555', border: 'none', borderRadius: '8px', cursor: cropRect ? 'pointer' : 'not-allowed', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>
+                    {isZh ? '确认裁剪' : 'Apply'}
+                  </button>
+                  <button onClick={() => { setCropMode(false); setCropRect(null) }}
+                    style={{ flex: 1, padding: '9px', background: 'transparent', color: '#666', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>
+                    {isZh ? '取消' : 'Cancel'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Overlay image */}
+          <div>
+            <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.65rem', letterSpacing: '0.2em', color: '#666', textTransform: 'uppercase', marginBottom: '14px' }}>
+              {isZh ? '叠加图片' : 'Overlay Image'}
+            </p>
+            <button onClick={() => overlayInputRef.current?.click()}
+              style={{ width: '100%', padding: '10px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '9px', background: 'transparent', color: '#aaa', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.75rem', letterSpacing: '0.08em', marginBottom: '10px' }}>
+              {isZh ? '+ 导入图片' : '+ Import Image'}
+            </button>
+            <input ref={overlayInputRef} type="file" accept="image/*" onChange={handleOverlayUpload} style={{ display: 'none' }} />
+            {overlayImg && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#888' }}>{isZh ? '大小' : 'Size'}</span>
+                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#555' }}>{overlayScale}%</span>
+                </div>
+                <input type="range" min={10} max={100} value={overlayScale}
+                  onChange={e => setOverlayScale(Number(e.target.value))}
+                  style={{ width: '100%', accentColor: '#f7f7f5', marginBottom: '8px' }}
+                />
+                <button onClick={() => setOverlayImg(null)}
+                  style={{ fontSize: '0.68rem', color: '#bf4a4a', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Space Mono, monospace' }}>
+                  {isZh ? '移除叠加' : 'Remove'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
