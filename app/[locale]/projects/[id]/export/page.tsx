@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { useLocalStorage } from '../../../../../hooks/useLocalStorage'
 import { Project } from '../../../../../types'
 import { exportPDF, exportDOCX } from '../../../../../lib/exportProject'
@@ -13,6 +13,7 @@ interface Block {
   content: string
   caption?: string
   images?: string[] // for image-row
+  imageCaptions?: string[] // per-image captions for image-row
 }
 
 interface School {
@@ -31,8 +32,53 @@ interface School {
   createdAt: string
 }
 
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
+
+function draftKey(projectId: string) {
+  return `ps-export-draft-${projectId}`
+}
+
 function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2)
+}
+
+// ── Draft Banner: shown on mount when saved data is restored ──────────────
+function DraftBanner({ blocks, isZh, onClear }: { blocks: Block[]; isZh: boolean; onClear: () => void }) {
+  const [visible, setVisible] = useState(true)
+  if (!visible) return null
+  return (
+    <div
+      className="draft-banner"
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        background: 'rgba(74,171,111,0.08)', border: '1px solid rgba(74,171,111,0.2)',
+        borderRadius: '10px', padding: '10px 16px', marginBottom: '20px',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <span style={{ color: '#4aab6f', fontSize: '0.8rem' }}>●</span>
+        <span style={{ fontSize: '0.8rem', color: '#3a8a58', letterSpacing: '0.04em' }}>
+          {isZh
+            ? `已恢复上次草稿（${blocks.length} 个块）`
+            : `Draft restored — ${blocks.length} block${blocks.length !== 1 ? 's' : ''}`}
+        </span>
+      </div>
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <button
+          onClick={onClear}
+          style={{ fontSize: '0.72rem', color: '#888', background: 'none', border: 'none', cursor: 'pointer', letterSpacing: '0.06em' }}
+        >
+          {isZh ? '清空重来' : 'Start fresh'}
+        </button>
+        <button
+          onClick={() => setVisible(false)}
+          style={{ fontSize: '0.72rem', color: '#4aab6f', background: 'none', border: 'none', cursor: 'pointer', letterSpacing: '0.06em' }}
+        >
+          {isZh ? '继续编辑 →' : 'Keep editing →'}
+        </button>
+      </div>
+    </div>
+  )
 }
 
 export default function ExportPage() {
@@ -46,15 +92,99 @@ export default function ExportPage() {
   const [schools] = useLocalStorage<School[]>('ps-schools', [])
   const project = projects.find(p => p.id === id)
 
-  const [blocks, setBlocks] = useState<Block[]>([])
+  // ── Draft recovery: load saved blocks from localStorage on first render ──
+  const [blocks, setBlocksRaw] = useState<Block[]>(() => {
+    if (typeof window === 'undefined') return []
+    try {
+      const saved = localStorage.getItem(draftKey(id))
+      if (saved) return JSON.parse(saved) as Block[]
+    } catch {}
+    return []
+  })
+
+  // tracks whether we loaded blocks from a saved draft (to show the banner once)
+  const [justRestored] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    try {
+      const saved = localStorage.getItem(draftKey(id))
+      return !!saved && JSON.parse(saved).length > 0
+    } catch { return false }
+  })
+
+  // ── Undo stack (keeps last 50 snapshots) ──
+  const undoStack = useRef<Block[][]>([])
+  const isUndoing = useRef(false)
+
+  const setBlocks = useCallback((updater: Block[] | ((prev: Block[]) => Block[])) => {
+    setBlocksRaw(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      if (!isUndoing.current) {
+        undoStack.current = [...undoStack.current.slice(-49), prev]
+      }
+      return next
+    })
+  }, [])
+
+  const undo = useCallback(() => {
+    if (undoStack.current.length === 0) return
+    const prev = undoStack.current[undoStack.current.length - 1]
+    undoStack.current = undoStack.current.slice(0, -1)
+    isUndoing.current = true
+    setBlocksRaw(prev)
+    isUndoing.current = false
+  }, [])
+
+  // ── Auto-save: debounced write to localStorage ──
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hasMounted = useRef(false)
+
+  useEffect(() => {
+    // skip the very first render (initial load from localStorage)
+    if (!hasMounted.current) { hasMounted.current = true; return }
+    setSaveStatus('saving')
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      try {
+        localStorage.setItem(draftKey(id), JSON.stringify(blocks))
+        setSaveStatus('saved')
+        // fade back to idle after 2.5s
+        setTimeout(() => setSaveStatus('idle'), 2500)
+      } catch {
+        setSaveStatus('error')
+      }
+    }, 600)
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current) }
+  }, [blocks, id])
+
+  // ── Keyboard shortcut: Ctrl/Cmd+Z ──
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        undo()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [undo])
+
+  const clearDraft = useCallback(() => {
+    try { localStorage.removeItem(draftKey(id)) } catch {}
+    setBlocksRaw([])
+    undoStack.current = []
+    setSaveStatus('idle')
+  }, [id])
   const [customText, setCustomText] = useState('')
   const [schoolsExpanded, setSchoolsExpanded] = useState(false)
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null)
   const [editingContent, setEditingContent] = useState('')
   const [editingCaption, setEditingCaption] = useState('')
+  const [editingImageCaptions, setEditingImageCaptions] = useState<string[]>([])
   const [imagePickerOpen, setImagePickerOpen] = useState(false)
   const [selectedImages, setSelectedImages] = useState<string[]>([])
   const dragIndex = useRef<number | null>(null)
+  const imageDragIndex = useRef<number | null>(null) // for dragging images within image-row
 
   if (!project) return (
     <div style={{ padding: '60px', fontFamily: 'Space Mono, monospace', color: '#888' }}>
@@ -81,12 +211,13 @@ export default function ExportPage() {
     setEditingBlockId(block.id)
     setEditingContent(block.content)
     setEditingCaption(block.caption || '')
+    setEditingImageCaptions(block.imageCaptions || (block.images || []).map(() => ''))
   }
 
   const saveEdit = () => {
     setBlocks(b => b.map(block =>
       block.id === editingBlockId
-        ? { ...block, content: editingContent, caption: editingCaption }
+        ? { ...block, content: editingContent, caption: editingCaption, imageCaptions: editingImageCaptions }
         : block
     ))
     setEditingBlockId(null)
@@ -127,7 +258,12 @@ export default function ExportPage() {
       if (b.type === 'image-row') return `
         <div class="block">
           <div style="display:grid;grid-template-columns:repeat(${(b.images || []).length},1fr);gap:10px;">
-            ${(b.images || []).map(url => `<img src="${url}" style="width:100%;border-radius:8px;aspect-ratio:1;object-fit:cover;" />`).join('')}
+            ${(b.images || []).map((url, idx) => `
+              <div>
+                <img src="${url}" style="width:100%;border-radius:8px;aspect-ratio:1;object-fit:cover;" />
+                ${(b.imageCaptions || [])[idx] ? `<p style="font-size:12px;color:#888;text-align:center;margin-top:5px;font-style:italic;">${(b.imageCaptions || [])[idx]}</p>` : ''}
+              </div>
+            `).join('')}
           </div>
           ${b.caption ? `<p class="caption">${b.caption}</p>` : ''}
         </div>`
@@ -233,6 +369,10 @@ ${blocksHTML}
         .img-thumb { transition: transform 0.15s, box-shadow 0.15s; }
         .img-thumb:hover { transform: scale(1.03); box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
         .img-thumb.selected { outline: 2.5px solid #1a1a1a; outline-offset: 2px; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:translateY(0)} }
+        .draft-banner { animation: fadeIn 0.3s ease; }
+        .nav-clear-btn:hover { border-color: rgba(180,80,80,0.6) !important; color: rgba(180,80,80,1) !important; }
       `}</style>
 
       {/* NAV */}
@@ -240,10 +380,62 @@ ${blocksHTML}
         <button onClick={() => router.back()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888', fontSize: '0.9rem', letterSpacing: '0.1em' }}>
           {isZh ? '← 返回' : '← Back'}
         </button>
-        <span style={{ fontSize: '0.9rem', letterSpacing: '0.1em', color: '#1a1a1a' }}>
-          {isZh ? '导出编辑器' : 'Export Editor'} — {project.title}
-        </span>
-        <div style={{ display: 'flex', gap: '8px' }}>
+
+        {/* Centre: title + save status */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
+          <span style={{ fontSize: '0.9rem', letterSpacing: '0.1em', color: '#1a1a1a' }}>
+            {isZh ? '导出编辑器' : 'Export Editor'} — {project.title}
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', height: '16px' }}>
+            {saveStatus === 'saving' && (
+              <>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#e8c06a', display: 'inline-block', animation: 'pulse 0.8s ease-in-out infinite' }} />
+                <span style={{ fontSize: '0.68rem', color: '#c8a84a', letterSpacing: '0.08em' }}>{isZh ? '保存中…' : 'Saving…'}</span>
+              </>
+            )}
+            {saveStatus === 'saved' && (
+              <>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4aab6f', display: 'inline-block' }} />
+                <span style={{ fontSize: '0.68rem', color: '#4aab6f', letterSpacing: '0.08em' }}>{isZh ? '已自动保存' : 'Draft saved'}</span>
+              </>
+            )}
+            {saveStatus === 'error' && (
+              <>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#e05c5c', display: 'inline-block' }} />
+                <span style={{ fontSize: '0.68rem', color: '#e05c5c', letterSpacing: '0.08em' }}>{isZh ? '保存失败' : 'Save failed'}</span>
+              </>
+            )}
+            {saveStatus === 'idle' && blocks.length > 0 && (
+              <span style={{ fontSize: '0.68rem', color: '#c8c8c4', letterSpacing: '0.08em' }}>{isZh ? `${blocks.length} 个块` : `${blocks.length} block${blocks.length !== 1 ? 's' : ''}`}</span>
+            )}
+          </div>
+        </div>
+
+        {/* Right: undo + clear + export */}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {/* Undo */}
+          <button
+            onClick={undo}
+            disabled={undoStack.current.length === 0}
+            title={isZh ? '撤销 (⌘Z)' : 'Undo (⌘Z)'}
+            style={{ background: 'transparent', border: '1px solid rgba(26,26,26,0.12)', padding: '10px 14px', borderRadius: '10px', fontSize: '0.85rem', cursor: undoStack.current.length === 0 ? 'not-allowed' : 'pointer', color: undoStack.current.length === 0 ? '#ccc' : '#888', letterSpacing: '0.05em' }}
+          >
+            ↩
+          </button>
+          {/* Clear draft */}
+          {blocks.length > 0 && (
+            <button
+              onClick={() => {
+                if (window.confirm(isZh ? '清空当前画布？此操作不可撤销。' : 'Clear the canvas? This cannot be undone.')) clearDraft()
+              }}
+              title={isZh ? '清空画布' : 'Clear canvas'}
+              style={{ background: 'transparent', border: '1px solid rgba(180,80,80,0.2)', padding: '10px 14px', borderRadius: '10px', fontSize: '0.78rem', cursor: 'pointer', color: 'rgba(180,80,80,0.5)', letterSpacing: '0.05em', transition: 'all 0.15s' }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(180,80,80,0.5)'; e.currentTarget.style.color = 'rgba(180,80,80,0.9)' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(180,80,80,0.2)'; e.currentTarget.style.color = 'rgba(180,80,80,0.5)' }}
+            >
+              {isZh ? '清空' : 'Clear'}
+            </button>
+          )}
           <button onClick={exportHTML} style={{ background: '#1a1a1a', color: '#f7f7f5', border: 'none', padding: '12px 20px', borderRadius: '10px', fontSize: '0.85rem', letterSpacing: '0.1em', cursor: 'pointer' }}>
             HTML
           </button>
@@ -260,9 +452,26 @@ ${blocksHTML}
 
         {/* 画布 */}
         <div style={{ padding: '40px', borderRight: '1px solid rgba(26,26,26,0.08)' }}>
-          <p style={{ fontSize: '0.75rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#c8c8c4', marginBottom: '24px' }}>
-            {isZh ? '画布 — 拖动调整顺序' : 'Canvas — drag to reorder'}
-          </p>
+
+          {/* Draft recovered banner — shown on mount when saved data was restored */}
+          {justRestored && (
+            <DraftBanner blocks={blocks} isZh={isZh} onClear={clearDraft} />
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+            <p style={{ fontSize: '0.75rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#c8c8c4' }}>
+              {isZh ? '画布 — 拖动调整顺序' : 'Canvas — drag to reorder'}
+            </p>
+            {blocks.length > 0 && (
+              <button
+                onClick={undo}
+                disabled={undoStack.current.length === 0}
+                style={{ fontSize: '0.68rem', color: undoStack.current.length > 0 ? '#aaa' : '#ddd', background: 'none', border: 'none', cursor: undoStack.current.length > 0 ? 'pointer' : 'default', letterSpacing: '0.08em' }}
+              >
+                {isZh ? '↩ 撤销' : '↩ undo'}
+              </button>
+            )}
+          </div>
 
           {blocks.length === 0 && (
             <div style={{ border: '2px dashed rgba(26,26,26,0.1)', borderRadius: '16px', padding: '60px', textAlign: 'center', color: '#c8c8c4', fontSize: '0.9rem' }}>
@@ -309,10 +518,50 @@ ${blocksHTML}
                     </div>
                   )}
                   {block.type === 'image-row' && (
-                    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${(block.images || []).length}, 1fr)`, gap: '6px', marginBottom: '10px' }}>
-                      {(block.images || []).map((url, idx) => (
-                        <img key={idx} src={url} alt="" style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '6px' }} />
-                      ))}
+                    <div style={{ marginBottom: '10px' }}>
+                      <p style={{ fontSize: '0.68rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#c8c8c4', marginBottom: '8px' }}>
+                        {isZh ? '拖拽图片调整顺序，每张图可填写名称' : 'Drag to reorder · add a label under each image'}
+                      </p>
+                      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${(block.images || []).length}, 1fr)`, gap: '8px' }}>
+                        {(block.images || []).map((url, idx) => (
+                          <div
+                            key={idx}
+                            draggable
+                            onDragStart={() => { imageDragIndex.current = idx }}
+                            onDragOver={e => e.preventDefault()}
+                            onDrop={() => {
+                              if (imageDragIndex.current !== null && imageDragIndex.current !== idx) {
+                                const fromIdx = imageDragIndex.current
+                                setBlocks(b => b.map(bl => {
+                                  if (bl.id !== block.id) return bl
+                                  const imgs = [...(bl.images || [])]
+                                  const caps = [...(editingImageCaptions.length === imgs.length ? editingImageCaptions : imgs.map((_, i) => editingImageCaptions[i] || ''))]
+                                  const [imgItem] = imgs.splice(fromIdx, 1)
+                                  const [capItem] = caps.splice(fromIdx, 1)
+                                  imgs.splice(idx, 0, imgItem)
+                                  caps.splice(idx, 0, capItem)
+                                  setEditingImageCaptions(caps)
+                                  return { ...bl, images: imgs }
+                                }))
+                              }
+                              imageDragIndex.current = null
+                            }}
+                            style={{ cursor: 'grab' }}
+                          >
+                            <img src={url} alt="" style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '6px', display: 'block', pointerEvents: 'none' }} />
+                            <input
+                              value={editingImageCaptions[idx] || ''}
+                              onChange={e => {
+                                const updated = [...editingImageCaptions]
+                                updated[idx] = e.target.value
+                                setEditingImageCaptions(updated)
+                              }}
+                              placeholder={isZh ? `图片 ${idx + 1} 名称…` : `Image ${idx + 1} label…`}
+                              style={{ width: '100%', marginTop: '6px', padding: '5px 8px', border: '1px solid rgba(26,26,26,0.12)', borderRadius: '6px', fontFamily: 'DM Sans, sans-serif', fontSize: '0.8rem', color: '#555', outline: 'none', background: '#f7f7f5' }}
+                            />
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                   {/* caption 通用 */}
@@ -352,7 +601,14 @@ ${blocksHTML}
                     <div>
                       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${(block.images || []).length}, 1fr)`, gap: '6px' }}>
                         {(block.images || []).map((url, idx) => (
-                          <img key={idx} src={url} alt="" style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '8px' }} />
+                          <div key={idx}>
+                            <img src={url} alt="" style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '8px', display: 'block' }} />
+                            {(block.imageCaptions || [])[idx] && (
+                              <p style={{ fontSize: '0.78rem', color: '#888', marginTop: '5px', textAlign: 'center', fontStyle: 'italic', lineHeight: 1.4 }}>
+                                {(block.imageCaptions || [])[idx]}
+                              </p>
+                            )}
+                          </div>
                         ))}
                       </div>
                       {block.caption && <p style={{ fontSize: '0.85rem', color: '#aaa', marginTop: '8px', fontStyle: 'italic' }}>{block.caption}</p>}
