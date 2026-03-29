@@ -1,9 +1,9 @@
 'use client'
 import React, { useState, useRef } from 'react'
-import { useLocalStorage } from '../../../hooks/useLocalStorage'
-import { Project, ProjectStatus, ProjectCategory, Milestone, Proposal, Note, NoteVisibility } from '../../../types'
+import { useLocalStorage } from '../../../../hooks/useLocalStorage'
+import { Project, ProjectStatus, ProjectCategory, Milestone, Proposal, Note, NoteVisibility } from '../../../../types'
 import { usePathname, useRouter } from 'next/navigation'
-import { exportPDF, exportDOCX } from '../../../lib/exportProject'
+import { exportPDF, exportDOCX } from '../../../../lib/exportProject'
 
 const STATUS_COLORS: Record<ProjectStatus, string> = {
   'planning':    'rgba(180,160,100,0.15)',
@@ -1155,12 +1155,20 @@ function ImageEditor({
 
   // Apply main crop
   const applyCrop = () => {
-    if (!cropRect || !canvasRef.current) return
-    const canvas = canvasRef.current
+    if (!cropRect || !imgEl) return
+    const offscreen = document.createElement('canvas')
+    offscreen.width = canvasSize.w
+    offscreen.height = canvasSize.h
+    const ctx = offscreen.getContext('2d')!
+    ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%)`
+    ctx.translate(canvasSize.w / 2, canvasSize.h / 2)
+    ctx.rotate((rotation * Math.PI) / 180)
+    if (flipH) ctx.scale(-1, 1)
+    ctx.drawImage(imgEl, -canvasSize.w / 2, -canvasSize.h / 2, canvasSize.w, canvasSize.h)
     const tmp = document.createElement('canvas')
     tmp.width = Math.max(1, cropRect.w)
     tmp.height = Math.max(1, cropRect.h)
-    tmp.getContext('2d')!.drawImage(canvas, cropRect.x, cropRect.y, cropRect.w, cropRect.h, 0, 0, cropRect.w, cropRect.h)
+    tmp.getContext('2d')!.drawImage(offscreen, cropRect.x, cropRect.y, cropRect.w, cropRect.h, 0, 0, cropRect.w, cropRect.h)
     const newSrc = tmp.toDataURL('image/jpeg', 0.92)
     const img = new Image()
     img.onload = () => {
@@ -1175,18 +1183,23 @@ function ImageEditor({
   // Apply overlay crop
   const applyOverlayCrop = () => {
     if (!overlayCropRect || !overlayEl) return
-    // Compute overlay dimensions on canvas
     const ow = (canvasSize.w * overlayScale) / 100
     const oh = (overlayEl.naturalHeight / overlayEl.naturalWidth) * ow
-    // Convert canvas coords to overlay-local coords
-    const localX = (overlayCropRect.x - overlayPos.x) / ow * overlayEl.naturalWidth
-    const localY = (overlayCropRect.y - overlayPos.y) / oh * overlayEl.naturalHeight
-    const localW = overlayCropRect.w / ow * overlayEl.naturalWidth
-    const localH = overlayCropRect.h / oh * overlayEl.naturalHeight
+    const clampedX = Math.max(0, overlayCropRect.x - overlayPos.x)
+    const clampedY = Math.max(0, overlayCropRect.y - overlayPos.y)
+    const clampedW = Math.min(overlayCropRect.w, ow - clampedX)
+    const clampedH = Math.min(overlayCropRect.h, oh - clampedY)
+    const localX = (clampedX / ow) * overlayEl.naturalWidth
+    const localY = (clampedY / oh) * overlayEl.naturalHeight
+    const localW = (clampedW / ow) * overlayEl.naturalWidth
+    const localH = (clampedH / oh) * overlayEl.naturalHeight
     const tmp = document.createElement('canvas')
     tmp.width = Math.max(1, localW)
     tmp.height = Math.max(1, localH)
-    tmp.getContext('2d')!.drawImage(overlayEl, localX, localY, localW, localH, 0, 0, localW, localH)
+    const ctx = tmp.getContext('2d')!
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, tmp.width, tmp.height)
+    ctx.drawImage(overlayEl, localX, localY, localW, localH, 0, 0, localW, localH)
     const newSrc = tmp.toDataURL('image/png')
     const img = new Image()
     img.onload = () => { setOverlayEl(img); setOverlayImg(newSrc) }
