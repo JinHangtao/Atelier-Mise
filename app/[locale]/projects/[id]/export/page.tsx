@@ -990,7 +990,8 @@ export default function ExportPage() {
 }
 
 // ── Image Editor Component ────────────────────────────────────────────────────
-type OverlayLayer = {
+type ImageLayer = {
+  kind: 'image'
   id: string
   src: string
   el: HTMLImageElement
@@ -999,6 +1000,526 @@ type OverlayLayer = {
   visible: boolean
   followColor: boolean
   name: string
+}
+
+type TextLayer = {
+  kind: 'text'
+  id: string
+  text: string
+  fontSize: number
+  color: string
+  fontFamily: string        // CSS font-family string（预设或已加载的自定义）
+  fontLabel: string         // 显示名称
+  pos: { x: number; y: number }
+  visible: boolean
+  name: string
+}
+
+type OverlayLayer = ImageLayer | TextLayer
+
+const PRESET_FONTS: { label: string; family: string }[] = [
+  { label: 'Space Mono',   family: 'Space Mono, monospace' },
+  { label: 'Inter',        family: 'Inter, sans-serif' },
+  { label: 'DM Serif',     family: '"DM Serif Display", serif' },
+  { label: 'Playfair',     family: '"Playfair Display", serif' },
+  { label: 'Bebas Neue',   family: '"Bebas Neue", sans-serif' },
+  { label: 'Courier New',  family: '"Courier New", monospace' },
+]
+
+function measureTextLayer(ctx: CanvasRenderingContext2D, layer: TextLayer): { w: number; h: number } {
+  ctx.font = `${layer.fontSize}px ${layer.fontFamily}`
+  const lines = layer.text.split('\n')
+  const lineH = layer.fontSize * 1.3
+  const w = Math.max(...lines.map(l => ctx.measureText(l).width), 20)
+  return { w: w + 12, h: lines.length * lineH + 10 }
+}
+
+function ImageEditor({
+  src, isZh, onSave, onClose,
+}: { src: string; isZh: boolean; onSave: (dataUrl: string) => void; onClose: () => void }) {
+  const canvasRef = React.useRef<HTMLCanvasElement>(null)
+  const layerInputRef = React.useRef<HTMLInputElement>(null)
+  const fontInputRef = React.useRef<HTMLInputElement>(null)
+  const [customFonts, setCustomFonts] = React.useState<{ label: string; family: string }[]>([])
+
+  const [brightness, setBrightness] = React.useState(100)
+  const [contrast, setContrast] = React.useState(100)
+  const [saturate, setSaturate] = React.useState(100)
+  const [rotation, setRotation] = React.useState(0)
+  const [flipH, setFlipH] = React.useState(false)
+  const [cropMode, setCropMode] = React.useState(false)
+  const [cropStart, setCropStart] = React.useState<{x:number,y:number}|null>(null)
+  const [cropRect, setCropRect] = React.useState<{x:number,y:number,w:number,h:number}|null>(null)
+  const [isCropDragging, setIsCropDragging] = React.useState(false)
+  const [imgEl, setImgEl] = React.useState<HTMLImageElement|null>(null)
+  const [canvasSize, setCanvasSize] = React.useState({w:0,h:0})
+
+  // ── 多图层 ──
+  const [layers, setLayers] = React.useState<OverlayLayer[]>([])
+  const [activeLayerId, setActiveLayerId] = React.useState<string|null>(null)
+  const [isDraggingLayer, setIsDraggingLayer] = React.useState(false)
+  const layerDragRef = React.useRef<{startX:number,startY:number,origX:number,origY:number,id:string}|null>(null)
+
+  const updateLayer = (id: string, patch: Partial<OverlayLayer>) =>
+    setLayers(prev => prev.map(l => l.id === id ? { ...l, ...patch } as OverlayLayer : l))
+
+  // 主图加载
+  React.useEffect(() => {
+    const img = new Image()
+    img.onload = () => {
+      const maxW = Math.min(img.naturalWidth, 800)
+      const scale = maxW / img.naturalWidth
+      setCanvasSize({ w: maxW, h: img.naturalHeight * scale })
+      setImgEl(img)
+    }
+    img.src = src
+  }, [src])
+
+  // canvas 渲染
+  React.useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || !imgEl || canvasSize.w === 0) return
+    canvas.width = canvasSize.w
+    canvas.height = canvasSize.h
+    const ctx = canvas.getContext('2d')!
+
+    // 主图
+    ctx.save()
+    ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%)`
+    ctx.translate(canvasSize.w/2, canvasSize.h/2)
+    ctx.rotate((rotation * Math.PI) / 180)
+    if (flipH) ctx.scale(-1, 1)
+    ctx.drawImage(imgEl, -canvasSize.w/2, -canvasSize.h/2, canvasSize.w, canvasSize.h)
+    ctx.restore()
+
+    // 图层（从下到上渲染）
+    for (const layer of layers) {
+      if (!layer.visible) continue
+
+      if (layer.kind === 'image') {
+        const ow = (canvasSize.w * layer.scale) / 100
+        const oh = (layer.el.naturalHeight / layer.el.naturalWidth) * ow
+        ctx.save()
+        ctx.filter = layer.followColor ? `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%)` : 'none'
+        ctx.globalAlpha = 0.92
+        ctx.drawImage(layer.el, layer.pos.x, layer.pos.y, ow, oh)
+        ctx.restore()
+        ctx.globalAlpha = 1
+        if (layer.id === activeLayerId && !cropMode) {
+          ctx.save()
+          ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3])
+          ctx.strokeRect(layer.pos.x, layer.pos.y, ow, oh)
+          ctx.restore()
+        }
+      } else {
+        // 文字图层
+        const lines = layer.text.split('\n')
+        const lineH = layer.fontSize * 1.3
+        ctx.save()
+        ctx.font = `${layer.fontSize}px ${layer.fontFamily}`
+        ctx.fillStyle = layer.color
+        ctx.textBaseline = 'top'
+        lines.forEach((line, li) => {
+          ctx.fillText(line, layer.pos.x + 6, layer.pos.y + 5 + li * lineH)
+        })
+        ctx.restore()
+        // 选中框
+        if (layer.id === activeLayerId && !cropMode) {
+          const { w, h } = measureTextLayer(ctx, layer)
+          ctx.save()
+          ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3])
+          ctx.strokeRect(layer.pos.x, layer.pos.y, w, h)
+          ctx.restore()
+        }
+      }
+    }
+
+    // 裁剪遮罩
+    if (cropRect && cropMode) {
+      ctx.save()
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.setLineDash([6, 3])
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'
+      ctx.fillRect(0, 0, canvasSize.w, canvasSize.h)
+      ctx.clearRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h)
+      ctx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h)
+      ctx.restore()
+    }
+  }, [imgEl, brightness, contrast, saturate, rotation, flipH, layers, activeLayerId, cropRect, cropMode, canvasSize])
+
+  const getCanvasPos = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = canvasRef.current!.getBoundingClientRect()
+    return { x: (e.clientX - rect.left) * (canvasSize.w / rect.width), y: (e.clientY - rect.top) * (canvasSize.h / rect.height) }
+  }
+
+  const getLayerAtPos = (pos: {x:number,y:number}) => {
+    const ctx = canvasRef.current?.getContext('2d')
+    for (let i = layers.length - 1; i >= 0; i--) {
+      const l = layers[i]
+      if (!l.visible) continue
+      if (l.kind === 'image') {
+        const ow = (canvasSize.w * l.scale) / 100
+        const oh = (l.el.naturalHeight / l.el.naturalWidth) * ow
+        if (pos.x >= l.pos.x && pos.x <= l.pos.x + ow && pos.y >= l.pos.y && pos.y <= l.pos.y + oh) return l
+      } else if (ctx) {
+        const { w, h } = measureTextLayer(ctx, l)
+        if (pos.x >= l.pos.x && pos.x <= l.pos.x + w && pos.y >= l.pos.y && pos.y <= l.pos.y + h) return l
+      }
+    }
+    return null
+  }
+
+  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const pos = getCanvasPos(e)
+    if (cropMode) { setCropStart(pos); setCropRect(null); setIsCropDragging(true); return }
+    const hit = getLayerAtPos(pos)
+    if (hit) {
+      setActiveLayerId(hit.id)
+      setIsDraggingLayer(true)
+      layerDragRef.current = { startX: e.clientX, startY: e.clientY, origX: hit.pos.x, origY: hit.pos.y, id: hit.id }
+    } else {
+      setActiveLayerId(null)
+    }
+  }
+
+  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const pos = getCanvasPos(e)
+    if (isCropDragging && cropStart && cropMode) {
+      setCropRect({ x: Math.min(cropStart.x, pos.x), y: Math.min(cropStart.y, pos.y), w: Math.abs(pos.x - cropStart.x), h: Math.abs(pos.y - cropStart.y) })
+      return
+    }
+    if (isDraggingLayer && layerDragRef.current) {
+      const rect = canvasRef.current!.getBoundingClientRect()
+      const scaleX = canvasSize.w / rect.width; const scaleY = canvasSize.h / rect.height
+      const dx = (e.clientX - layerDragRef.current.startX) * scaleX
+      const dy = (e.clientY - layerDragRef.current.startY) * scaleY
+      updateLayer(layerDragRef.current.id, { pos: { x: layerDragRef.current.origX + dx, y: layerDragRef.current.origY + dy } })
+    }
+  }
+
+  const handleCanvasMouseUp = () => { setIsCropDragging(false); setIsDraggingLayer(false); layerDragRef.current = null }
+
+  const applyCrop = () => {
+    if (!cropRect || !imgEl) return
+    const offscreen = document.createElement('canvas'); offscreen.width = canvasSize.w; offscreen.height = canvasSize.h
+    const ctx = offscreen.getContext('2d')!
+    ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%)`
+    ctx.translate(canvasSize.w/2, canvasSize.h/2); ctx.rotate((rotation * Math.PI) / 180)
+    if (flipH) ctx.scale(-1, 1)
+    ctx.drawImage(imgEl, -canvasSize.w/2, -canvasSize.h/2, canvasSize.w, canvasSize.h)
+    const tmp = document.createElement('canvas'); tmp.width = Math.max(1, cropRect.w); tmp.height = Math.max(1, cropRect.h)
+    tmp.getContext('2d')!.drawImage(offscreen, cropRect.x, cropRect.y, cropRect.w, cropRect.h, 0, 0, cropRect.w, cropRect.h)
+    const newSrc = tmp.toDataURL('image/jpeg', 0.92)
+    const img = new Image(); img.onload = () => { setImgEl(img); setCanvasSize({ w: cropRect.w, h: cropRect.h }); setCropRect(null); setCropMode(false) }; img.src = newSrc
+  }
+
+  const handleSave = () => { if (!canvasRef.current) return; onSave(canvasRef.current.toDataURL('image/jpeg', 0.92)) }
+
+  const handleLayerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    files.forEach((file, fi) => {
+      const reader = new FileReader()
+      reader.onload = ev => {
+        const dataSrc = ev.target?.result as string
+        const img = new Image()
+        img.onload = () => {
+          const newLayer: ImageLayer = {
+            kind: 'image',
+            id: Date.now().toString(36) + fi,
+            src: dataSrc, el: img,
+            pos: { x: 40 + fi * 20, y: 40 + fi * 20 },
+            scale: 50, visible: true, followColor: false,
+            name: file.name.replace(/\.[^.]+$/, '').slice(0, 18),
+          }
+          setLayers(prev => [...prev, newLayer])
+          setActiveLayerId(newLayer.id)
+        }
+        img.src = dataSrc
+      }
+      reader.readAsDataURL(file)
+    })
+    e.target.value = ''
+  }
+
+  const handleFontUpload = (e: React.ChangeEvent<HTMLInputElement>, targetLayerId: string) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => {
+      const ab = ev.target?.result as ArrayBuffer
+      const fontName = `custom-${Date.now()}`
+      const face = new FontFace(fontName, ab)
+      face.load().then(loaded => {
+        document.fonts.add(loaded)
+        const entry = { label: file.name.replace(/\.[^.]+$/, '').slice(0, 20), family: fontName }
+        setCustomFonts(prev => [...prev, entry])
+        updateLayer(targetLayerId, { fontFamily: fontName, fontLabel: entry.label } as Partial<TextLayer>)
+      }).catch(console.error)
+    }
+    reader.readAsArrayBuffer(file)
+    e.target.value = ''
+  }
+
+  const addTextLayer = () => {
+    const newLayer: TextLayer = {
+      kind: 'text',
+      id: Date.now().toString(36) + 't',
+      text: isZh ? '输入文字' : 'Your text',
+      fontSize: 48,
+      color: '#ffffff',
+      fontFamily: PRESET_FONTS[0].family,
+      fontLabel: PRESET_FONTS[0].label,
+      pos: { x: 40, y: 40 },
+      visible: true,
+      name: isZh ? '文字图层' : 'Text',
+    }
+    setLayers(prev => [...prev, newLayer])
+    setActiveLayerId(newLayer.id)
+  }
+
+  const getCursor = () => {
+    if (cropMode) return 'crosshair'
+    if (isDraggingLayer) return 'grabbing'
+    return 'default'
+  }
+
+  const allFonts = [...PRESET_FONTS, ...customFonts]
+  const sliders = [
+    { label: isZh ? '亮度' : 'Brightness', value: brightness, set: setBrightness, min: 20, max: 200 },
+    { label: isZh ? '对比度' : 'Contrast', value: contrast, set: setContrast, min: 20, max: 200 },
+    { label: isZh ? '饱和度' : 'Saturate', value: saturate, set: setSaturate, min: 0, max: 200 },
+  ]
+  const monoSm: React.CSSProperties = { fontFamily: 'Space Mono, monospace', fontSize: '0.65rem', letterSpacing: '0.2em', color: '#666', textTransform: 'uppercase' as const, marginBottom: '14px' }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(20,20,20,0.96)', display: 'flex', flexDirection: 'column' }}>
+      {/* top bar */}
+      <div style={{ height: '56px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', flexShrink: 0 }}>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.82rem', letterSpacing: '0.1em' }}>{isZh ? '← 取消' : '← Cancel'}</button>
+        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.78rem', letterSpacing: '0.15em', color: '#aaa', textTransform: 'uppercase' }}>{isZh ? '图片编辑器' : 'Image Editor'}</span>
+        <button onClick={handleSave} style={{ background: '#f7f7f5', color: '#1a1a1a', border: 'none', padding: '10px 24px', borderRadius: '10px', fontFamily: 'Space Mono, monospace', fontSize: '0.82rem', letterSpacing: '0.1em', cursor: 'pointer' }}>{isZh ? '保存' : 'Save'}</button>
+      </div>
+
+      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 300px', overflow: 'hidden' }}>
+        {/* canvas */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '32px', overflow: 'auto' }}>
+          <canvas ref={canvasRef} style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: '10px', cursor: getCursor(), boxShadow: '0 8px 40px rgba(0,0,0,0.5)' }}
+            onMouseDown={handleCanvasMouseDown} onMouseMove={handleCanvasMouseMove}
+            onMouseUp={handleCanvasMouseUp} onMouseLeave={handleCanvasMouseUp} />
+        </div>
+
+        {/* right panel */}
+        <div style={{ borderLeft: '1px solid rgba(255,255,255,0.08)', overflowY: 'auto', padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+
+          {/* 调色 */}
+          <div>
+            <p style={monoSm}>{isZh ? '调色' : 'Adjustments'}</p>
+            {sliders.map(s => (
+              <div key={s.label} style={{ marginBottom: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#888' }}>{s.label}</span>
+                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#555' }}>{s.value}%</span>
+                </div>
+                <input type="range" min={s.min} max={s.max} value={s.value} onChange={e => s.set(Number(e.target.value))} style={{ width: '100%', accentColor: '#f7f7f5' }} />
+              </div>
+            ))}
+            <button onClick={() => { setBrightness(100); setContrast(100); setSaturate(100) }} style={{ fontSize: '0.68rem', color: '#555', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em' }}>{isZh ? '重置' : 'Reset'}</button>
+          </div>
+
+          {/* 旋转/翻转 */}
+          <div>
+            <p style={monoSm}>{isZh ? '旋转 / 翻转' : 'Rotate / Flip'}</p>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {[90, 180, 270].map(deg => (
+                <button key={deg} onClick={() => setRotation(r => (r + deg) % 360)}
+                  style={{ padding: '8px 12px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', background: 'transparent', color: '#aaa', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>+{deg}°</button>
+              ))}
+              <button onClick={() => setFlipH(f => !f)}
+                style={{ padding: '8px 12px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', background: flipH ? 'rgba(255,255,255,0.1)' : 'transparent', color: '#aaa', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>⇄ {isZh ? '翻转' : 'Flip'}</button>
+            </div>
+          </div>
+
+          {/* 裁剪 */}
+          <div>
+            <p style={monoSm}>{isZh ? '裁剪主图' : 'Crop Main'}</p>
+            {!cropMode
+              ? <button onClick={() => { setCropMode(true); setCropRect(null) }} style={{ width: '100%', padding: '10px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '9px', background: 'transparent', color: '#aaa', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.75rem', letterSpacing: '0.08em' }}>{isZh ? '✂ 开始裁剪' : '✂ Start Crop'}</button>
+              : <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#666' }}>{isZh ? '在画布上拖动选区' : 'Drag on canvas to select'}</p>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button onClick={applyCrop} disabled={!cropRect} style={{ flex: 1, padding: '9px', background: cropRect ? '#f7f7f5' : 'rgba(255,255,255,0.1)', color: cropRect ? '#1a1a1a' : '#555', border: 'none', borderRadius: '8px', cursor: cropRect ? 'pointer' : 'not-allowed', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>{isZh ? '确认' : 'Apply'}</button>
+                    <button onClick={() => { setCropMode(false); setCropRect(null) }} style={{ flex: 1, padding: '9px', background: 'transparent', color: '#666', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>{isZh ? '取消' : 'Cancel'}</button>
+                  </div>
+                </div>
+            }
+          </div>
+
+          {/* ── 图层 ── */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <p style={{ ...monoSm, marginBottom: 0 }}>{isZh ? '图层' : 'Layers'} {layers.length > 0 && <span style={{ color: '#444' }}>({layers.length})</span>}</p>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button onClick={addTextLayer}
+                  style={{ fontSize: '0.65rem', color: '#aaa', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', fontFamily: 'Space Mono, monospace', transition: 'all 0.12s' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#ddd' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = '#aaa' }}>
+                  T+
+                </button>
+                <button onClick={() => layerInputRef.current?.click()}
+                  style={{ fontSize: '0.65rem', color: '#aaa', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', padding: '4px 8px', cursor: 'pointer', fontFamily: 'Space Mono, monospace', transition: 'all 0.12s' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#ddd' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = '#aaa' }}>
+                  IMG+
+                </button>
+              </div>
+            </div>
+            <input ref={layerInputRef} type="file" accept="image/*" multiple onChange={handleLayerUpload} style={{ display: 'none' }} />
+
+            {layers.length === 0 && (
+              <div style={{ border: '1.5px dashed rgba(255,255,255,0.08)', borderRadius: '8px', padding: '16px', display: 'flex', gap: '8px' }}>
+                <button onClick={addTextLayer} style={{ flex: 1, padding: '10px 6px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '7px', color: '#555', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.65rem', letterSpacing: '0.06em', transition: 'all 0.12s' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.25)'; e.currentTarget.style.color = '#aaa' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#555' }}>
+                  T {isZh ? '文字' : 'Text'}
+                </button>
+                <button onClick={() => layerInputRef.current?.click()} style={{ flex: 1, padding: '10px 6px', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '7px', color: '#555', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.65rem', letterSpacing: '0.06em', transition: 'all 0.12s' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.25)'; e.currentTarget.style.color = '#aaa' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#555' }}>
+                  ⊞ {isZh ? '图片' : 'Image'}
+                </button>
+              </div>
+            )}
+
+            {/* 图层列表 */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: layers.length > 0 ? '10px' : '0' }}>
+              {[...layers].reverse().map((layer, ri) => {
+                const isActive = layer.id === activeLayerId
+                const isText = layer.kind === 'text'
+                return (
+                  <div key={layer.id}
+                    onClick={() => setActiveLayerId(layer.id)}
+                    style={{ border: `1px solid ${isActive ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.06)'}`, borderRadius: '8px', background: isActive ? 'rgba(255,255,255,0.05)' : 'transparent', overflow: 'hidden', cursor: 'pointer', transition: 'all 0.12s' }}>
+
+                    {/* 图层头部 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px' }}>
+                      {/* 缩略图 / 文字标识 */}
+                      {isText
+                        ? <div style={{ width: '32px', height: '32px', flexShrink: 0, borderRadius: '4px', background: 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: layer.visible ? 1 : 0.3 }}>
+                            <span style={{ fontSize: '14px', color: (layer as TextLayer).color, fontFamily: (layer as TextLayer).fontFamily, lineHeight: 1 }}>T</span>
+                          </div>
+                        : <img src={(layer as ImageLayer).src} alt="" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px', flexShrink: 0, opacity: layer.visible ? 1 : 0.3 }} />
+                      }
+                      {/* 名称 */}
+                      <span style={{ flex: 1, fontFamily: 'Space Mono, monospace', fontSize: '0.65rem', color: layer.visible ? '#ccc' : '#555', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '0.04em' }}>
+                        {layer.name || `Layer ${layers.length - ri}`}
+                      </span>
+                      {/* 眼睛 */}
+                      <button onClick={e => { e.stopPropagation(); updateLayer(layer.id, { visible: !layer.visible }) }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: layer.visible ? '#888' : '#333', fontSize: '0.85rem', padding: '2px 4px', flexShrink: 0, lineHeight: 1 }}>
+                        {layer.visible ? '👁' : '🙈'}
+                      </button>
+                      {/* 删除 */}
+                      <button onClick={e => { e.stopPropagation(); setLayers(prev => prev.filter(l => l.id !== layer.id)); if (activeLayerId === layer.id) setActiveLayerId(null) }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(191,74,74,0.5)', fontSize: '0.8rem', padding: '2px 4px', flexShrink: 0, lineHeight: 1, transition: 'color 0.12s' }}
+                        onMouseEnter={e => (e.currentTarget.style.color = 'rgba(191,74,74,1)')}
+                        onMouseLeave={e => (e.currentTarget.style.color = 'rgba(191,74,74,0.5)')}>✕</button>
+                    </div>
+
+                    {/* 选中展开 */}
+                    {isActive && (
+                      <div style={{ padding: '10px 10px 12px', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', gap: '10px' }}
+                        onClick={e => e.stopPropagation()}>
+
+                        {isText ? (
+                          // ── 文字图层控制 ──
+                          <>
+                            {/* 文字内容 */}
+                            <textarea
+                              value={(layer as TextLayer).text}
+                              onChange={e => updateLayer(layer.id, { text: e.target.value } as Partial<TextLayer>)}
+                              rows={3}
+                              style={{ width: '100%', padding: '7px 10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '7px', color: '#ddd', fontFamily: (layer as TextLayer).fontFamily, fontSize: '0.88rem', resize: 'vertical', outline: 'none', boxSizing: 'border-box' }}
+                            />
+                            {/* 字号 */}
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                                <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.62rem', color: '#666' }}>{isZh ? '字号' : 'Size'}</span>
+                                <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.62rem', color: '#444' }}>{(layer as TextLayer).fontSize}px</span>
+                              </div>
+                              <input type="range" min={10} max={200} value={(layer as TextLayer).fontSize}
+                                onChange={e => updateLayer(layer.id, { fontSize: Number(e.target.value) } as Partial<TextLayer>)}
+                                style={{ width: '100%', accentColor: '#f7f7f5' }} />
+                            </div>
+                            {/* 颜色 */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.62rem', color: '#666', flex: 1 }}>{isZh ? '颜色' : 'Color'}</span>
+                              <input type="color" value={(layer as TextLayer).color}
+                                onChange={e => updateLayer(layer.id, { color: e.target.value } as Partial<TextLayer>)}
+                                style={{ width: '32px', height: '24px', border: 'none', borderRadius: '4px', cursor: 'pointer', background: 'none', padding: 0 }} />
+                              <input type="text" value={(layer as TextLayer).color}
+                                onChange={e => { if (/^#[0-9a-fA-F]{0,6}$/.test(e.target.value)) updateLayer(layer.id, { color: e.target.value } as Partial<TextLayer>) }}
+                                style={{ width: '72px', padding: '3px 7px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '5px', color: '#aaa', fontFamily: 'Space Mono, monospace', fontSize: '0.65rem', outline: 'none' }} />
+                            </div>
+                            {/* 字体 */}
+                            <div>
+                              <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.62rem', color: '#666', display: 'block', marginBottom: '7px' }}>{isZh ? '字体' : 'Font'}</span>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                                {allFonts.map(f => (
+                                  <button key={f.family} onClick={() => updateLayer(layer.id, { fontFamily: f.family, fontLabel: f.label } as Partial<TextLayer>)}
+                                    style={{ padding: '4px 9px', borderRadius: '5px', border: `1px solid ${(layer as TextLayer).fontFamily === f.family ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.1)'}`, background: (layer as TextLayer).fontFamily === f.family ? 'rgba(255,255,255,0.12)' : 'transparent', color: (layer as TextLayer).fontFamily === f.family ? '#eee' : '#666', cursor: 'pointer', fontFamily: f.family, fontSize: '0.72rem', transition: 'all 0.12s', whiteSpace: 'nowrap' }}>
+                                    {f.label}
+                                  </button>
+                                ))}
+                                {/* 上传本地字体 */}
+                                <button onClick={() => fontInputRef.current?.click()}
+                                  style={{ padding: '4px 9px', borderRadius: '5px', border: '1px dashed rgba(255,255,255,0.15)', background: 'transparent', color: '#555', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.65rem', transition: 'all 0.12s' }}
+                                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.35)'; e.currentTarget.style.color = '#aaa' }}
+                                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)'; e.currentTarget.style.color = '#555' }}>
+                                  + {isZh ? '本地字体' : 'Upload'}
+                                </button>
+                                <input ref={fontInputRef} type="file" accept=".ttf,.otf,.woff,.woff2" style={{ display: 'none' }}
+                                  onChange={e => handleFontUpload(e, layer.id)} />
+                              </div>
+                            </div>
+                            <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.6rem', color: '#444', margin: 0 }}>
+                              {isZh ? '↖ 在画布上拖动此图层' : '↖ Drag this layer on canvas'}
+                            </p>
+                          </>
+                        ) : (
+                          // ── 图片图层控制 ──
+                          <>
+                            <div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                                <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.62rem', color: '#666' }}>{isZh ? '大小' : 'Size'}</span>
+                                <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.62rem', color: '#444' }}>{(layer as ImageLayer).scale}%</span>
+                              </div>
+                              <input type="range" min={3} max={150} value={(layer as ImageLayer).scale}
+                                onChange={e => updateLayer(layer.id, { scale: Number(e.target.value) } as Partial<ImageLayer>)}
+                                style={{ width: '100%', accentColor: '#f7f7f5' }} />
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.62rem', color: '#666' }}>{isZh ? '跟随调色' : 'Follow color'}</span>
+                              <button onClick={() => updateLayer(layer.id, { followColor: !(layer as ImageLayer).followColor } as Partial<ImageLayer>)}
+                                style={{ padding: '3px 10px', borderRadius: '20px', border: 'none', cursor: 'pointer', background: (layer as ImageLayer).followColor ? '#4aab6f' : 'rgba(255,255,255,0.08)', color: (layer as ImageLayer).followColor ? '#fff' : '#555', fontFamily: 'Space Mono, monospace', fontSize: '0.62rem', transition: 'all 0.15s' }}>
+                                {(layer as ImageLayer).followColor ? 'YES' : 'NO'}
+                              </button>
+                            </div>
+                            <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.6rem', color: '#444', margin: 0 }}>
+                              {isZh ? '↖ 在画布上拖动此图层' : '↖ Drag this layer on canvas'}
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function ImageEditor({
