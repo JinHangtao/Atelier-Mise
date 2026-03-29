@@ -42,6 +42,29 @@ function generateId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2)
 }
 
+// ── Reusable panel add-button ─────────────────────────────────────────────
+function PanelButton({ onClick, label, icon }: { onClick: () => void; label: string; icon?: string }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        width: '100%', padding: '10px 13px', marginBottom: '6px',
+        border: '1px solid rgba(26,26,26,0.09)', borderRadius: '9px',
+        background: 'transparent', cursor: 'pointer',
+        fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.82rem',
+        color: '#3a3a3a', textAlign: 'left', letterSpacing: '0.02em',
+        display: 'flex', alignItems: 'center', gap: '9px',
+        transition: 'background 0.12s, border-color 0.12s',
+      }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.03)'; e.currentTarget.style.borderColor = 'rgba(26,26,26,0.18)' }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'rgba(26,26,26,0.09)' }}
+    >
+      {icon && <span style={{ fontSize: '0.75rem', color: '#bbb', minWidth: '14px' }}>{icon}</span>}
+      <span>+ {label}</span>
+    </button>
+  )
+}
+
 // ── Draft Banner: shown on mount when saved data is restored ──────────────
 function DraftBanner({ blocks, isZh, onClear }: { blocks: Block[]; isZh: boolean; onClear: () => void }) {
   const [visible, setVisible] = useState(true)
@@ -490,7 +513,7 @@ ${blocksHTML}
               style={{ background: '#fff', border: `1px solid ${editingBlockId === block.id ? '#1a1a1a' : 'rgba(26,26,26,0.08)'}`, borderRadius: '14px', padding: '20px 24px', marginBottom: '12px', cursor: editingBlockId === block.id ? 'default' : 'grab', position: 'relative' }}
             >
               {/* 块类型标签 */}
-              <span style={{ fontSize: '0.68rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: '#c8c8c4', display: 'block', marginBottom: '10px' }}>
+              <span style={{ fontSize: '0.62rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#d0d0cc', display: 'block', marginBottom: '10px', fontFamily: 'Inter, DM Sans, sans-serif' }}>
                 {block.type === 'image-row' ? (isZh ? '图片行' : 'Image Row') :
                  block.type === 'school-profile' ? (isZh ? '院校' : 'School') :
                  block.type === 'milestone' ? (isZh ? '进度' : 'Milestone') :
@@ -587,14 +610,14 @@ ${blocksHTML}
                 <div>
                   {block.type === 'title' && (
                     <div>
-                      <p style={{ fontSize: '1.2rem', fontWeight: 700, color: '#1a1a1a' }}>{project.title}</p>
-                      {project.description && <p style={{ fontSize: '0.9rem', color: '#888', marginTop: '6px' }}>{project.description.slice(0, 100)}…</p>}
+                      <p style={{ fontSize: '1.15rem', fontWeight: 600, color: '#1a1a1a', fontFamily: 'Inter, DM Sans, "PingFang SC", sans-serif', letterSpacing: '-0.01em' }}>{project.title}</p>
+                      {project.description && <p style={{ fontSize: '0.88rem', color: '#999', marginTop: '5px', fontFamily: 'Inter, DM Sans, sans-serif', lineHeight: 1.6 }}>{project.description.slice(0, 120)}…</p>}
                     </div>
                   )}
                   {block.type === 'image' && (
                     <div>
                       <img src={block.content} alt="" style={{ width: '100%', maxHeight: '200px', objectFit: 'cover', borderRadius: '8px' }} />
-                      {block.caption && <p style={{ fontSize: '0.85rem', color: '#aaa', marginTop: '8px', fontStyle: 'italic' }}>{block.caption}</p>}
+                      {block.caption && <p style={{ fontSize: '0.78rem', color: '#bbb', marginTop: '7px', fontStyle: 'italic', fontFamily: 'Inter, DM Sans, sans-serif' }}>{block.caption}</p>}
                     </div>
                   )}
                   {block.type === 'image-row' && (
@@ -602,51 +625,52 @@ ${blocksHTML}
                       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${(block.images || []).length}, 1fr)`, gap: '6px' }}>
                         {(block.images || []).map((url, idx) => (
                           <div key={idx}>
-                            <img src={url} alt="" style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '8px', display: 'block' }} />
+                            <img src={url} alt="" style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '7px', display: 'block' }} />
                             {(block.imageCaptions || [])[idx] && (
-                              <p style={{ fontSize: '0.78rem', color: '#888', marginTop: '5px', textAlign: 'center', fontStyle: 'italic', lineHeight: 1.4 }}>
+                              <p style={{ fontSize: '0.72rem', color: '#999', marginTop: '4px', textAlign: 'center', fontStyle: 'italic', lineHeight: 1.4, fontFamily: 'Inter, DM Sans, sans-serif' }}>
                                 {(block.imageCaptions || [])[idx]}
                               </p>
                             )}
                           </div>
                         ))}
                       </div>
-                      {block.caption && <p style={{ fontSize: '0.85rem', color: '#aaa', marginTop: '8px', fontStyle: 'italic' }}>{block.caption}</p>}
+                      {block.caption && <p style={{ fontSize: '0.78rem', color: '#bbb', marginTop: '7px', fontStyle: 'italic', fontFamily: 'Inter, DM Sans, sans-serif' }}>{block.caption}</p>}
                     </div>
                   )}
                   {block.type === 'note' && (
                     <div>
-                      <p style={{ fontSize: '0.95rem', color: '#555', lineHeight: 1.7 }}>{block.content}</p>
-                      {block.caption && <p style={{ fontSize: '0.82rem', color: '#aaa', marginTop: '6px', fontStyle: 'italic' }}>{block.caption}</p>}
+                      <p style={{ fontSize: '0.92rem', color: '#444', lineHeight: 1.72, fontFamily: 'Inter, DM Sans, "PingFang SC", sans-serif' }}>{block.content}</p>
+                      {block.caption && <p style={{ fontSize: '0.78rem', color: '#bbb', marginTop: '6px', fontStyle: 'italic', fontFamily: 'Inter, DM Sans, sans-serif' }}>{block.caption}</p>}
                     </div>
                   )}
                   {block.type === 'milestone' && (
                     <div>
-                      <p style={{ fontSize: '0.8rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: '#888', marginBottom: '10px' }}>{isZh ? '进度节点' : 'Milestones'}</p>
-                      {project.milestones.slice(0, 3).map(m => (
-                        <p key={m.id} style={{ fontSize: '0.9rem', color: m.status === 'done' ? '#aaa' : '#1a1a1a', marginBottom: '4px' }}>
-                          {m.status === 'done' ? '✓' : '○'} {m.title}
+                      <p style={{ fontSize: '0.62rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#c0c0bc', marginBottom: '10px', fontFamily: 'Inter, DM Sans, sans-serif' }}>{isZh ? '进度节点' : 'Milestones'}</p>
+                      {project.milestones.slice(0, 4).map(m => (
+                        <p key={m.id} style={{ fontSize: '0.88rem', color: m.status === 'done' ? '#c0c0bc' : '#2a2a2a', marginBottom: '5px', fontFamily: 'Inter, DM Sans, "PingFang SC", sans-serif', display: 'flex', alignItems: 'center', gap: '7px' }}>
+                          <span style={{ color: m.status === 'done' ? '#4aab6f' : '#ccc', fontSize: '0.75rem' }}>{m.status === 'done' ? '✓' : '○'}</span>
+                          <span style={{ textDecoration: m.status === 'done' ? 'line-through' : 'none' }}>{m.title}</span>
                         </p>
                       ))}
-                      {project.milestones.length > 3 && <p style={{ fontSize: '0.8rem', color: '#c8c8c4', marginTop: '4px' }}>+{project.milestones.length - 3} {isZh ? '个节点' : 'more'}</p>}
+                      {project.milestones.length > 4 && <p style={{ fontSize: '0.75rem', color: '#c8c8c4', marginTop: '4px', fontFamily: 'Inter, DM Sans, sans-serif' }}>+{project.milestones.length - 4} {isZh ? '个节点' : 'more'}</p>}
                     </div>
                   )}
                   {block.type === 'custom' && (
-                    <p style={{ fontSize: '0.95rem', color: '#555', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{block.content}</p>
+                    <p style={{ fontSize: '0.92rem', color: '#444', lineHeight: 1.72, whiteSpace: 'pre-wrap', fontFamily: 'Inter, DM Sans, "PingFang SC", sans-serif' }}>{block.content}</p>
                   )}
                   {block.type === 'school-profile' && (() => {
                     const school = schools.find(s => s.id === block.content)
-                    if (!school) return <p style={{ fontSize: '0.85rem', color: '#aaa' }}>School not found</p>
+                    if (!school) return <p style={{ fontSize: '0.82rem', color: '#bbb', fontFamily: 'Inter, DM Sans, sans-serif' }}>School not found</p>
                     const displayName = isZh ? (school.nameZh || school.name) : school.name
                     const displayDept = isZh ? (school.departmentZh || school.department) : school.department
                     return (
                       <div>
-                        <p style={{ fontSize: '0.7rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#c4a044', marginBottom: '6px' }}>{school.country}</p>
-                        <p style={{ fontSize: '1.05rem', fontWeight: 700, color: '#1a1a1a', marginBottom: '3px' }}>{displayName}</p>
-                        {displayDept && <p style={{ fontSize: '0.88rem', color: '#888' }}>{displayDept}</p>}
-                        {school.deadline && <p style={{ fontSize: '0.78rem', color: '#b8b8b4', marginTop: '6px' }}>⏱ {school.deadline}</p>}
+                        <p style={{ fontSize: '0.62rem', letterSpacing: '0.14em', textTransform: 'uppercase', color: '#c4a044', marginBottom: '5px', fontFamily: 'Inter, DM Sans, sans-serif' }}>{school.country}</p>
+                        <p style={{ fontSize: '1rem', fontWeight: 600, color: '#1a1a1a', marginBottom: '3px', fontFamily: 'Inter, DM Sans, "PingFang SC", sans-serif', letterSpacing: '-0.01em' }}>{displayName}</p>
+                        {displayDept && <p style={{ fontSize: '0.84rem', color: '#999', fontFamily: 'Inter, DM Sans, sans-serif', lineHeight: 1.5 }}>{displayDept}</p>}
+                        {school.deadline && <p style={{ fontSize: '0.75rem', color: '#c0c0bc', marginTop: '5px', fontFamily: 'Inter, DM Sans, sans-serif' }}>⏱ {school.deadline}</p>}
                         {school.aiStatement && (
-                          <p style={{ fontSize: '0.78rem', color: '#4aab6f', marginTop: '6px' }}>✓ {isZh ? '含申请文书' : 'includes statement'}</p>
+                          <p style={{ fontSize: '0.75rem', color: '#4aab6f', marginTop: '5px', fontFamily: 'Inter, DM Sans, sans-serif' }}>✓ {isZh ? '含申请文书' : 'has statement'}</p>
                         )}
                       </div>
                     )
@@ -679,120 +703,116 @@ ${blocksHTML}
         </div>
 
         {/* 右侧面板 */}
-        <div style={{ padding: '40px 28px', background: 'rgba(255,255,255,0.6)', overflowY: 'auto' }}>
-          <p style={{ fontSize: '0.75rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#c8c8c4', marginBottom: '24px' }}>
-            {isZh ? '内容块' : 'Content Blocks'}
+        <div
+          style={{ padding: '32px 24px', background: '#fff', overflowY: 'auto', borderLeft: '1px solid rgba(26,26,26,0.07)' }}
+          onDragOver={e => e.stopPropagation()}
+          onDrop={e => e.stopPropagation()}
+        >
+          <p style={{ fontSize: '0.65rem', letterSpacing: '0.22em', textTransform: 'uppercase', color: '#c0c0bc', marginBottom: '28px', fontFamily: 'Inter, DM Sans, sans-serif' }}>
+            {isZh ? '内容块' : 'Blocks'}
           </p>
 
-          {/* 项目信息 */}
-          <div style={{ marginBottom: '28px' }}>
-            <p style={{ fontSize: '0.75rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: '#b8b8b4', marginBottom: '10px' }}>{isZh ? '项目信息' : 'Project Info'}</p>
-            <button onClick={() => addBlock('title', '')} style={{ width: '100%', padding: '12px', border: '1px solid rgba(26,26,26,0.1)', borderRadius: '10px', background: 'transparent', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.82rem', color: '#1a1a1a', textAlign: 'left', letterSpacing: '0.05em' }}>
-              + {isZh ? '标题 & 描述' : 'Title & Description'}
+          {/* ── 自定义文本 (置顶) ── */}
+          <div style={{ marginBottom: '32px' }}>
+            <p style={{ fontSize: '0.65rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b0b0ac', marginBottom: '10px', fontFamily: 'Inter, DM Sans, sans-serif' }}>
+              {isZh ? '自定义文本' : 'Text'}
+            </p>
+            <textarea
+              value={customText}
+              onChange={e => setCustomText(e.target.value)}
+              onKeyDown={e => {
+                // Cmd/Ctrl+Enter to add
+                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                  e.preventDefault()
+                  if (customText.trim()) { addBlock('custom', customText); setCustomText('') }
+                }
+                // stop undo shortcut firing while typing
+                if ((e.metaKey || e.ctrlKey) && e.key === 'z') e.stopPropagation()
+              }}
+              rows={4}
+              placeholder={isZh ? '输入任意文字… (⌘↵ 添加)' : 'Write anything… (⌘↵ to add)'}
+              style={{
+                width: '100%', padding: '12px 14px',
+                border: '1px solid rgba(26,26,26,0.1)', borderRadius: '10px',
+                background: '#fafaf8',
+                fontFamily: 'Inter, DM Sans, "PingFang SC", sans-serif',
+                fontSize: '0.9rem', lineHeight: '1.65',
+                color: '#2a2a2a', outline: 'none', resize: 'vertical',
+                marginBottom: '8px', boxSizing: 'border-box',
+                WebkitUserSelect: 'text', userSelect: 'text',
+              }}
+            />
+            <button
+              onClick={() => { if (customText.trim()) { addBlock('custom', customText); setCustomText('') } }}
+              style={{
+                width: '100%', padding: '10px',
+                background: customText.trim() ? '#1a1a1a' : 'rgba(26,26,26,0.12)',
+                color: customText.trim() ? '#f7f7f5' : '#aaa',
+                border: 'none', borderRadius: '8px',
+                fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.8rem',
+                letterSpacing: '0.06em', cursor: customText.trim() ? 'pointer' : 'default',
+                transition: 'background 0.15s, color 0.15s',
+              }}
+            >
+              + {isZh ? '添加到画布' : 'Add to canvas'}
             </button>
           </div>
 
-          {/* 进度 */}
+          <div style={{ height: '1px', background: 'rgba(26,26,26,0.06)', marginBottom: '28px' }} />
+
+          {/* ── 项目信息 ── */}
           <div style={{ marginBottom: '28px' }}>
-            <p style={{ fontSize: '0.75rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: '#b8b8b4', marginBottom: '10px' }}>{isZh ? '进度' : 'Progress'}</p>
-            <button onClick={() => addBlock('milestone', '')} style={{ width: '100%', padding: '12px', border: '1px solid rgba(26,26,26,0.1)', borderRadius: '10px', background: 'transparent', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.82rem', color: '#1a1a1a', textAlign: 'left', letterSpacing: '0.05em' }}>
-              + {isZh ? '进度节点' : 'Milestones'}
-            </button>
+            <p style={{ fontSize: '0.65rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b0b0ac', marginBottom: '10px', fontFamily: 'Inter, DM Sans, sans-serif' }}>
+              {isZh ? '项目信息' : 'Project'}
+            </p>
+            <PanelButton onClick={() => addBlock('title', '')} label={isZh ? '标题 & 描述' : 'Title & Description'} icon="T" />
+            <PanelButton onClick={() => addBlock('milestone', '')} label={isZh ? '进度节点' : 'Milestones'} icon="◎" />
           </div>
 
-          {/* 目标院校 — 折叠 */}
-          {schools.length > 0 && (
-            <div style={{ marginBottom: '28px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <p style={{ fontSize: '0.75rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: '#b8b8b4' }}>
-                  {isZh ? '目标院校' : 'Target Schools'} <span style={{ color: '#c8c8c4' }}>({schools.length})</span>
-                </p>
-                {schools.length > 3 && (
-                  <button onClick={() => setSchoolsExpanded(e => !e)} style={{ fontSize: '0.68rem', color: '#888', background: 'none', border: 'none', cursor: 'pointer', letterSpacing: '0.1em' }}>
-                    {schoolsExpanded ? (isZh ? '收起 ↑' : 'Less ↑') : (isZh ? '展开全部 ↓' : 'Show all ↓')}
-                  </button>
-                )}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {visibleSchools.map(s => (
-                  <div key={s.id}
-                    className="school-item"
-                    onClick={() => addBlock('school-profile', s.id)}
-                    style={{ padding: '11px 14px', border: '1px solid rgba(26,26,26,0.1)', borderLeft: '3px solid rgba(196,160,68,0.5)', borderRadius: '10px', cursor: 'pointer', transition: 'background 0.15s', background: 'transparent' }}
-                  >
-                    <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.78rem', color: '#1a1a1a', fontWeight: 600, marginBottom: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {isZh ? (s.nameZh || s.name) : s.name}
-                    </p>
-                    {(isZh ? (s.departmentZh || s.department) : s.department) && (
-                      <p style={{ fontSize: '0.72rem', color: '#aaa', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {isZh ? (s.departmentZh || s.department) : s.department}
-                      </p>
-                    )}
-                    {s.aiStatement && (
-                      <p style={{ fontSize: '0.68rem', color: '#4aab6f', marginTop: '4px' }}>✓ {isZh ? '有申请文书' : 'has statement'}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <div style={{ height: '1px', background: 'rgba(26,26,26,0.06)', marginBottom: '28px' }} />
 
-          {/* 图片 — 多选模式 */}
+          {/* ── 图片 ── */}
           {mediaUrls.length > 0 && (
             <div style={{ marginBottom: '28px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <p style={{ fontSize: '0.75rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: '#b8b8b4' }}>
-                  {isZh ? '图片' : 'Images'}
+                <p style={{ fontSize: '0.65rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b0b0ac', fontFamily: 'Inter, DM Sans, sans-serif' }}>
+                  {isZh ? '图片' : 'Images'} <span style={{ color: '#d0d0cc' }}>({mediaUrls.length})</span>
                 </p>
                 <button
                   onClick={() => { setImagePickerOpen(o => !o); setSelectedImages([]) }}
-                  style={{ fontSize: '0.68rem', color: imagePickerOpen ? '#1a1a1a' : '#888', background: 'none', border: 'none', cursor: 'pointer', letterSpacing: '0.1em' }}
+                  style={{ fontSize: '0.68rem', color: imagePickerOpen ? '#1a1a1a' : '#aaa', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Inter, DM Sans, sans-serif', letterSpacing: '0.06em' }}
                 >
-                  {imagePickerOpen ? (isZh ? '取消' : 'Cancel') : (isZh ? '多选并排' : 'Multi-select')}
+                  {imagePickerOpen ? (isZh ? '取消' : 'Cancel') : (isZh ? '多选并排' : 'Multi-pick')}
                 </button>
               </div>
 
               {imagePickerOpen ? (
-                /* 多选模式 */
                 <div>
-                  <p style={{ fontSize: '0.68rem', color: '#b8b8b4', marginBottom: '10px', letterSpacing: '0.06em' }}>
-                    {isZh ? `已选 ${selectedImages.length} 张，点击选择后点添加` : `${selectedImages.length} selected — click to pick, then add`}
+                  <p style={{ fontSize: '0.7rem', color: '#c0c0bc', marginBottom: '10px', fontFamily: 'Inter, DM Sans, sans-serif', lineHeight: 1.5 }}>
+                    {isZh ? `已选 ${selectedImages.length} 张 — 点击选择后添加` : `${selectedImages.length} selected — pick then add`}
                   </p>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '10px' }}>
                     {mediaUrls.map((url, i) => (
-                      <img
-                        key={i}
-                        src={url}
-                        alt=""
+                      <img key={i} src={url} alt=""
                         className={`img-thumb${selectedImages.includes(url) ? ' selected' : ''}`}
                         onClick={() => toggleImageSelection(url)}
-                        style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '8px', cursor: 'pointer', border: '1px solid rgba(26,26,26,0.08)' }}
+                        style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '7px', cursor: 'pointer', border: '1px solid rgba(26,26,26,0.08)' }}
                       />
                     ))}
                   </div>
-                  <button
-                    onClick={addImageRow}
-                    disabled={selectedImages.length === 0}
-                    style={{ width: '100%', padding: '11px', background: selectedImages.length > 0 ? '#1a1a1a' : 'rgba(26,26,26,0.2)', color: '#f7f7f5', border: 'none', borderRadius: '10px', fontFamily: 'Space Mono, monospace', fontSize: '0.78rem', letterSpacing: '0.08em', cursor: selectedImages.length > 0 ? 'pointer' : 'not-allowed' }}
-                  >
-                    {selectedImages.length <= 1
-                      ? (isZh ? '+ 添加图片' : '+ Add Image')
-                      : (isZh ? `+ 并排添加 ${selectedImages.length} 张` : `+ Add ${selectedImages.length} images in a row`)}
+                  <button onClick={addImageRow} disabled={selectedImages.length === 0}
+                    style={{ width: '100%', padding: '10px', background: selectedImages.length > 0 ? '#1a1a1a' : 'rgba(26,26,26,0.1)', color: selectedImages.length > 0 ? '#f7f7f5' : '#bbb', border: 'none', borderRadius: '8px', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.78rem', letterSpacing: '0.05em', cursor: selectedImages.length > 0 ? 'pointer' : 'default' }}>
+                    {selectedImages.length <= 1 ? (isZh ? '+ 添加图片' : '+ Add image') : (isZh ? `+ 并排添加 ${selectedImages.length} 张` : `+ Add ${selectedImages.length} side by side`)}
                   </button>
                 </div>
               ) : (
-                /* 普通模式：单击直接添加 */
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                   {mediaUrls.map((url, i) => (
                     <div key={i} style={{ position: 'relative' }}>
-                      <img
-                        src={url}
-                        alt=""
-                        className="img-thumb"
-                        onClick={() => addBlock('image', url)}
-                        style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '8px', cursor: 'pointer', border: '1px solid rgba(26,26,26,0.08)' }}
+                      <img src={url} alt="" className="img-thumb" onClick={() => addBlock('image', url)}
+                        style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '7px', cursor: 'pointer', border: '1px solid rgba(26,26,26,0.08)', display: 'block' }}
                       />
-                      <span style={{ position: 'absolute', bottom: '4px', right: '4px', background: 'rgba(0,0,0,0.4)', color: '#fff', fontSize: '10px', padding: '2px 5px', borderRadius: '4px' }}>+</span>
+                      <span style={{ position: 'absolute', bottom: '5px', right: '5px', background: 'rgba(0,0,0,0.45)', color: '#fff', fontSize: '11px', width: '18px', height: '18px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>+</span>
                     </div>
                   ))}
                 </div>
@@ -800,33 +820,64 @@ ${blocksHTML}
             </div>
           )}
 
-          {/* 笔记 */}
+          {/* ── 笔记 ── */}
           {(project.notes || []).length > 0 && (
-            <div style={{ marginBottom: '28px' }}>
-              <p style={{ fontSize: '0.75rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: '#b8b8b4', marginBottom: '10px' }}>{isZh ? '笔记' : 'Notes'}</p>
-              {(project.notes || []).map(n => (
-                <div key={n.id} onClick={() => addBlock('note', n.content)} style={{ padding: '10px 14px', border: '1px solid rgba(26,26,26,0.08)', borderRadius: '10px', marginBottom: '8px', cursor: 'pointer', fontSize: '0.85rem', color: '#555', lineHeight: 1.6, transition: 'background 0.15s' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.03)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                >
-                  {n.content.slice(0, 60)}{n.content.length > 60 ? '…' : ''}
-                </div>
-              ))}
-            </div>
+            <>
+              <div style={{ height: '1px', background: 'rgba(26,26,26,0.06)', marginBottom: '28px' }} />
+              <div style={{ marginBottom: '28px' }}>
+                <p style={{ fontSize: '0.65rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b0b0ac', marginBottom: '10px', fontFamily: 'Inter, DM Sans, sans-serif' }}>
+                  {isZh ? '笔记' : 'Notes'}
+                </p>
+                {(project.notes || []).map(n => (
+                  <div key={n.id} onClick={() => addBlock('note', n.content)}
+                    style={{ padding: '9px 13px', border: '1px solid rgba(26,26,26,0.08)', borderRadius: '8px', marginBottom: '6px', cursor: 'pointer', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.82rem', color: '#666', lineHeight: 1.55, transition: 'background 0.12s' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.03)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    {n.content.slice(0, 60)}{n.content.length > 60 ? '…' : ''}
+                  </div>
+                ))}
+              </div>
+            </>
           )}
 
-          {/* 自定义文本 */}
-          <div>
-            <p style={{ fontSize: '0.75rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: '#b8b8b4', marginBottom: '10px' }}>{isZh ? '自定义文本' : 'Custom Text'}</p>
-            <textarea value={customText} onChange={e => setCustomText(e.target.value)} rows={4}
-              placeholder={isZh ? '输入任意文字…' : 'Type anything...'}
-              style={{ width: '100%', padding: '12px', border: '1px solid rgba(26,26,26,0.1)', borderRadius: '10px', background: '#f7f7f5', fontFamily: 'DM Sans, sans-serif', fontSize: '0.95rem', color: '#1a1a1a', outline: 'none', resize: 'none', marginBottom: '8px' }}
-            />
-            <button onClick={() => { if (customText.trim()) { addBlock('custom', customText); setCustomText('') } }}
-              style={{ width: '100%', padding: '11px', background: '#1a1a1a', color: '#f7f7f5', border: 'none', borderRadius: '10px', fontFamily: 'Space Mono, monospace', fontSize: '0.82rem', letterSpacing: '0.1em', cursor: 'pointer' }}>
-              + {isZh ? '添加' : 'Add'}
-            </button>
-          </div>
+          {/* ── 目标院校 ── */}
+          {schools.length > 0 && (
+            <>
+              <div style={{ height: '1px', background: 'rgba(26,26,26,0.06)', marginBottom: '28px' }} />
+              <div style={{ marginBottom: '28px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <p style={{ fontSize: '0.65rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b0b0ac', fontFamily: 'Inter, DM Sans, sans-serif' }}>
+                    {isZh ? '目标院校' : 'Schools'} <span style={{ color: '#d0d0cc' }}>({schools.length})</span>
+                  </p>
+                  {schools.length > 3 && (
+                    <button onClick={() => setSchoolsExpanded(e => !e)}
+                      style={{ fontSize: '0.68rem', color: '#aaa', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Inter, DM Sans, sans-serif', letterSpacing: '0.06em' }}>
+                      {schoolsExpanded ? (isZh ? '收起 ↑' : 'Less ↑') : (isZh ? '展开全部 ↓' : 'Show all ↓')}
+                    </button>
+                  )}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {visibleSchools.map(s => (
+                    <div key={s.id} className="school-item" onClick={() => addBlock('school-profile', s.id)}
+                      style={{ padding: '10px 13px', border: '1px solid rgba(26,26,26,0.09)', borderLeft: '2.5px solid rgba(196,160,68,0.45)', borderRadius: '8px', cursor: 'pointer', transition: 'background 0.12s', background: 'transparent' }}>
+                      <p style={{ fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.8rem', color: '#1a1a1a', fontWeight: 600, marginBottom: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {isZh ? (s.nameZh || s.name) : s.name}
+                      </p>
+                      {(isZh ? (s.departmentZh || s.department) : s.department) && (
+                        <p style={{ fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.72rem', color: '#bbb', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {isZh ? (s.departmentZh || s.department) : s.department}
+                        </p>
+                      )}
+                      {s.aiStatement && (
+                        <p style={{ fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.68rem', color: '#4aab6f', marginTop: '3px' }}>✓ {isZh ? '有文书' : 'has statement'}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </main>
