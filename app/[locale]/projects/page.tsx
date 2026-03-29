@@ -1,9 +1,9 @@
-'use client'
+﻿'use client'
 import React, { useState, useRef } from 'react'
 import { useLocalStorage } from '../../../../hooks/useLocalStorage'
 import { Project, ProjectStatus, ProjectCategory, Milestone, Proposal, Note, NoteVisibility } from '../../../../types'
 import { usePathname, useRouter } from 'next/navigation'
-import { exportPDF, exportDOCX } from '../../../../lib/exportProject'
+import { exportPDF, exportDOCX } from '../../../lib/exportProject'
 
 const STATUS_COLORS: Record<ProjectStatus, string> = {
   'planning':    'rgba(180,160,100,0.15)',
