@@ -573,20 +573,13 @@ export default function ExportPage() {
                   )}
                   {block.type === 'image-row' && (
                     <div>
-                      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${(block.images || []).length + 1}, 1fr)`, gap: '6px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${(block.images || []).length}, 1fr)`, gap: '6px' }}>
                         {(block.images || []).map((url, idx) => (
                           <div key={idx}>
                             <img src={url} alt="" style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '7px', display: 'block' }} />
                             {(block.imageCaptions || [])[idx] && <p style={{ fontSize: '0.72rem', color: '#999', marginTop: '4px', textAlign: 'center', fontStyle: 'italic', lineHeight: 1.4, fontFamily: 'Inter, DM Sans, sans-serif' }}>{(block.imageCaptions || [])[idx]}</p>}
                           </div>
                         ))}
-                        {/* + 添加更多图片 */}
-                        <div onClick={() => { setImagePickerOpen(true); setSelectedImages([]); (window as any).__addToBlockId = block.id }}
-                          style={{ aspectRatio: '1', border: '1.5px dashed rgba(26,26,26,0.15)', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'rgba(26,26,26,0.02)' }}
-                          onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(26,26,26,0.35)')}
-                          onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(26,26,26,0.15)')}>
-                          <span style={{ fontSize: '1.2rem', color: '#ccc' }}>+</span>
-                        </div>
                       </div>
                       {block.caption && <p style={{ fontSize: '0.78rem', color: '#bbb', marginTop: '7px', fontStyle: 'italic', fontFamily: 'Inter, DM Sans, sans-serif' }}>{block.caption}</p>}
                     </div>
@@ -742,17 +735,52 @@ export default function ExportPage() {
                     </div>
                   ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                      {mediaUrls.map((url, i) => (
-                        <div key={i} style={{ position: 'relative' }}>
-                          <img src={url} alt="" className="img-thumb" onClick={() => addBlock('image', url)}
-                            style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '7px', cursor: 'pointer', border: '1px solid rgba(26,26,26,0.08)', display: 'block' }} />
-                          <span style={{ position: 'absolute', bottom: '5px', right: '5px', background: 'rgba(0,0,0,0.45)', color: '#fff', fontSize: '11px', width: '18px', height: '18px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>+</span>
-                          <button
-                            onClick={e => { e.stopPropagation(); setImageEditorUrl(url); setImageEditorIdx(i) }}
-                            style={{ position: 'absolute', top: '5px', right: '5px', background: 'rgba(0,0,0,0.5)', color: '#fff', border: 'none', borderRadius: '4px', width: '22px', height: '22px', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                            title={isZh ? '编辑图片' : 'Edit image'}>✎</button>
-                        </div>
-                      ))}
+                      {mediaUrls.map((url, i) => {
+                        const imageRowBlocks = blocks.filter(b => b.type === 'image-row')
+                        return (
+                          <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ position: 'relative' }}>
+                              <img src={url} alt="" className="img-thumb" onClick={() => addBlock('image', url)}
+                                style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '7px', cursor: 'pointer', border: '1px solid rgba(26,26,26,0.08)', display: 'block' }} />
+                              <span style={{ position: 'absolute', bottom: '5px', right: '5px', background: 'rgba(0,0,0,0.45)', color: '#fff', fontSize: '11px', width: '18px', height: '18px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>+</span>
+                              <button
+                                onClick={e => { e.stopPropagation(); setImageEditorUrl(url); setImageEditorIdx(i) }}
+                                style={{ position: 'absolute', top: '5px', right: '5px', background: 'rgba(0,0,0,0.5)', color: '#fff', border: 'none', borderRadius: '4px', width: '22px', height: '22px', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                title={isZh ? '编辑图片' : 'Edit image'}>✎</button>
+                            </div>
+                            {imageRowBlocks.length > 0 && (
+                              <div style={{ display: 'flex', gap: '3px' }}>
+                                {imageRowBlocks.map((rowBlock, ri) => (
+                                  <button
+                                    key={rowBlock.id}
+                                    onClick={() => {
+                                      setBlocks(b => b.map(bl =>
+                                        bl.id === rowBlock.id
+                                          ? { ...bl, images: [...(bl.images || []), url] }
+                                          : bl
+                                      ))
+                                    }}
+                                    title={isZh ? `添加到第 ${ri + 1} 行` : `Add to row ${ri + 1}`}
+                                    style={{
+                                      flex: 1, height: '20px', border: '1px dashed rgba(26,26,26,0.2)',
+                                      borderRadius: '4px', background: 'rgba(26,26,26,0.02)',
+                                      cursor: 'pointer', display: 'flex', alignItems: 'center',
+                                      justifyContent: 'center', gap: '3px', transition: 'all 0.12s',
+                                      padding: '0 4px',
+                                    }}
+                                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.07)'; e.currentTarget.style.borderColor = 'rgba(26,26,26,0.4)' }}
+                                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.02)'; e.currentTarget.style.borderColor = 'rgba(26,26,26,0.2)' }}
+                                  >
+                                    <span style={{ fontSize: '9px', color: '#aaa', letterSpacing: '0.04em', fontFamily: 'Inter, DM Sans, sans-serif', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      {imageRowBlocks.length > 1 ? `+R${ri + 1}` : (isZh ? '+行' : '+row')}
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                 </div>
