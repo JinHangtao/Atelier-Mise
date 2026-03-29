@@ -205,7 +205,7 @@ export default function Home() {
           <div className="marquee-track">
             {[...Array(2)].map((_, rep) => (
               <div key={rep} style={{ display: 'flex', whiteSpace: 'nowrap' }}>
-                {['SCHOOL DATABASE', 'PROJECT PLANNER', 'AI STATEMENT', 'MULTI-FORMAT EXPORT', 'OPEN SOURCE', 'FREE FOREVER'].map((item, i) => (
+                {['SCHOOL DATABASE', 'PROJECT PLANNER', 'AI STATEMENT', 'MULTI-FORMAT EXPORT', 'OPEN SOURCE', 'MIT LICENSE'].map((item, i) => (
                   <span key={i} style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.55rem', letterSpacing: '0.22em', color: 'rgba(26,26,26,0.32)', textTransform: 'uppercase', padding: '0 36px' }}>
                     {item} <span style={{ opacity: 0.25 }}>·</span>
                   </span>
