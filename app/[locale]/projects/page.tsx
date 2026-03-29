@@ -942,30 +942,42 @@ function ImageEditor({
 }) {
   const canvasRef = React.useRef<HTMLCanvasElement>(null)
   const overlayInputRef = React.useRef<HTMLInputElement>(null)
+  const overlayCropInputRef = React.useRef<HTMLInputElement>(null)
 
+  // Main image adjustments
   const [brightness, setBrightness] = React.useState(100)
   const [contrast, setContrast] = React.useState(100)
   const [saturate, setSaturate] = React.useState(100)
   const [rotation, setRotation] = React.useState(0)
   const [flipH, setFlipH] = React.useState(false)
 
-  // Crop state
+  // Main image crop
   const [cropMode, setCropMode] = React.useState(false)
   const [cropStart, setCropStart] = React.useState<{x:number,y:number}|null>(null)
   const [cropRect, setCropRect] = React.useState<{x:number,y:number,w:number,h:number}|null>(null)
-  const [isDragging, setIsDragging] = React.useState(false)
+  const [isCropDragging, setIsCropDragging] = React.useState(false)
 
   // Overlay image
   const [overlayImg, setOverlayImg] = React.useState<string|null>(null)
+  const [overlayEl, setOverlayEl] = React.useState<HTMLImageElement|null>(null)
   const [overlayPos, setOverlayPos] = React.useState({x:40,y:40})
   const [overlayScale, setOverlayScale] = React.useState(50)
-  const [draggingOverlay, setDraggingOverlay] = React.useState(false)
-  const overlayDragStart = React.useRef<{mx:number,my:number,ox:number,oy:number}|null>(null)
+  const [followMainColor, setFollowMainColor] = React.useState(false)
+
+  // Overlay drag
+  const [isDraggingOverlay, setIsDraggingOverlay] = React.useState(false)
+  const overlayDragRef = React.useRef<{startX:number,startY:number,origX:number,origY:number}|null>(null)
+
+  // Overlay crop
+  const [overlayCropMode, setOverlayCropMode] = React.useState(false)
+  const [overlayCropStart, setOverlayCropStart] = React.useState<{x:number,y:number}|null>(null)
+  const [overlayCropRect, setOverlayCropRect] = React.useState<{x:number,y:number,w:number,h:number}|null>(null)
+  const [isOverlayCropDragging, setIsOverlayCropDragging] = React.useState(false)
 
   const [imgEl, setImgEl] = React.useState<HTMLImageElement|null>(null)
   const [canvasSize, setCanvasSize] = React.useState({w:0,h:0})
 
-  // Load image
+  // Load main image
   React.useEffect(() => {
     const img = new Image()
     img.onload = () => {
@@ -977,6 +989,14 @@ function ImageEditor({
     img.src = src
   }, [src])
 
+  // Load overlay image element
+  React.useEffect(() => {
+    if (!overlayImg) { setOverlayEl(null); return }
+    const img = new Image()
+    img.onload = () => setOverlayEl(img)
+    img.src = overlayImg
+  }, [overlayImg])
+
   // Redraw canvas
   React.useEffect(() => {
     const canvas = canvasRef.current
@@ -984,6 +1004,8 @@ function ImageEditor({
     canvas.width = canvasSize.w
     canvas.height = canvasSize.h
     const ctx = canvas.getContext('2d')!
+
+    // Draw main image with color adjustments
     ctx.save()
     ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%)`
     ctx.translate(canvasSize.w/2, canvasSize.h/2)
@@ -993,63 +1015,151 @@ function ImageEditor({
     ctx.restore()
 
     // Draw overlay image
-    if (overlayImg) {
-      const ov = new Image()
-      ov.onload = () => {
-        const ow = (canvasSize.w * overlayScale) / 100
-        const oh = (ov.naturalHeight / ov.naturalWidth) * ow
-        ctx.globalAlpha = 0.9
-        ctx.drawImage(ov, overlayPos.x, overlayPos.y, ow, oh)
-        ctx.globalAlpha = 1
+    if (overlayEl) {
+      const ow = (canvasSize.w * overlayScale) / 100
+      const oh = (overlayEl.naturalHeight / overlayEl.naturalWidth) * ow
+      ctx.save()
+      // Follow main color: apply same filter; else no filter
+      ctx.filter = followMainColor
+        ? `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%)`
+        : 'none'
+      ctx.globalAlpha = 0.92
+      ctx.drawImage(overlayEl, overlayPos.x, overlayPos.y, ow, oh)
+      ctx.restore()
+      ctx.globalAlpha = 1
+
+      // Draw overlay border when not in overlay crop mode
+      if (!overlayCropMode) {
+        ctx.save()
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)'
+        ctx.lineWidth = 1.5
+        ctx.setLineDash([4, 3])
+        ctx.strokeRect(overlayPos.x, overlayPos.y, ow, oh)
+        ctx.restore()
       }
-      ov.src = overlayImg
+
+      // Draw overlay crop selection
+      if (overlayCropMode && overlayCropRect) {
+        ctx.save()
+        ctx.strokeStyle = '#fff'
+        ctx.lineWidth = 2
+        ctx.setLineDash([6, 3])
+        ctx.fillStyle = 'rgba(0,0,0,0.35)'
+        ctx.fillRect(overlayPos.x, overlayPos.y, ow, oh)
+        ctx.clearRect(overlayCropRect.x, overlayCropRect.y, overlayCropRect.w, overlayCropRect.h)
+        ctx.strokeRect(overlayCropRect.x, overlayCropRect.y, overlayCropRect.w, overlayCropRect.h)
+        ctx.restore()
+      }
     }
 
-    // Draw crop rect
-    if (cropRect) {
+    // Draw main crop rect
+    if (cropRect && cropMode) {
+      ctx.save()
       ctx.strokeStyle = '#fff'
       ctx.lineWidth = 2
       ctx.setLineDash([6, 3])
-      ctx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h)
-      ctx.fillStyle = 'rgba(0,0,0,0.25)'
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'
       ctx.fillRect(0, 0, canvasSize.w, canvasSize.h)
       ctx.clearRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h)
       ctx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h)
+      ctx.restore()
     }
-  }, [imgEl, brightness, contrast, saturate, rotation, flipH, overlayImg, overlayPos, overlayScale, cropRect, canvasSize])
+  }, [imgEl, brightness, contrast, saturate, rotation, flipH, overlayEl, overlayPos, overlayScale, followMainColor, cropRect, cropMode, overlayCropMode, overlayCropRect, canvasSize])
 
   const getCanvasPos = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current!.getBoundingClientRect()
-    const scaleX = canvasSize.w / rect.width
-    const scaleY = canvasSize.h / rect.height
-    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY }
+    return {
+      x: (e.clientX - rect.left) * (canvasSize.w / rect.width),
+      y: (e.clientY - rect.top) * (canvasSize.h / rect.height),
+    }
+  }
+
+  // Check if pos is inside overlay
+  const isInsideOverlay = (pos: {x:number,y:number}) => {
+    if (!overlayEl) return false
+    const ow = (canvasSize.w * overlayScale) / 100
+    const oh = (overlayEl.naturalHeight / overlayEl.naturalWidth) * ow
+    return pos.x >= overlayPos.x && pos.x <= overlayPos.x + ow &&
+           pos.y >= overlayPos.y && pos.y <= overlayPos.y + oh
   }
 
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!cropMode) return
     const pos = getCanvasPos(e)
-    setCropStart(pos)
-    setCropRect(null)
-    setIsDragging(true)
-  }
-  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDragging || !cropStart || !cropMode) return
-    const pos = getCanvasPos(e)
-    setCropRect({
-      x: Math.min(cropStart.x, pos.x),
-      y: Math.min(cropStart.y, pos.y),
-      w: Math.abs(pos.x - cropStart.x),
-      h: Math.abs(pos.y - cropStart.y),
-    })
-  }
-  const handleCanvasMouseUp = () => setIsDragging(false)
 
+    // Overlay crop mode
+    if (overlayCropMode) {
+      setOverlayCropStart(pos)
+      setOverlayCropRect(null)
+      setIsOverlayCropDragging(true)
+      return
+    }
+
+    // Main crop mode
+    if (cropMode) {
+      setCropStart(pos)
+      setCropRect(null)
+      setIsCropDragging(true)
+      return
+    }
+
+    // Overlay drag
+    if (overlayEl && isInsideOverlay(pos)) {
+      setIsDraggingOverlay(true)
+      overlayDragRef.current = { startX: e.clientX, startY: e.clientY, origX: overlayPos.x, origY: overlayPos.y }
+      return
+    }
+  }
+
+  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const pos = getCanvasPos(e)
+
+    // Overlay crop drag
+    if (isOverlayCropDragging && overlayCropStart && overlayCropMode) {
+      setOverlayCropRect({
+        x: Math.min(overlayCropStart.x, pos.x),
+        y: Math.min(overlayCropStart.y, pos.y),
+        w: Math.abs(pos.x - overlayCropStart.x),
+        h: Math.abs(pos.y - overlayCropStart.y),
+      })
+      return
+    }
+
+    // Main crop drag
+    if (isCropDragging && cropStart && cropMode) {
+      setCropRect({
+        x: Math.min(cropStart.x, pos.x),
+        y: Math.min(cropStart.y, pos.y),
+        w: Math.abs(pos.x - cropStart.x),
+        h: Math.abs(pos.y - cropStart.y),
+      })
+      return
+    }
+
+    // Overlay drag movement
+    if (isDraggingOverlay && overlayDragRef.current) {
+      const rect = canvasRef.current!.getBoundingClientRect()
+      const scaleX = canvasSize.w / rect.width
+      const scaleY = canvasSize.h / rect.height
+      const dx = (e.clientX - overlayDragRef.current.startX) * scaleX
+      const dy = (e.clientY - overlayDragRef.current.startY) * scaleY
+      setOverlayPos({ x: overlayDragRef.current.origX + dx, y: overlayDragRef.current.origY + dy })
+    }
+  }
+
+  const handleCanvasMouseUp = () => {
+    setIsCropDragging(false)
+    setIsOverlayCropDragging(false)
+    setIsDraggingOverlay(false)
+    overlayDragRef.current = null
+  }
+
+  // Apply main crop
   const applyCrop = () => {
     if (!cropRect || !canvasRef.current) return
     const canvas = canvasRef.current
     const tmp = document.createElement('canvas')
-    tmp.width = cropRect.w
-    tmp.height = cropRect.h
+    tmp.width = Math.max(1, cropRect.w)
+    tmp.height = Math.max(1, cropRect.h)
     tmp.getContext('2d')!.drawImage(canvas, cropRect.x, cropRect.y, cropRect.w, cropRect.h, 0, 0, cropRect.w, cropRect.h)
     const newSrc = tmp.toDataURL('image/jpeg', 0.92)
     const img = new Image()
@@ -1062,6 +1172,29 @@ function ImageEditor({
     img.src = newSrc
   }
 
+  // Apply overlay crop
+  const applyOverlayCrop = () => {
+    if (!overlayCropRect || !overlayEl) return
+    // Compute overlay dimensions on canvas
+    const ow = (canvasSize.w * overlayScale) / 100
+    const oh = (overlayEl.naturalHeight / overlayEl.naturalWidth) * ow
+    // Convert canvas coords to overlay-local coords
+    const localX = (overlayCropRect.x - overlayPos.x) / ow * overlayEl.naturalWidth
+    const localY = (overlayCropRect.y - overlayPos.y) / oh * overlayEl.naturalHeight
+    const localW = overlayCropRect.w / ow * overlayEl.naturalWidth
+    const localH = overlayCropRect.h / oh * overlayEl.naturalHeight
+    const tmp = document.createElement('canvas')
+    tmp.width = Math.max(1, localW)
+    tmp.height = Math.max(1, localH)
+    tmp.getContext('2d')!.drawImage(overlayEl, localX, localY, localW, localH, 0, 0, localW, localH)
+    const newSrc = tmp.toDataURL('image/png')
+    const img = new Image()
+    img.onload = () => { setOverlayEl(img); setOverlayImg(newSrc) }
+    img.src = newSrc
+    setOverlayCropRect(null)
+    setOverlayCropMode(false)
+  }
+
   const handleSave = () => {
     if (!canvasRef.current) return
     onSave(canvasRef.current.toDataURL('image/jpeg', 0.92))
@@ -1071,8 +1204,16 @@ function ImageEditor({
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = ev => setOverlayImg(ev.target?.result as string)
+    reader.onload = ev => { setOverlayImg(ev.target?.result as string); setOverlayPos({x:40,y:40}) }
     reader.readAsDataURL(file)
+    e.target.value = ''
+  }
+
+  // Cursor logic
+  const getCursor = () => {
+    if (cropMode || overlayCropMode) return 'crosshair'
+    if (isDraggingOverlay) return 'grabbing'
+    return 'default'
   }
 
   const sliders = [
@@ -1102,10 +1243,11 @@ function ImageEditor({
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '32px', overflow: 'auto' }}>
           <canvas
             ref={canvasRef}
-            style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: '10px', cursor: cropMode ? 'crosshair' : 'default', boxShadow: '0 8px 40px rgba(0,0,0,0.5)' }}
+            style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: '10px', cursor: getCursor(), boxShadow: '0 8px 40px rgba(0,0,0,0.5)' }}
             onMouseDown={handleCanvasMouseDown}
             onMouseMove={handleCanvasMouseMove}
             onMouseUp={handleCanvasMouseUp}
+            onMouseLeave={handleCanvasMouseUp}
           />
         </div>
 
@@ -1130,7 +1272,7 @@ function ImageEditor({
               </div>
             ))}
             <button onClick={() => { setBrightness(100); setContrast(100); setSaturate(100) }}
-              style={{ fontSize: '0.68rem', color: '#555', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em', marginTop: '4px' }}>
+              style={{ fontSize: '0.68rem', color: '#555', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em', marginTop: '2px' }}>
               {isZh ? '重置' : 'Reset'}
             </button>
           </div>
@@ -1154,13 +1296,13 @@ function ImageEditor({
             </div>
           </div>
 
-          {/* Crop */}
+          {/* Main Crop */}
           <div>
             <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.65rem', letterSpacing: '0.2em', color: '#666', textTransform: 'uppercase', marginBottom: '14px' }}>
-              {isZh ? '裁剪' : 'Crop'}
+              {isZh ? '裁剪主图' : 'Crop Main'}
             </p>
             {!cropMode ? (
-              <button onClick={() => { setCropMode(true); setCropRect(null) }}
+              <button onClick={() => { setCropMode(true); setCropRect(null); setOverlayCropMode(false) }}
                 style={{ width: '100%', padding: '10px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '9px', background: 'transparent', color: '#aaa', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.75rem', letterSpacing: '0.08em' }}>
                 {isZh ? '✂ 开始裁剪' : '✂ Start Crop'}
               </button>
@@ -1172,7 +1314,7 @@ function ImageEditor({
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button onClick={applyCrop} disabled={!cropRect}
                     style={{ flex: 1, padding: '9px', background: cropRect ? '#f7f7f5' : 'rgba(255,255,255,0.1)', color: cropRect ? '#1a1a1a' : '#555', border: 'none', borderRadius: '8px', cursor: cropRect ? 'pointer' : 'not-allowed', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>
-                    {isZh ? '确认裁剪' : 'Apply'}
+                    {isZh ? '确认' : 'Apply'}
                   </button>
                   <button onClick={() => { setCropMode(false); setCropRect(null) }}
                     style={{ flex: 1, padding: '9px', background: 'transparent', color: '#666', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>
@@ -1190,22 +1332,77 @@ function ImageEditor({
             </p>
             <button onClick={() => overlayInputRef.current?.click()}
               style={{ width: '100%', padding: '10px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '9px', background: 'transparent', color: '#aaa', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.75rem', letterSpacing: '0.08em', marginBottom: '10px' }}>
-              {isZh ? '+ 导入图片' : '+ Import Image'}
+              {isZh ? '+ 导入叠加图片' : '+ Import Overlay'}
             </button>
             <input ref={overlayInputRef} type="file" accept="image/*" onChange={handleOverlayUpload} style={{ display: 'none' }} />
-            {overlayImg && (
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#888' }}>{isZh ? '大小' : 'Size'}</span>
-                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#555' }}>{overlayScale}%</span>
+
+            {overlayEl && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+
+                {/* Follow main color toggle */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#888' }}>
+                    {isZh ? '跟随主图调色' : 'Follow main color'}
+                  </span>
+                  <button
+                    onClick={() => setFollowMainColor(f => !f)}
+                    style={{
+                      padding: '4px 12px', borderRadius: '20px', border: 'none', cursor: 'pointer',
+                      background: followMainColor ? '#4aab6f' : 'rgba(255,255,255,0.1)',
+                      color: followMainColor ? '#fff' : '#666',
+                      fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', letterSpacing: '0.08em',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    {followMainColor ? 'YES' : 'NO'}
+                  </button>
                 </div>
-                <input type="range" min={10} max={100} value={overlayScale}
-                  onChange={e => setOverlayScale(Number(e.target.value))}
-                  style={{ width: '100%', accentColor: '#f7f7f5', marginBottom: '8px' }}
-                />
-                <button onClick={() => setOverlayImg(null)}
-                  style={{ fontSize: '0.68rem', color: '#bf4a4a', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Space Mono, monospace' }}>
-                  {isZh ? '移除叠加' : 'Remove'}
+
+                {/* Size slider */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#888' }}>{isZh ? '大小' : 'Size'}</span>
+                    <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#555' }}>{overlayScale}%</span>
+                  </div>
+                  <input type="range" min={5} max={100} value={overlayScale}
+                    onChange={e => setOverlayScale(Number(e.target.value))}
+                    style={{ width: '100%', accentColor: '#f7f7f5' }}
+                  />
+                </div>
+
+                {/* Drag hint */}
+                <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.66rem', color: '#555', letterSpacing: '0.06em' }}>
+                  {isZh ? '↖ 在画布上拖动叠加图位置' : '↖ Drag overlay on canvas to move'}
+                </p>
+
+                {/* Overlay crop */}
+                {!overlayCropMode ? (
+                  <button onClick={() => { setOverlayCropMode(true); setOverlayCropRect(null); setCropMode(false) }}
+                    style={{ width: '100%', padding: '9px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', background: 'transparent', color: '#aaa', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>
+                    {isZh ? '✂ 裁剪叠加图' : '✂ Crop Overlay'}
+                  </button>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#666' }}>
+                      {isZh ? '在叠加图上拖动选区' : 'Drag within the overlay area'}
+                    </p>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button onClick={applyOverlayCrop} disabled={!overlayCropRect}
+                        style={{ flex: 1, padding: '9px', background: overlayCropRect ? '#f7f7f5' : 'rgba(255,255,255,0.1)', color: overlayCropRect ? '#1a1a1a' : '#555', border: 'none', borderRadius: '8px', cursor: overlayCropRect ? 'pointer' : 'not-allowed', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>
+                        {isZh ? '确认' : 'Apply'}
+                      </button>
+                      <button onClick={() => { setOverlayCropMode(false); setOverlayCropRect(null) }}
+                        style={{ flex: 1, padding: '9px', background: 'transparent', color: '#666', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>
+                        {isZh ? '取消' : 'Cancel'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Remove overlay */}
+                <button onClick={() => { setOverlayImg(null); setOverlayEl(null); setOverlayCropMode(false) }}
+                  style={{ fontSize: '0.68rem', color: '#bf4a4a', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Space Mono, monospace', textAlign: 'left' }}>
+                  {isZh ? '移除叠加图' : 'Remove overlay'}
                 </button>
               </div>
             )}
