@@ -737,23 +737,17 @@ export default function ExportPage() {
               />
 
               {/* 图片 */}
-              {mediaUrls.length > 0 && (
-                <div style={{ marginBottom: '24px' }}>
+              <div style={{ marginBottom: '24px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                     <p style={{ fontSize: '0.65rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b0b0ac', fontFamily: 'Inter, DM Sans, sans-serif' }}>
-                      {isZh ? '图片' : 'Images'} <span style={{ color: '#d0d0cc' }}>({mediaUrls.length})</span>
+                      {isZh ? '图片' : 'Images'} {mediaUrls.length > 0 && <span style={{ color: '#d0d0cc' }}>({mediaUrls.length})</span>}
                     </p>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <button onClick={() => localImageInputRef.current?.click()}
-                        style={{ fontSize: '0.68rem', color: '#aaa', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Inter, DM Sans, sans-serif', letterSpacing: '0.06em' }}
-                        title={isZh ? '从本地上传图片' : 'Upload from device'}>
-                        {isZh ? '本地上传' : 'Upload'}
-                      </button>
+                    {mediaUrls.length > 0 && (
                       <button onClick={() => { setImagePickerOpen(o => !o); setSelectedImages([]) }}
                         style={{ fontSize: '0.68rem', color: imagePickerOpen ? '#1a1a1a' : '#aaa', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Inter, DM Sans, sans-serif', letterSpacing: '0.06em' }}>
                         {imagePickerOpen ? (isZh ? '取消' : 'Cancel') : (isZh ? '多选并排' : 'Multi-pick')}
                       </button>
-                    </div>
+                    )}
                   </div>
                   {imagePickerOpen ? (
                     <div>
@@ -774,6 +768,17 @@ export default function ExportPage() {
                     </div>
                   ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                      {/* 第一格：永远是本地上传 */}
+                      <div
+                        onClick={() => localImageInputRef.current?.click()}
+                        style={{ aspectRatio: '1', border: '1.5px dashed rgba(26,26,26,0.18)', borderRadius: '7px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'rgba(26,26,26,0.015)', transition: 'all 0.12s', gap: '5px' }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(26,26,26,0.4)'; e.currentTarget.style.background = 'rgba(26,26,26,0.05)' }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(26,26,26,0.18)'; e.currentTarget.style.background = 'rgba(26,26,26,0.015)' }}
+                      >
+                        <span style={{ fontSize: '1.1rem', color: '#ccc', lineHeight: 1 }}>+</span>
+                        <span style={{ fontSize: '0.6rem', color: '#ccc', fontFamily: 'Inter, DM Sans, sans-serif', letterSpacing: '0.06em', textAlign: 'center', lineHeight: 1.3 }}>{isZh ? '本地上传' : 'Upload'}</span>
+                      </div>
+                      {/* 其余：项目图片 */}
                       {mediaUrls.map((url, i) => {
                         const imageRowBlocks = blocks.filter(b => b.type === 'image-row')
                         return (
@@ -823,20 +828,6 @@ export default function ExportPage() {
                     </div>
                   )}
                 </div>
-              )}
-              {mediaUrls.length === 0 && (
-                <div style={{ marginBottom: '24px' }}>
-                  <p style={{ fontSize: '0.65rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b0b0ac', marginBottom: '10px', fontFamily: 'Inter, DM Sans, sans-serif' }}>
-                    {isZh ? '图片' : 'Images'}
-                  </p>
-                  <button onClick={() => localImageInputRef.current?.click()}
-                    style={{ width: '100%', padding: '10px 13px', border: '1px dashed rgba(26,26,26,0.15)', borderRadius: '9px', background: 'transparent', cursor: 'pointer', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.82rem', color: '#aaa', letterSpacing: '0.02em', transition: 'all 0.12s' }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(26,26,26,0.35)'; e.currentTarget.style.color = '#555' }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(26,26,26,0.15)'; e.currentTarget.style.color = '#aaa' }}>
-                    {isZh ? '+ 从本地上传图片' : '+ Upload from device'}
-                  </button>
-                </div>
-              )}
 
               {/* 笔记 */}
               {(project.notes || []).length > 0 && (
