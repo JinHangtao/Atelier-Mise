@@ -990,11 +990,23 @@ export default function ExportPage() {
 }
 
 // ── Image Editor Component ────────────────────────────────────────────────────
+type OverlayLayer = {
+  id: string
+  src: string
+  el: HTMLImageElement
+  pos: { x: number; y: number }
+  scale: number
+  visible: boolean
+  followColor: boolean
+  name: string
+}
+
 function ImageEditor({
   src, isZh, onSave, onClose,
 }: { src: string; isZh: boolean; onSave: (dataUrl: string) => void; onClose: () => void }) {
   const canvasRef = React.useRef<HTMLCanvasElement>(null)
-  const overlayInputRef = React.useRef<HTMLInputElement>(null)
+  const layerInputRef = React.useRef<HTMLInputElement>(null)
+
   const [brightness, setBrightness] = React.useState(100)
   const [contrast, setContrast] = React.useState(100)
   const [saturate, setSaturate] = React.useState(100)
@@ -1004,87 +1016,335 @@ function ImageEditor({
   const [cropStart, setCropStart] = React.useState<{x:number,y:number}|null>(null)
   const [cropRect, setCropRect] = React.useState<{x:number,y:number,w:number,h:number}|null>(null)
   const [isCropDragging, setIsCropDragging] = React.useState(false)
-  const [overlayImg, setOverlayImg] = React.useState<string|null>(null)
-  const [overlayEl, setOverlayEl] = React.useState<HTMLImageElement|null>(null)
-  const [overlayPos, setOverlayPos] = React.useState({x:40,y:40})
-  const [overlayScale, setOverlayScale] = React.useState(50)
-  const [followMainColor, setFollowMainColor] = React.useState(false)
-  const [isDraggingOverlay, setIsDraggingOverlay] = React.useState(false)
-  const overlayDragRef = React.useRef<{startX:number,startY:number,origX:number,origY:number}|null>(null)
-  const [overlayCropMode, setOverlayCropMode] = React.useState(false)
-  const [overlayCropStart, setOverlayCropStart] = React.useState<{x:number,y:number}|null>(null)
-  const [overlayCropRect, setOverlayCropRect] = React.useState<{x:number,y:number,w:number,h:number}|null>(null)
-  const [isOverlayCropDragging, setIsOverlayCropDragging] = React.useState(false)
   const [imgEl, setImgEl] = React.useState<HTMLImageElement|null>(null)
   const [canvasSize, setCanvasSize] = React.useState({w:0,h:0})
+
+  // ── 多图层 ──
+  const [layers, setLayers] = React.useState<OverlayLayer[]>([])
+  const [activeLayerId, setActiveLayerId] = React.useState<string|null>(null)
+  const [isDraggingLayer, setIsDraggingLayer] = React.useState(false)
+  const layerDragRef = React.useRef<{startX:number,startY:number,origX:number,origY:number,id:string}|null>(null)
+
+  const activeLayer = layers.find(l => l.id === activeLayerId) ?? null
+
+  const updateLayer = (id: string, patch: Partial<OverlayLayer>) =>
+    setLayers(prev => prev.map(l => l.id === id ? { ...l, ...patch } : l))
+
+  // 主图加载
   React.useEffect(() => {
-    const img = new Image(); img.onload = () => { const maxW = Math.min(img.naturalWidth, 800); const scale = maxW / img.naturalWidth; setCanvasSize({ w: maxW, h: img.naturalHeight * scale }); setImgEl(img) }; img.src = src
-  }, [src])
-  React.useEffect(() => { if (!overlayImg) { setOverlayEl(null); return }; const img = new Image(); img.onload = () => setOverlayEl(img); img.src = overlayImg }, [overlayImg])
-  React.useEffect(() => {
-    const canvas = canvasRef.current; if (!canvas || !imgEl || canvasSize.w === 0) return
-    canvas.width = canvasSize.w; canvas.height = canvasSize.h
-    const ctx = canvas.getContext('2d')!
-    ctx.save(); ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%)`; ctx.translate(canvasSize.w/2, canvasSize.h/2); ctx.rotate((rotation * Math.PI) / 180); if (flipH) ctx.scale(-1, 1); ctx.drawImage(imgEl, -canvasSize.w/2, -canvasSize.h/2, canvasSize.w, canvasSize.h); ctx.restore()
-    if (overlayEl) {
-      const ow = (canvasSize.w * overlayScale) / 100; const oh = (overlayEl.naturalHeight / overlayEl.naturalWidth) * ow
-      ctx.save(); ctx.filter = followMainColor ? `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%)` : 'none'; ctx.globalAlpha = 0.92; ctx.drawImage(overlayEl, overlayPos.x, overlayPos.y, ow, oh); ctx.restore(); ctx.globalAlpha = 1
-      if (!overlayCropMode) { ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]); ctx.strokeRect(overlayPos.x, overlayPos.y, ow, oh); ctx.restore() }
-      if (overlayCropMode && overlayCropRect) { ctx.save(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.setLineDash([6, 3]); ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(overlayPos.x, overlayPos.y, ow, oh); ctx.clearRect(overlayCropRect.x, overlayCropRect.y, overlayCropRect.w, overlayCropRect.h); ctx.strokeRect(overlayCropRect.x, overlayCropRect.y, overlayCropRect.w, overlayCropRect.h); ctx.restore() }
+    const img = new Image()
+    img.onload = () => {
+      const maxW = Math.min(img.naturalWidth, 800)
+      const scale = maxW / img.naturalWidth
+      setCanvasSize({ w: maxW, h: img.naturalHeight * scale })
+      setImgEl(img)
     }
-    if (cropRect && cropMode) { ctx.save(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.setLineDash([6, 3]); ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(0, 0, canvasSize.w, canvasSize.h); ctx.clearRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h); ctx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h); ctx.restore() }
-  }, [imgEl, brightness, contrast, saturate, rotation, flipH, overlayEl, overlayPos, overlayScale, followMainColor, cropRect, cropMode, overlayCropMode, overlayCropRect, canvasSize])
-  const getCanvasPos = (e: React.MouseEvent<HTMLCanvasElement>) => { const rect = canvasRef.current!.getBoundingClientRect(); return { x: (e.clientX - rect.left) * (canvasSize.w / rect.width), y: (e.clientY - rect.top) * (canvasSize.h / rect.height) } }
-  const isInsideOverlay = (pos: {x:number,y:number}) => { if (!overlayEl) return false; const ow = (canvasSize.w * overlayScale) / 100; const oh = (overlayEl.naturalHeight / overlayEl.naturalWidth) * ow; return pos.x >= overlayPos.x && pos.x <= overlayPos.x + ow && pos.y >= overlayPos.y && pos.y <= overlayPos.y + oh }
-  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => { const pos = getCanvasPos(e); if (overlayCropMode) { setOverlayCropStart(pos); setOverlayCropRect(null); setIsOverlayCropDragging(true); return }; if (cropMode) { setCropStart(pos); setCropRect(null); setIsCropDragging(true); return }; if (overlayEl && isInsideOverlay(pos)) { setIsDraggingOverlay(true); overlayDragRef.current = { startX: e.clientX, startY: e.clientY, origX: overlayPos.x, origY: overlayPos.y }; return } }
-  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => { const pos = getCanvasPos(e); if (isOverlayCropDragging && overlayCropStart && overlayCropMode) { setOverlayCropRect({ x: Math.min(overlayCropStart.x, pos.x), y: Math.min(overlayCropStart.y, pos.y), w: Math.abs(pos.x - overlayCropStart.x), h: Math.abs(pos.y - overlayCropStart.y) }); return }; if (isCropDragging && cropStart && cropMode) { setCropRect({ x: Math.min(cropStart.x, pos.x), y: Math.min(cropStart.y, pos.y), w: Math.abs(pos.x - cropStart.x), h: Math.abs(pos.y - cropStart.y) }); return }; if (isDraggingOverlay && overlayDragRef.current) { const rect = canvasRef.current!.getBoundingClientRect(); const scaleX = canvasSize.w / rect.width; const scaleY = canvasSize.h / rect.height; const dx = (e.clientX - overlayDragRef.current.startX) * scaleX; const dy = (e.clientY - overlayDragRef.current.startY) * scaleY; setOverlayPos({ x: overlayDragRef.current.origX + dx, y: overlayDragRef.current.origY + dy }) } }
-  const handleCanvasMouseUp = () => { setIsCropDragging(false); setIsOverlayCropDragging(false); setIsDraggingOverlay(false); overlayDragRef.current = null }
-  const applyCrop = () => { if (!cropRect || !imgEl) return; const offscreen = document.createElement('canvas'); offscreen.width = canvasSize.w; offscreen.height = canvasSize.h; const ctx = offscreen.getContext('2d')!; ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%)`; ctx.translate(canvasSize.w/2, canvasSize.h/2); ctx.rotate((rotation * Math.PI) / 180); if (flipH) ctx.scale(-1, 1); ctx.drawImage(imgEl, -canvasSize.w/2, -canvasSize.h/2, canvasSize.w, canvasSize.h); const tmp = document.createElement('canvas'); tmp.width = Math.max(1, cropRect.w); tmp.height = Math.max(1, cropRect.h); tmp.getContext('2d')!.drawImage(offscreen, cropRect.x, cropRect.y, cropRect.w, cropRect.h, 0, 0, cropRect.w, cropRect.h); const newSrc = tmp.toDataURL('image/jpeg', 0.92); const img = new Image(); img.onload = () => { setImgEl(img); setCanvasSize({ w: cropRect.w, h: cropRect.h }); setCropRect(null); setCropMode(false) }; img.src = newSrc }
-  const applyOverlayCrop = () => { if (!overlayCropRect || !overlayEl) return; const ow = (canvasSize.w * overlayScale) / 100; const oh = (overlayEl.naturalHeight / overlayEl.naturalWidth) * ow; const clampedX = Math.max(0, overlayCropRect.x - overlayPos.x); const clampedY = Math.max(0, overlayCropRect.y - overlayPos.y); const clampedW = Math.min(overlayCropRect.w, ow - clampedX); const clampedH = Math.min(overlayCropRect.h, oh - clampedY); const localX = (clampedX / ow) * overlayEl.naturalWidth; const localY = (clampedY / oh) * overlayEl.naturalHeight; const localW = (clampedW / ow) * overlayEl.naturalWidth; const localH = (clampedH / oh) * overlayEl.naturalHeight; const tmp = document.createElement('canvas'); tmp.width = Math.max(1, localW); tmp.height = Math.max(1, localH); const ctx = tmp.getContext('2d')!; ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, tmp.width, tmp.height); ctx.drawImage(overlayEl, localX, localY, localW, localH, 0, 0, localW, localH); const newSrc = tmp.toDataURL('image/png'); const img = new Image(); img.onload = () => { setOverlayEl(img); setOverlayImg(newSrc) }; img.src = newSrc; setOverlayCropRect(null); setOverlayCropMode(false) }
+    img.src = src
+  }, [src])
+
+  // canvas 渲染
+  React.useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || !imgEl || canvasSize.w === 0) return
+    canvas.width = canvasSize.w
+    canvas.height = canvasSize.h
+    const ctx = canvas.getContext('2d')!
+
+    // 主图
+    ctx.save()
+    ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%)`
+    ctx.translate(canvasSize.w/2, canvasSize.h/2)
+    ctx.rotate((rotation * Math.PI) / 180)
+    if (flipH) ctx.scale(-1, 1)
+    ctx.drawImage(imgEl, -canvasSize.w/2, -canvasSize.h/2, canvasSize.w, canvasSize.h)
+    ctx.restore()
+
+    // 图层（从下到上渲染）
+    for (const layer of layers) {
+      if (!layer.visible) continue
+      const ow = (canvasSize.w * layer.scale) / 100
+      const oh = (layer.el.naturalHeight / layer.el.naturalWidth) * ow
+      ctx.save()
+      ctx.filter = layer.followColor ? `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%)` : 'none'
+      ctx.globalAlpha = 0.92
+      ctx.drawImage(layer.el, layer.pos.x, layer.pos.y, ow, oh)
+      ctx.restore()
+      ctx.globalAlpha = 1
+      // 选中框
+      if (layer.id === activeLayerId && !cropMode) {
+        ctx.save()
+        ctx.strokeStyle = 'rgba(255,255,255,0.6)'
+        ctx.lineWidth = 1.5
+        ctx.setLineDash([4, 3])
+        ctx.strokeRect(layer.pos.x, layer.pos.y, ow, oh)
+        ctx.restore()
+      }
+    }
+
+    // 裁剪遮罩
+    if (cropRect && cropMode) {
+      ctx.save()
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.setLineDash([6, 3])
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'
+      ctx.fillRect(0, 0, canvasSize.w, canvasSize.h)
+      ctx.clearRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h)
+      ctx.strokeRect(cropRect.x, cropRect.y, cropRect.w, cropRect.h)
+      ctx.restore()
+    }
+  }, [imgEl, brightness, contrast, saturate, rotation, flipH, layers, activeLayerId, cropRect, cropMode, canvasSize])
+
+  const getCanvasPos = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = canvasRef.current!.getBoundingClientRect()
+    return { x: (e.clientX - rect.left) * (canvasSize.w / rect.width), y: (e.clientY - rect.top) * (canvasSize.h / rect.height) }
+  }
+
+  const getLayerAtPos = (pos: {x:number,y:number}) => {
+    // 从上到下检测（渲染顺序反向）
+    for (let i = layers.length - 1; i >= 0; i--) {
+      const l = layers[i]
+      if (!l.visible) continue
+      const ow = (canvasSize.w * l.scale) / 100
+      const oh = (l.el.naturalHeight / l.el.naturalWidth) * ow
+      if (pos.x >= l.pos.x && pos.x <= l.pos.x + ow && pos.y >= l.pos.y && pos.y <= l.pos.y + oh)
+        return l
+    }
+    return null
+  }
+
+  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const pos = getCanvasPos(e)
+    if (cropMode) { setCropStart(pos); setCropRect(null); setIsCropDragging(true); return }
+    const hit = getLayerAtPos(pos)
+    if (hit) {
+      setActiveLayerId(hit.id)
+      setIsDraggingLayer(true)
+      layerDragRef.current = { startX: e.clientX, startY: e.clientY, origX: hit.pos.x, origY: hit.pos.y, id: hit.id }
+    } else {
+      setActiveLayerId(null)
+    }
+  }
+
+  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const pos = getCanvasPos(e)
+    if (isCropDragging && cropStart && cropMode) {
+      setCropRect({ x: Math.min(cropStart.x, pos.x), y: Math.min(cropStart.y, pos.y), w: Math.abs(pos.x - cropStart.x), h: Math.abs(pos.y - cropStart.y) })
+      return
+    }
+    if (isDraggingLayer && layerDragRef.current) {
+      const rect = canvasRef.current!.getBoundingClientRect()
+      const scaleX = canvasSize.w / rect.width; const scaleY = canvasSize.h / rect.height
+      const dx = (e.clientX - layerDragRef.current.startX) * scaleX
+      const dy = (e.clientY - layerDragRef.current.startY) * scaleY
+      updateLayer(layerDragRef.current.id, { pos: { x: layerDragRef.current.origX + dx, y: layerDragRef.current.origY + dy } })
+    }
+  }
+
+  const handleCanvasMouseUp = () => { setIsCropDragging(false); setIsDraggingLayer(false); layerDragRef.current = null }
+
+  const applyCrop = () => {
+    if (!cropRect || !imgEl) return
+    const offscreen = document.createElement('canvas'); offscreen.width = canvasSize.w; offscreen.height = canvasSize.h
+    const ctx = offscreen.getContext('2d')!
+    ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%)`
+    ctx.translate(canvasSize.w/2, canvasSize.h/2); ctx.rotate((rotation * Math.PI) / 180)
+    if (flipH) ctx.scale(-1, 1)
+    ctx.drawImage(imgEl, -canvasSize.w/2, -canvasSize.h/2, canvasSize.w, canvasSize.h)
+    const tmp = document.createElement('canvas'); tmp.width = Math.max(1, cropRect.w); tmp.height = Math.max(1, cropRect.h)
+    tmp.getContext('2d')!.drawImage(offscreen, cropRect.x, cropRect.y, cropRect.w, cropRect.h, 0, 0, cropRect.w, cropRect.h)
+    const newSrc = tmp.toDataURL('image/jpeg', 0.92)
+    const img = new Image(); img.onload = () => { setImgEl(img); setCanvasSize({ w: cropRect.w, h: cropRect.h }); setCropRect(null); setCropMode(false) }; img.src = newSrc
+  }
+
   const handleSave = () => { if (!canvasRef.current) return; onSave(canvasRef.current.toDataURL('image/jpeg', 0.92)) }
-  const handleOverlayUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = ev => { setOverlayImg(ev.target?.result as string); setOverlayPos({x:40,y:40}) }; reader.readAsDataURL(file); e.target.value = '' }
-  const getCursor = () => { if (cropMode || overlayCropMode) return 'crosshair'; if (isDraggingOverlay) return 'grabbing'; return 'default' }
-  const sliders = [{ label: isZh ? '亮度' : 'Brightness', value: brightness, set: setBrightness, min: 20, max: 200 }, { label: isZh ? '对比度' : 'Contrast', value: contrast, set: setContrast, min: 20, max: 200 }, { label: isZh ? '饱和度' : 'Saturate', value: saturate, set: setSaturate, min: 0, max: 200 }]
+
+  const handleLayerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    files.forEach((file, fi) => {
+      const reader = new FileReader()
+      reader.onload = ev => {
+        const dataSrc = ev.target?.result as string
+        const img = new Image()
+        img.onload = () => {
+          const newLayer: OverlayLayer = {
+            id: Date.now().toString(36) + fi,
+            src: dataSrc, el: img,
+            pos: { x: 40 + fi * 20, y: 40 + fi * 20 },
+            scale: 50, visible: true, followColor: false,
+            name: file.name.replace(/\.[^.]+$/, '').slice(0, 18),
+          }
+          setLayers(prev => [...prev, newLayer])
+          setActiveLayerId(newLayer.id)
+        }
+        img.src = dataSrc
+      }
+      reader.readAsDataURL(file)
+    })
+    e.target.value = ''
+  }
+
+  const getCursor = () => {
+    if (cropMode) return 'crosshair'
+    if (isDraggingLayer) return 'grabbing'
+    return 'default'
+  }
+
+  const sliders = [
+    { label: isZh ? '亮度' : 'Brightness', value: brightness, set: setBrightness, min: 20, max: 200 },
+    { label: isZh ? '对比度' : 'Contrast', value: contrast, set: setContrast, min: 20, max: 200 },
+    { label: isZh ? '饱和度' : 'Saturate', value: saturate, set: setSaturate, min: 0, max: 200 },
+  ]
+
+  const monoSm: React.CSSProperties = { fontFamily: 'Space Mono, monospace', fontSize: '0.65rem', letterSpacing: '0.2em', color: '#666', textTransform: 'uppercase' as const, marginBottom: '14px' }
+
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 600, background: 'rgba(20,20,20,0.96)', display: 'flex', flexDirection: 'column' }}>
+      {/* top bar */}
       <div style={{ height: '56px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', flexShrink: 0 }}>
         <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.82rem', letterSpacing: '0.1em' }}>{isZh ? '← 取消' : '← Cancel'}</button>
         <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.78rem', letterSpacing: '0.15em', color: '#aaa', textTransform: 'uppercase' }}>{isZh ? '图片编辑器' : 'Image Editor'}</span>
         <button onClick={handleSave} style={{ background: '#f7f7f5', color: '#1a1a1a', border: 'none', padding: '10px 24px', borderRadius: '10px', fontFamily: 'Space Mono, monospace', fontSize: '0.82rem', letterSpacing: '0.1em', cursor: 'pointer' }}>{isZh ? '保存' : 'Save'}</button>
       </div>
-      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 280px', overflow: 'hidden' }}>
+
+      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 300px', overflow: 'hidden' }}>
+        {/* canvas */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '32px', overflow: 'auto' }}>
-          <canvas ref={canvasRef} style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: '10px', cursor: getCursor(), boxShadow: '0 8px 40px rgba(0,0,0,0.5)' }} onMouseDown={handleCanvasMouseDown} onMouseMove={handleCanvasMouseMove} onMouseUp={handleCanvasMouseUp} onMouseLeave={handleCanvasMouseUp} />
+          <canvas ref={canvasRef} style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: '10px', cursor: getCursor(), boxShadow: '0 8px 40px rgba(0,0,0,0.5)' }}
+            onMouseDown={handleCanvasMouseDown} onMouseMove={handleCanvasMouseMove}
+            onMouseUp={handleCanvasMouseUp} onMouseLeave={handleCanvasMouseUp} />
         </div>
+
+        {/* right panel */}
         <div style={{ borderLeft: '1px solid rgba(255,255,255,0.08)', overflowY: 'auto', padding: '24px 20px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+
+          {/* 调色 */}
           <div>
-            <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.65rem', letterSpacing: '0.2em', color: '#666', textTransform: 'uppercase', marginBottom: '14px' }}>{isZh ? '调色' : 'Adjustments'}</p>
-            {sliders.map(s => (<div key={s.label} style={{ marginBottom: '14px' }}><div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}><span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#888' }}>{s.label}</span><span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#555' }}>{s.value}%</span></div><input type="range" min={s.min} max={s.max} value={s.value} onChange={e => s.set(Number(e.target.value))} style={{ width: '100%', accentColor: '#f7f7f5' }} /></div>))}
-            <button onClick={() => { setBrightness(100); setContrast(100); setSaturate(100) }} style={{ fontSize: '0.68rem', color: '#555', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em', marginTop: '2px' }}>{isZh ? '重置' : 'Reset'}</button>
+            <p style={monoSm}>{isZh ? '调色' : 'Adjustments'}</p>
+            {sliders.map(s => (
+              <div key={s.label} style={{ marginBottom: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#888' }}>{s.label}</span>
+                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#555' }}>{s.value}%</span>
+                </div>
+                <input type="range" min={s.min} max={s.max} value={s.value} onChange={e => s.set(Number(e.target.value))} style={{ width: '100%', accentColor: '#f7f7f5' }} />
+              </div>
+            ))}
+            <button onClick={() => { setBrightness(100); setContrast(100); setSaturate(100) }} style={{ fontSize: '0.68rem', color: '#555', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em' }}>{isZh ? '重置' : 'Reset'}</button>
           </div>
+
+          {/* 旋转/翻转 */}
           <div>
-            <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.65rem', letterSpacing: '0.2em', color: '#666', textTransform: 'uppercase', marginBottom: '14px' }}>{isZh ? '旋转 / 翻转' : 'Rotate / Flip'}</p>
+            <p style={monoSm}>{isZh ? '旋转 / 翻转' : 'Rotate / Flip'}</p>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              {[90, 180, 270].map(deg => (<button key={deg} onClick={() => setRotation(r => (r + deg) % 360)} style={{ padding: '8px 12px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', background: 'transparent', color: '#aaa', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>+{deg}°</button>))}
-              <button onClick={() => setFlipH(f => !f)} style={{ padding: '8px 12px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', background: flipH ? 'rgba(255,255,255,0.1)' : 'transparent', color: '#aaa', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>⇄ {isZh ? '翻转' : 'Flip'}</button>
+              {[90, 180, 270].map(deg => (
+                <button key={deg} onClick={() => setRotation(r => (r + deg) % 360)}
+                  style={{ padding: '8px 12px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', background: 'transparent', color: '#aaa', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>+{deg}°</button>
+              ))}
+              <button onClick={() => setFlipH(f => !f)}
+                style={{ padding: '8px 12px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', background: flipH ? 'rgba(255,255,255,0.1)' : 'transparent', color: '#aaa', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>⇄ {isZh ? '翻转' : 'Flip'}</button>
             </div>
           </div>
+
+          {/* 裁剪 */}
           <div>
-            <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.65rem', letterSpacing: '0.2em', color: '#666', textTransform: 'uppercase', marginBottom: '14px' }}>{isZh ? '裁剪主图' : 'Crop Main'}</p>
-            {!cropMode ? (<button onClick={() => { setCropMode(true); setCropRect(null); setOverlayCropMode(false) }} style={{ width: '100%', padding: '10px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '9px', background: 'transparent', color: '#aaa', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.75rem', letterSpacing: '0.08em' }}>{isZh ? '✂ 开始裁剪' : '✂ Start Crop'}</button>) : (<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}><p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#666' }}>{isZh ? '在画布上拖动选区' : 'Drag on canvas to select'}</p><div style={{ display: 'flex', gap: '8px' }}><button onClick={applyCrop} disabled={!cropRect} style={{ flex: 1, padding: '9px', background: cropRect ? '#f7f7f5' : 'rgba(255,255,255,0.1)', color: cropRect ? '#1a1a1a' : '#555', border: 'none', borderRadius: '8px', cursor: cropRect ? 'pointer' : 'not-allowed', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>{isZh ? '确认' : 'Apply'}</button><button onClick={() => { setCropMode(false); setCropRect(null) }} style={{ flex: 1, padding: '9px', background: 'transparent', color: '#666', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>{isZh ? '取消' : 'Cancel'}</button></div></div>)}
+            <p style={monoSm}>{isZh ? '裁剪主图' : 'Crop Main'}</p>
+            {!cropMode
+              ? <button onClick={() => { setCropMode(true); setCropRect(null) }} style={{ width: '100%', padding: '10px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '9px', background: 'transparent', color: '#aaa', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.75rem', letterSpacing: '0.08em' }}>{isZh ? '✂ 开始裁剪' : '✂ Start Crop'}</button>
+              : <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#666' }}>{isZh ? '在画布上拖动选区' : 'Drag on canvas to select'}</p>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button onClick={applyCrop} disabled={!cropRect} style={{ flex: 1, padding: '9px', background: cropRect ? '#f7f7f5' : 'rgba(255,255,255,0.1)', color: cropRect ? '#1a1a1a' : '#555', border: 'none', borderRadius: '8px', cursor: cropRect ? 'pointer' : 'not-allowed', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>{isZh ? '确认' : 'Apply'}</button>
+                    <button onClick={() => { setCropMode(false); setCropRect(null) }} style={{ flex: 1, padding: '9px', background: 'transparent', color: '#666', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>{isZh ? '取消' : 'Cancel'}</button>
+                  </div>
+                </div>
+            }
           </div>
+
+          {/* ── 图层 ── */}
           <div>
-            <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.65rem', letterSpacing: '0.2em', color: '#666', textTransform: 'uppercase', marginBottom: '14px' }}>{isZh ? '叠加图片' : 'Overlay Image'}</p>
-            <button onClick={() => overlayInputRef.current?.click()} style={{ width: '100%', padding: '10px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '9px', background: 'transparent', color: '#aaa', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.75rem', letterSpacing: '0.08em', marginBottom: '10px' }}>{isZh ? '+ 导入叠加图片' : '+ Import Overlay'}</button>
-            <input ref={overlayInputRef} type="file" accept="image/*" onChange={handleOverlayUpload} style={{ display: 'none' }} />
-            {overlayEl && (<div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}><span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#888' }}>{isZh ? '跟随主图调色' : 'Follow main color'}</span><button onClick={() => setFollowMainColor(f => !f)} style={{ padding: '4px 12px', borderRadius: '20px', border: 'none', cursor: 'pointer', background: followMainColor ? '#4aab6f' : 'rgba(255,255,255,0.1)', color: followMainColor ? '#fff' : '#666', fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', letterSpacing: '0.08em', transition: 'all 0.15s' }}>{followMainColor ? 'YES' : 'NO'}</button></div>
-              <div><div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}><span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#888' }}>{isZh ? '大小' : 'Size'}</span><span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#555' }}>{overlayScale}%</span></div><input type="range" min={5} max={100} value={overlayScale} onChange={e => setOverlayScale(Number(e.target.value))} style={{ width: '100%', accentColor: '#f7f7f5' }} /></div>
-              <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.66rem', color: '#555', letterSpacing: '0.06em' }}>{isZh ? '↖ 在画布上拖动叠加图位置' : '↖ Drag overlay on canvas to move'}</p>
-              {!overlayCropMode ? (<button onClick={() => { setOverlayCropMode(true); setOverlayCropRect(null); setCropMode(false) }} style={{ width: '100%', padding: '9px', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', background: 'transparent', color: '#aaa', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>{isZh ? '✂ 裁剪叠加图' : '✂ Crop Overlay'}</button>) : (<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}><p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#666' }}>{isZh ? '在叠加图上拖动选区' : 'Drag within the overlay area'}</p><div style={{ display: 'flex', gap: '8px' }}><button onClick={applyOverlayCrop} disabled={!overlayCropRect} style={{ flex: 1, padding: '9px', background: overlayCropRect ? '#f7f7f5' : 'rgba(255,255,255,0.1)', color: overlayCropRect ? '#1a1a1a' : '#555', border: 'none', borderRadius: '8px', cursor: overlayCropRect ? 'pointer' : 'not-allowed', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>{isZh ? '确认' : 'Apply'}</button><button onClick={() => { setOverlayCropMode(false); setOverlayCropRect(null) }} style={{ flex: 1, padding: '9px', background: 'transparent', color: '#666', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem' }}>{isZh ? '取消' : 'Cancel'}</button></div></div>)}
-              <button onClick={() => { setOverlayImg(null); setOverlayEl(null); setOverlayCropMode(false) }} style={{ fontSize: '0.68rem', color: '#bf4a4a', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Space Mono, monospace', textAlign: 'left' }}>{isZh ? '移除叠加图' : 'Remove overlay'}</button>
-            </div>)}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <p style={{ ...monoSm, marginBottom: 0 }}>{isZh ? '图层' : 'Layers'} {layers.length > 0 && <span style={{ color: '#444' }}>({layers.length})</span>}</p>
+              <button onClick={() => layerInputRef.current?.click()}
+                style={{ fontSize: '0.68rem', color: '#aaa', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px', padding: '4px 10px', cursor: 'pointer', fontFamily: 'Space Mono, monospace', letterSpacing: '0.06em', transition: 'all 0.12s' }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#ddd' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = '#aaa' }}>
+                + {isZh ? '导入' : 'Import'}
+              </button>
+            </div>
+            <input ref={layerInputRef} type="file" accept="image/*" multiple onChange={handleLayerUpload} style={{ display: 'none' }} />
+
+            {layers.length === 0 && (
+              <div onClick={() => layerInputRef.current?.click()}
+                style={{ border: '1.5px dashed rgba(255,255,255,0.1)', borderRadius: '8px', padding: '20px', textAlign: 'center', cursor: 'pointer', transition: 'border-color 0.12s' }}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.25)')}
+                onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)')}>
+                <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: '#444', letterSpacing: '0.08em' }}>{isZh ? '点击导入叠加图层' : 'Click to import layers'}</p>
+              </div>
+            )}
+
+            {/* 图层列表 */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {[...layers].reverse().map((layer, ri) => {
+                const isActive = layer.id === activeLayerId
+                return (
+                  <div key={layer.id}
+                    onClick={() => setActiveLayerId(layer.id)}
+                    style={{ border: `1px solid ${isActive ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.06)'}`, borderRadius: '8px', background: isActive ? 'rgba(255,255,255,0.05)' : 'transparent', overflow: 'hidden', cursor: 'pointer', transition: 'all 0.12s' }}>
+                    {/* 图层头部 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px' }}>
+                      {/* 缩略图 */}
+                      <img src={layer.src} alt="" style={{ width: '32px', height: '32px', objectFit: 'cover', borderRadius: '4px', flexShrink: 0, opacity: layer.visible ? 1 : 0.3 }} />
+                      {/* 名称 */}
+                      <span style={{ flex: 1, fontFamily: 'Space Mono, monospace', fontSize: '0.65rem', color: layer.visible ? '#ccc' : '#555', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '0.04em' }}>
+                        {layer.name || `Layer ${layers.length - ri}`}
+                      </span>
+                      {/* 眼睛 */}
+                      <button
+                        onClick={e => { e.stopPropagation(); updateLayer(layer.id, { visible: !layer.visible }) }}
+                        title={isZh ? (layer.visible ? '隐藏' : '显示') : (layer.visible ? 'Hide' : 'Show')}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: layer.visible ? '#888' : '#333', fontSize: '0.85rem', padding: '2px 4px', flexShrink: 0, lineHeight: 1 }}>
+                        {layer.visible ? '👁' : '🙈'}
+                      </button>
+                      {/* 删除 */}
+                      <button
+                        onClick={e => { e.stopPropagation(); setLayers(prev => prev.filter(l => l.id !== layer.id)); if (activeLayerId === layer.id) setActiveLayerId(null) }}
+                        title={isZh ? '删除图层' : 'Delete layer'}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(191,74,74,0.5)', fontSize: '0.8rem', padding: '2px 4px', flexShrink: 0, lineHeight: 1, transition: 'color 0.12s' }}
+                        onMouseEnter={e => (e.currentTarget.style.color = 'rgba(191,74,74,1)')}
+                        onMouseLeave={e => (e.currentTarget.style.color = 'rgba(191,74,74,0.5)')}>✕</button>
+                    </div>
+
+                    {/* 选中时展开控制项 */}
+                    {isActive && (
+                      <div style={{ padding: '0 10px 12px', borderTop: '1px solid rgba(255,255,255,0.06)', marginTop: '2px', display: 'flex', flexDirection: 'column', gap: '10px', paddingTop: '10px' }}>
+                        {/* 大小 */}
+                        <div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                            <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.62rem', color: '#666' }}>{isZh ? '大小' : 'Size'}</span>
+                            <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.62rem', color: '#444' }}>{layer.scale}%</span>
+                          </div>
+                          <input type="range" min={3} max={150} value={layer.scale}
+                            onChange={e => updateLayer(layer.id, { scale: Number(e.target.value) })}
+                            style={{ width: '100%', accentColor: '#f7f7f5' }} />
+                        </div>
+                        {/* 跟随调色 */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.62rem', color: '#666' }}>{isZh ? '跟随调色' : 'Follow color'}</span>
+                          <button onClick={e => { e.stopPropagation(); updateLayer(layer.id, { followColor: !layer.followColor }) }}
+                            style={{ padding: '3px 10px', borderRadius: '20px', border: 'none', cursor: 'pointer', background: layer.followColor ? '#4aab6f' : 'rgba(255,255,255,0.08)', color: layer.followColor ? '#fff' : '#555', fontFamily: 'Space Mono, monospace', fontSize: '0.62rem', transition: 'all 0.15s' }}>
+                            {layer.followColor ? 'YES' : 'NO'}
+                          </button>
+                        </div>
+                        <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.6rem', color: '#444', letterSpacing: '0.06em', margin: 0 }}>
+                          {isZh ? '↖ 在画布上拖动此图层' : '↖ Drag this layer on canvas'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           </div>
+
         </div>
       </div>
     </div>
