@@ -413,6 +413,67 @@ export function buildBlocksHTML(
   }).filter(Boolean).join('\n\n')
 }
 
+// ── Paged mode JS ────────────────────────────────────────────────────────────
+const PAGED_SCRIPT = `
+(function(){
+  var blocks = Array.from(document.querySelectorAll('.block'));
+  if(blocks.length === 0) return;
+  var idx = 0;
+
+  // hide all except first
+  blocks.forEach(function(b, i){ b.style.display = i === 0 ? '' : 'none'; });
+
+  // counter
+  var counter = document.createElement('div');
+  counter.id = 'pg-counter';
+  counter.style.cssText = 'position:fixed;top:18px;right:22px;font-size:11px;letter-spacing:0.18em;color:rgba(128,128,128,0.7);font-family:Inter,DM Sans,monospace;z-index:999;user-select:none;pointer-events:none;';
+  document.body.appendChild(counter);
+
+  // nav arrows
+  function makeArrow(label, dir){
+    var btn = document.createElement('button');
+    btn.textContent = label;
+    btn.style.cssText = 'position:fixed;bottom:24px;'+(dir==='prev'?'left:50%;transform:translateX(-140%)':'left:50%;transform:translateX(40%)')+';padding:10px 22px;background:rgba(0,0,0,0.08);border:1px solid rgba(0,0,0,0.12);border-radius:8px;font-size:13px;cursor:pointer;z-index:999;backdrop-filter:blur(8px);transition:background 0.12s;font-family:Inter,DM Sans,sans-serif;';
+    btn.onmouseenter=function(){btn.style.background='rgba(0,0,0,0.18)'};
+    btn.onmouseleave=function(){btn.style.background='rgba(0,0,0,0.08)'};
+    btn.onclick=function(){ dir==='prev' ? go(-1) : go(1); };
+    document.body.appendChild(btn);
+    return btn;
+  }
+  var prevBtn = makeArrow('←', 'prev');
+  var nextBtn = makeArrow('→', 'next');
+
+  // scroll mode toggle
+  var scrollBtn = document.createElement('button');
+  scrollBtn.textContent = 'scroll';
+  scrollBtn.style.cssText = 'position:fixed;top:14px;left:50%;transform:translateX(-50%);padding:5px 14px;background:rgba(0,0,0,0.06);border:1px solid rgba(0,0,0,0.1);border-radius:20px;font-size:10px;letter-spacing:0.12em;cursor:pointer;z-index:999;font-family:Inter,DM Sans,sans-serif;color:#888;';
+  scrollBtn.onclick=function(){
+    blocks.forEach(function(b){b.style.display='';});
+    [counter,prevBtn,nextBtn,scrollBtn].forEach(function(el){el.remove();});
+    document.removeEventListener('keydown',keyHandler);
+  };
+  document.body.appendChild(scrollBtn);
+
+  function update(){
+    blocks.forEach(function(b,i){ b.style.display = i===idx ? '' : 'none'; });
+    counter.textContent = (idx+1) + ' / ' + blocks.length;
+    prevBtn.style.opacity = idx===0 ? '0.3' : '1';
+    nextBtn.style.opacity = idx===blocks.length-1 ? '0.3' : '1';
+    window.scrollTo(0,0);
+  }
+  function go(d){
+    idx = Math.max(0, Math.min(blocks.length-1, idx+d));
+    update();
+  }
+  function keyHandler(e){
+    if(e.key==='ArrowRight'||e.key==='ArrowDown') go(1);
+    if(e.key==='ArrowLeft'||e.key==='ArrowUp') go(-1);
+  }
+  document.addEventListener('keydown', keyHandler);
+  update();
+})();
+`
+
 // ── Full HTML assembler ───────────────────────────────────────────────────────
 export function buildExportHTML(
   blocks: Block[],
@@ -420,6 +481,7 @@ export function buildExportHTML(
   schools: School[],
   opts: ExportOptions,
   isZh: boolean,
+  paged = false,
 ): string {
   const css = buildExportCSS(opts, isZh)
   const blocksHTML = buildBlocksHTML(blocks, project, schools, opts, isZh)
@@ -433,6 +495,7 @@ export function buildExportHTML(
 </head>
 <body>
 ${blocksHTML}
+${paged ? `<script>${PAGED_SCRIPT}<\/script>` : ''}
 </body>
 </html>`
 }
