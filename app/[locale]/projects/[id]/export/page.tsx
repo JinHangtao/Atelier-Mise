@@ -304,6 +304,34 @@ export default function ExportPage() {
     </div>
   )
 
+  const compressImage = (dataUrl: string, maxW = 1200, quality = 0.82): Promise<string> =>
+    new Promise(resolve => {
+      const img = new Image()
+      img.onload = () => {
+        const scale = Math.min(1, maxW / img.naturalWidth)
+        const w = Math.round(img.naturalWidth * scale)
+        const h = Math.round(img.naturalHeight * scale)
+        const canvas = document.createElement('canvas')
+        canvas.width = w; canvas.height = h
+        const ctx = canvas.getContext('2d')!
+        ctx.drawImage(img, 0, 0, w, h)
+        // 检测是否含透明像素，有则保留 PNG
+        const pixels = ctx.getImageData(0, 0, w, h).data
+        let hasAlpha = false
+        for (let i = 3; i < pixels.length; i += 4) {
+          if (pixels[i] < 255) { hasAlpha = true; break }
+        }
+        resolve(hasAlpha ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', quality))
+      }
+      img.src = dataUrl
+    })
+
+  const addToMediaLibrary = (dataUrl: string) => {
+    compressImage(dataUrl).then(compressed => {
+      setProjects(ps => ps.map(p => p.id === id ? { ...p, mediaUrls: [...(p.mediaUrls || []), compressed] } : p))
+    })
+  }
+
   const addBlock = (type: BlockType, content: string, caption?: string, images?: string[]) => {
     setBlocks(b => [...b, { id: generateId(), type, content, caption, images }])
   }
@@ -739,7 +767,7 @@ export default function ExportPage() {
                     const reader = new FileReader()
                     reader.onload = ev => {
                       const dataUrl = ev.target?.result as string
-                      if (dataUrl) addBlock('image', dataUrl)
+                      if (dataUrl) addToMediaLibrary(dataUrl)
                     }
                     reader.readAsDataURL(file)
                   })
