@@ -315,7 +315,7 @@ export default function ExportPage() {
     setEditingBlockId(block.id)
     setEditingContent(block.content)
     setEditingCaption(block.caption || '')
-    setEditingImageCaptions(block.imageCaptions || (block.type === 'image' ? [''] : (block.images || []).map(() => '')))
+    setEditingImageCaptions(block.imageCaptions || (block.images || []).map(() => ''))
   }
   const saveEdit = () => {
     setBlocks(b => b.map(block =>
@@ -506,14 +506,7 @@ export default function ExportPage() {
                       style={{ width: '100%', padding: '10px 14px', border: '1px solid rgba(26,26,26,0.15)', borderRadius: '10px', fontFamily: 'DM Sans, sans-serif', fontSize: '0.95rem', color: '#1a1a1a', outline: 'none', resize: 'vertical', background: '#f7f7f5', marginBottom: '10px' }} />
                   )}
                   {block.type === 'image' && (
-                    <div style={{ marginBottom: '10px' }}>
-                      <div style={{ position: 'relative' }}>
-                        <img src={block.content} alt="" style={{ width: '100%', maxHeight: '180px', objectFit: 'cover', borderRadius: '8px', display: 'block' }} />
-                      </div>
-                      <input value={editingImageCaptions[0] || ''} onChange={e => { const updated = [...editingImageCaptions]; updated[0] = e.target.value; setEditingImageCaptions(updated) }}
-                        placeholder={isZh ? '图片名称…' : 'Image label…'}
-                        style={{ width: '100%', marginTop: '6px', padding: '5px 8px', border: '1px solid rgba(26,26,26,0.12)', borderRadius: '6px', fontFamily: 'DM Sans, sans-serif', fontSize: '0.8rem', color: '#555', outline: 'none', background: '#f7f7f5' }} />
-                    </div>
+                    <img src={block.content} alt="" style={{ width: '100%', maxHeight: '180px', objectFit: 'cover', borderRadius: '8px', marginBottom: '10px' }} />
                   )}
                   {block.type === 'image-row' && (
                     <div style={{ marginBottom: '10px' }}>
@@ -581,8 +574,18 @@ export default function ExportPage() {
                   {block.type === 'image' && (
                     <div>
                       <img src={block.content} alt="" style={{ width: '100%', maxHeight: '200px', objectFit: 'cover', borderRadius: '8px' }} />
-                      {(block.imageCaptions || [])[0] && <p style={{ fontSize: '0.72rem', color: '#999', marginTop: '4px', textAlign: 'center', fontStyle: 'italic', lineHeight: 1.4, fontFamily: 'Inter, DM Sans, sans-serif' }}>{(block.imageCaptions || [])[0]}</p>}
-                      {block.caption && <p style={{ fontSize: '0.78rem', color: '#bbb', marginTop: '7px', fontStyle: 'italic', fontFamily: 'Inter, DM Sans, sans-serif' }}>{block.caption}</p>}
+                      <input
+                        value={(block.imageCaptions || [])[0] || ''}
+                        onChange={e => setBlocks(b => b.map(bl => bl.id !== block.id ? bl : { ...bl, imageCaptions: [e.target.value] }))}
+                        placeholder={isZh ? '图片名称…' : 'Image label…'}
+                        onClick={e => e.stopPropagation()}
+                        style={{ width: '100%', marginTop: '8px', padding: '5px 0', border: 'none', borderBottom: '1px solid rgba(26,26,26,0.1)', background: 'transparent', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.8rem', color: '#555', outline: 'none' }} />
+                      <input
+                        value={block.caption || ''}
+                        onChange={e => setBlocks(b => b.map(bl => bl.id !== block.id ? bl : { ...bl, caption: e.target.value }))}
+                        placeholder={isZh ? '图片说明…' : 'Caption…'}
+                        onClick={e => e.stopPropagation()}
+                        style={{ width: '100%', marginTop: '6px', padding: '5px 0', border: 'none', borderBottom: '1px solid rgba(26,26,26,0.08)', background: 'transparent', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.76rem', color: '#aaa', outline: 'none', fontStyle: 'italic' }} />
                     </div>
                   )}
                   {block.type === 'image-row' && (
