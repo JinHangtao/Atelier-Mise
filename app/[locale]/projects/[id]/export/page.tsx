@@ -374,66 +374,81 @@ export default function ExportPage() {
       `}</style>
 
       {/* NAV */}
-      <nav style={{ padding: '20px 40px', borderBottom: '1px solid rgba(26,26,26,0.08)', background: 'rgba(247,247,245,0.9)', backdropFilter: 'blur(20px)', position: 'sticky', top: 0, zIndex: 100, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <button onClick={() => router.back()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888', fontSize: '0.9rem', letterSpacing: '0.1em' }}>
-          {isZh ? '← 返回' : '← Back'}
-        </button>
-
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
-          <span style={{ fontSize: '0.9rem', letterSpacing: '0.1em', color: '#1a1a1a' }}>
-            {isZh ? '导出编辑器' : 'Export Editor'} — {project.title}
+      <nav style={{ padding: '0 32px', borderBottom: '1px solid rgba(26,26,26,0.1)', background: '#ffffff', position: 'sticky', top: 0, zIndex: 100, display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: '52px', gap: '16px' }}>
+        {/* Left: back + title */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', minWidth: 0 }}>
+          <button onClick={() => router.back()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '0.78rem', letterSpacing: '0.12em', fontFamily: 'Inter, DM Sans, sans-serif', flexShrink: 0, padding: '0', transition: 'color 0.12s' }}
+            onMouseEnter={e => (e.currentTarget.style.color = '#1a1a1a')}
+            onMouseLeave={e => (e.currentTarget.style.color = '#aaa')}>
+            ← {isZh ? '返回' : 'Back'}
+          </button>
+          <span style={{ width: '1px', height: '18px', background: 'rgba(26,26,26,0.1)', flexShrink: 0 }} />
+          <span style={{ fontSize: '0.8rem', letterSpacing: '0.06em', color: '#1a1a1a', fontFamily: 'Inter, DM Sans, sans-serif', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '220px' }}>
+            {project.title}
           </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', height: '16px' }}>
-            {saveStatus === 'saving' && <><span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#e8c06a', display: 'inline-block', animation: 'pulse 0.8s ease-in-out infinite' }} /><span style={{ fontSize: '0.68rem', color: '#c8a84a', letterSpacing: '0.08em' }}>{isZh ? '保存中…' : 'Saving…'}</span></>}
-            {saveStatus === 'saved' && <><span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4aab6f', display: 'inline-block' }} /><span style={{ fontSize: '0.68rem', color: '#4aab6f', letterSpacing: '0.08em' }}>{isZh ? '已自动保存' : 'Draft saved'}</span></>}
-            {saveStatus === 'error' && <><span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#e05c5c', display: 'inline-block' }} /><span style={{ fontSize: '0.68rem', color: '#e05c5c', letterSpacing: '0.08em' }}>{isZh ? '保存失败' : 'Save failed'}</span></>}
-            {saveStatus === 'idle' && blocks.length > 0 && <span style={{ fontSize: '0.68rem', color: '#c8c8c4', letterSpacing: '0.08em' }}>{isZh ? `${blocks.length} 个块` : `${blocks.length} block${blocks.length !== 1 ? 's' : ''}`}</span>}
-          </div>
+          <span style={{ fontSize: '0.68rem', letterSpacing: '0.1em', color: '#ccc', fontFamily: 'Inter, DM Sans, sans-serif', flexShrink: 0 }}>
+            {isZh ? '导出编辑器' : 'Export Editor'}
+          </span>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        {/* Center: save status */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
+          {saveStatus === 'saving' && <><span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#e8c06a', display: 'inline-block', animation: 'pulse 0.8s ease-in-out infinite' }} /><span style={{ fontSize: '0.65rem', color: '#c8a84a', letterSpacing: '0.1em', fontFamily: 'Inter, DM Sans, sans-serif' }}>{isZh ? 'SAVING…' : 'SAVING…'}</span></>}
+          {saveStatus === 'saved' && <><span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#4aab6f', display: 'inline-block' }} /><span style={{ fontSize: '0.65rem', color: '#4aab6f', letterSpacing: '0.1em', fontFamily: 'Inter, DM Sans, sans-serif' }}>{isZh ? 'SAVED' : 'SAVED'}</span></>}
+          {saveStatus === 'error' && <><span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#e05c5c', display: 'inline-block' }} /><span style={{ fontSize: '0.65rem', color: '#e05c5c', letterSpacing: '0.1em', fontFamily: 'Inter, DM Sans, sans-serif' }}>ERROR</span></>}
+          {saveStatus === 'idle' && blocks.length > 0 && <span style={{ fontSize: '0.65rem', color: '#d0d0cc', letterSpacing: '0.1em', fontFamily: 'Inter, DM Sans, sans-serif' }}>{blocks.length} {isZh ? 'BLOCKS' : 'BLOCKS'}</span>}
+        </div>
+
+        {/* Right: actions */}
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
           <button onClick={undo} disabled={undoStack.current.length === 0} title={isZh ? '撤销 (⌘Z)' : 'Undo (⌘Z)'}
-            style={{ background: 'transparent', border: '1px solid rgba(26,26,26,0.12)', padding: '10px 14px', borderRadius: '10px', fontSize: '0.85rem', cursor: undoStack.current.length === 0 ? 'not-allowed' : 'pointer', color: undoStack.current.length === 0 ? '#ccc' : '#888' }}>↩</button>
+            style={{ background: 'transparent', border: '1px solid rgba(26,26,26,0.1)', padding: '7px 12px', borderRadius: '8px', fontSize: '0.82rem', cursor: undoStack.current.length === 0 ? 'not-allowed' : 'pointer', color: undoStack.current.length === 0 ? '#ddd' : '#888', transition: 'all 0.12s' }}>↩</button>
           {blocks.length > 0 && (
             <button onClick={() => { if (window.confirm(isZh ? '清空当前画布？此操作不可撤销。' : 'Clear the canvas? This cannot be undone.')) clearDraft() }}
-              style={{ background: 'transparent', border: '1px solid rgba(180,80,80,0.2)', padding: '10px 14px', borderRadius: '10px', fontSize: '0.78rem', cursor: 'pointer', color: 'rgba(180,80,80,0.5)', transition: 'all 0.15s' }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(180,80,80,0.5)'; e.currentTarget.style.color = 'rgba(180,80,80,0.9)' }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(180,80,80,0.2)'; e.currentTarget.style.color = 'rgba(180,80,80,0.5)' }}>
-              {isZh ? '清空' : 'Clear'}
+              style={{ background: 'transparent', border: '1px solid rgba(180,80,80,0.18)', padding: '7px 12px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.06em', cursor: 'pointer', color: 'rgba(180,80,80,0.45)', fontFamily: 'Inter, DM Sans, sans-serif', transition: 'all 0.12s' }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(180,80,80,0.45)'; e.currentTarget.style.color = 'rgba(180,80,80,0.85)' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(180,80,80,0.18)'; e.currentTarget.style.color = 'rgba(180,80,80,0.45)' }}>
+              {isZh ? 'Clear' : 'Clear'}
             </button>
           )}
-          {/* HTML export — prominent */}
+          <div style={{ width: '1px', height: '18px', background: 'rgba(26,26,26,0.08)' }} />
           <button onClick={doExportHTML}
-            style={{ background: '#1a1a1a', color: '#f7f7f5', border: 'none', padding: '10px 18px', borderRadius: '10px', fontSize: '0.82rem', letterSpacing: '0.08em', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span>{isZh ? '导出' : 'Export'}</span>
-            <span style={{ fontSize: '0.68rem', background: 'rgba(255,255,255,0.15)', padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.04em' }}>HTML</span>
+            style={{ background: '#1a1a1a', color: '#f7f7f5', border: 'none', padding: '8px 16px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.1em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 600 }}>
+            {isZh ? '导出' : 'Export'}
+            <span style={{ fontSize: '0.6rem', background: 'rgba(255,255,255,0.18)', padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.06em' }}>HTML</span>
           </button>
-          <button onClick={() => exportPDF(project, blocks, schools, exportOpts, isZh)} style={{ background: 'transparent', color: '#888', border: '1px solid rgba(26,26,26,0.15)', padding: '10px 16px', borderRadius: '10px', fontSize: '0.82rem', cursor: 'pointer' }}>PDF</button>
-          <button onClick={() => exportDOCX(project, blocks, schools, exportOpts, isZh)} style={{ background: 'transparent', color: '#888', border: '1px solid rgba(26,26,26,0.15)', padding: '10px 16px', borderRadius: '10px', fontSize: '0.82rem', cursor: 'pointer' }}>Word</button>
+          <button onClick={() => exportPDF(project, blocks, schools, exportOpts, isZh)}
+            style={{ background: 'transparent', color: '#666', border: '1px solid rgba(26,26,26,0.12)', padding: '8px 14px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.08em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', transition: 'all 0.12s' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.04)'; e.currentTarget.style.color = '#1a1a1a' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#666' }}>PDF</button>
+          <button onClick={() => exportDOCX(project, blocks, schools, exportOpts, isZh)}
+            style={{ background: 'transparent', color: '#666', border: '1px solid rgba(26,26,26,0.12)', padding: '8px 14px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.08em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', transition: 'all 0.12s' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.04)'; e.currentTarget.style.color = '#1a1a1a' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#666' }}>Word</button>
         </div>
       </nav>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '0', minHeight: 'calc(100vh - 65px)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '0', minHeight: 'calc(100vh - 52px)' }}>
 
         {/* ── 画布 ── */}
-        <div style={{ padding: '40px', borderRight: '1px solid rgba(26,26,26,0.08)' }}>
+        <div style={{ padding: '32px 40px', borderRight: '1px solid rgba(26,26,26,0.08)', background: '#f4f4f2' }}>
           {justRestored && <DraftBanner blocks={blocks} isZh={isZh} onClear={clearDraft} />}
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-            <p style={{ fontSize: '0.75rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#c8c8c4' }}>
-              {isZh ? '画布 — 拖动调整顺序' : 'Canvas — drag to reorder'}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <p style={{ fontSize: '0.6rem', letterSpacing: '0.28em', textTransform: 'uppercase', color: '#b8b8b4', fontFamily: 'Inter, DM Sans, sans-serif', fontWeight: 600 }}>
+              {isZh ? 'CANVAS — 拖动调整顺序' : 'CANVAS — DRAG TO REORDER'}
             </p>
             {blocks.length > 0 && (
               <button onClick={undo} disabled={undoStack.current.length === 0}
-                style={{ fontSize: '0.68rem', color: undoStack.current.length > 0 ? '#aaa' : '#ddd', background: 'none', border: 'none', cursor: undoStack.current.length > 0 ? 'pointer' : 'default', letterSpacing: '0.08em' }}>
-                {isZh ? '↩ 撤销' : '↩ undo'}
+                style={{ fontSize: '0.62rem', color: undoStack.current.length > 0 ? '#aaa' : '#ddd', background: 'none', border: 'none', cursor: undoStack.current.length > 0 ? 'pointer' : 'default', letterSpacing: '0.1em', fontFamily: 'Inter, DM Sans, sans-serif' }}>
+                ↩ {isZh ? 'UNDO' : 'UNDO'}
               </button>
             )}
           </div>
 
           {blocks.length === 0 && (
-            <div style={{ border: '2px dashed rgba(26,26,26,0.1)', borderRadius: '16px', padding: '60px', textAlign: 'center', color: '#c8c8c4', fontSize: '0.9rem' }}>
-              {isZh ? '从右侧添加内容块' : 'Add blocks from the right panel'}
+            <div style={{ border: '1.5px dashed rgba(26,26,26,0.12)', borderRadius: '14px', padding: '60px', textAlign: 'center', color: '#c8c8c4', fontSize: '0.78rem', fontFamily: 'Inter, DM Sans, sans-serif', letterSpacing: '0.1em', background: 'rgba(255,255,255,0.5)' }}>
+              {isZh ? '从右侧添加内容块' : 'ADD BLOCKS FROM THE RIGHT PANEL'}
             </div>
           )}
 
@@ -443,7 +458,7 @@ export default function ExportPage() {
               onDragStart={() => { dragIndex.current = i }}
               onDragOver={e => e.preventDefault()}
               onDrop={() => { if (dragIndex.current !== null && dragIndex.current !== i) moveBlock(dragIndex.current, i); dragIndex.current = null }}
-              style={{ background: '#fff', border: `1px solid ${editingBlockId === block.id ? '#1a1a1a' : 'rgba(26,26,26,0.08)'}`, borderRadius: '14px', padding: '20px 24px', marginBottom: '12px', cursor: editingBlockId === block.id ? 'default' : 'grab', position: 'relative' }}
+              style={{ background: '#fff', border: `1px solid ${editingBlockId === block.id ? '#1a1a1a' : 'rgba(26,26,26,0.07)'}`, borderRadius: '12px', padding: '16px 20px', marginBottom: '8px', cursor: editingBlockId === block.id ? 'default' : 'grab', position: 'relative', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
             >
               <span style={{ fontSize: '0.62rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#d0d0cc', display: 'block', marginBottom: '10px', fontFamily: 'Inter, DM Sans, sans-serif' }}>
                 {block.type === 'image-row' ? (isZh ? '图片行' : 'Image Row') :
@@ -599,27 +614,20 @@ export default function ExportPage() {
           onDragOver={e => e.stopPropagation()} onDrop={e => e.stopPropagation()}>
 
           {/* Tab switcher */}
-          <div style={{ padding: '16px 16px 0', position: 'sticky', top: 0, background: '#fff', zIndex: 10, borderBottom: '1px solid rgba(26,26,26,0.06)', paddingBottom: '12px' }}>
-            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-              <div style={{ flex: 1, display: 'flex', background: 'rgba(26,26,26,0.05)', borderRadius: '9px', padding: '3px', gap: '2px' }}>
-                <button style={tabStyle(rightTab === 'blocks')} onClick={() => setRightTab('blocks')}>
-                  {isZh ? '内容块' : 'Blocks'}
+          <div style={{ position: 'sticky', top: 0, background: '#fff', zIndex: 10, borderBottom: '1px solid rgba(26,26,26,0.08)' }}>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <div style={{ flex: 1, display: 'flex' }}>
+                <button onClick={() => setRightTab('blocks')} style={{ flex: 1, padding: '13px 0', fontSize: '0.62rem', letterSpacing: '0.18em', textTransform: 'uppercase', fontFamily: 'Inter, DM Sans, sans-serif', fontWeight: 600, border: 'none', cursor: 'pointer', borderBottom: rightTab === 'blocks' ? '2px solid #1a1a1a' : '2px solid transparent', background: 'transparent', color: rightTab === 'blocks' ? '#1a1a1a' : '#aaa', transition: 'all 0.12s' }}>
+                  {isZh ? 'Blocks' : 'Blocks'}
                 </button>
-                <button style={tabStyle(rightTab === 'style')} onClick={() => setRightTab('style')}>
-                  {isZh ? '样式' : 'Style'}
+                <button onClick={() => setRightTab('style')} style={{ flex: 1, padding: '13px 0', fontSize: '0.62rem', letterSpacing: '0.18em', textTransform: 'uppercase', fontFamily: 'Inter, DM Sans, sans-serif', fontWeight: 600, border: 'none', cursor: 'pointer', borderBottom: rightTab === 'style' ? '2px solid #1a1a1a' : '2px solid transparent', background: 'transparent', color: rightTab === 'style' ? '#1a1a1a' : '#aaa', transition: 'all 0.12s' }}>
+                  {isZh ? 'Style' : 'Style'}
                 </button>
               </div>
               <button
                 onClick={() => setPreviewOpen(o => !o)}
                 title={isZh ? '实时预览' : 'Live Preview'}
-                style={{
-                  padding: '7px 10px', borderRadius: '8px', border: '1px solid rgba(26,26,26,0.12)',
-                  background: previewOpen ? '#1a1a1a' : 'transparent',
-                  color: previewOpen ? '#f7f7f5' : '#888',
-                  fontSize: '0.78rem', cursor: 'pointer', flexShrink: 0,
-                  fontFamily: 'Inter, DM Sans, sans-serif', letterSpacing: '0.04em',
-                  transition: 'all 0.12s',
-                }}>
+                style={{ padding: '8px 12px', border: 'none', borderLeft: '1px solid rgba(26,26,26,0.08)', background: previewOpen ? '#1a1a1a' : 'transparent', color: previewOpen ? '#f7f7f5' : '#aaa', fontSize: '0.78rem', cursor: 'pointer', flexShrink: 0, fontFamily: 'Inter, DM Sans, sans-serif', transition: 'all 0.12s', height: '100%' }}>
                 ⊡
               </button>
             </div>
