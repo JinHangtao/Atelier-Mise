@@ -1,7 +1,7 @@
 'use client'
 import React, { useState, useRef } from 'react'
-import { useLocalStorage } from '../../../../hooks/useLocalStorage'
-import { Project, ProjectStatus, ProjectCategory, Milestone, Proposal, Note, NoteVisibility } from '../../../../types'
+import { useLocalStorage } from '../../../../../hooks/useLocalStorage'
+import { Project, ProjectStatus, ProjectCategory, Milestone, Proposal, Note, NoteVisibility } from '../../../../../types'
 import { usePathname, useRouter } from 'next/navigation'
 import { exportPDF, exportDOCX } from '../../../../../lib/exportProject'
 
