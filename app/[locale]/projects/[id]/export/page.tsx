@@ -366,8 +366,27 @@ export default function ExportPage() {
           src={imageEditorUrl}
           isZh={isZh}
           onSave={dataUrl => {
+            if (imageEditorIdx < 0) {
+              // 负数 = 画布上的image block，-(blockIndex+1)
+              const blockIndex = -(imageEditorIdx + 1)
+              setBlocks(b => b.map((bl, i) => i === blockIndex ? { ...bl, content: dataUrl } : bl))
+            } else {
+              // 正数 = mediaUrls里的图片
+              const updated = [...(project.mediaUrls || [])]
+              updated[imageEditorIdx] = dataUrl
+              setProjects(projects.map(p => p.id === id ? { ...p, mediaUrls: updated, updatedAt: new Date().toISOString() } : p))
+            }
+            setImageEditorUrl(null)
+            setImageEditorIdx(null)
+          }}
+          onDelete={imageEditorIdx < 0 ? () => {
+            const blockIndex = -(imageEditorIdx + 1)
+            removeBlock(blocks[blockIndex].id)
+            setImageEditorUrl(null)
+            setImageEditorIdx(null)
+          } : () => {
             const updated = [...(project.mediaUrls || [])]
-            updated[imageEditorIdx] = dataUrl
+            updated.splice(imageEditorIdx, 1)
             setProjects(projects.map(p => p.id === id ? { ...p, mediaUrls: updated, updatedAt: new Date().toISOString() } : p))
             setImageEditorUrl(null)
             setImageEditorIdx(null)
@@ -610,7 +629,17 @@ export default function ExportPage() {
 
               {editingBlockId !== block.id && (
                 <div style={{ position: 'absolute', top: '12px', right: '12px', display: 'flex', gap: '6px' }}>
-                  {['custom', 'note', 'image', 'image-row'].includes(block.type) && (
+                  {['custom', 'note'].includes(block.type) && (
+                    <button className="edit-btn" onClick={() => startEdit(block)}
+                      style={{ background: 'rgba(26,26,26,0.06)', border: 'none', borderRadius: '6px', width: '28px', height: '28px', cursor: 'pointer', color: '#888', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      title={isZh ? '编辑' : 'Edit'}>✎</button>
+                  )}
+                  {block.type === 'image' && (
+                    <button className="edit-btn" onClick={() => { setImageEditorUrl(block.content); setImageEditorIdx(-(blocks.findIndex(b => b.id === block.id) + 1)) }}
+                      style={{ background: 'rgba(26,26,26,0.06)', border: 'none', borderRadius: '6px', width: '28px', height: '28px', cursor: 'pointer', color: '#888', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      title={isZh ? '编辑图片' : 'Edit image'}>✎</button>
+                  )}
+                  {block.type === 'image-row' && (
                     <button className="edit-btn" onClick={() => startEdit(block)}
                       style={{ background: 'rgba(26,26,26,0.06)', border: 'none', borderRadius: '6px', width: '28px', height: '28px', cursor: 'pointer', color: '#888', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                       title={isZh ? '编辑' : 'Edit'}>✎</button>
@@ -893,8 +922,8 @@ export default function ExportPage() {
 
 // ── Image Editor Component ────────────────────────────────────────────────────
 function ImageEditor({
-  src, isZh, onSave, onClose,
-}: { src: string; isZh: boolean; onSave: (dataUrl: string) => void; onClose: () => void }) {
+  src, isZh, onSave, onDelete, onClose,
+}: { src: string; isZh: boolean; onSave: (dataUrl: string) => void; onDelete: () => void; onClose: () => void }) {
   const canvasRef = React.useRef<HTMLCanvasElement>(null)
   const overlayInputRef = React.useRef<HTMLInputElement>(null)
   const [brightness, setBrightness] = React.useState(100)
@@ -952,7 +981,10 @@ function ImageEditor({
       <div style={{ height: '56px', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 28px', flexShrink: 0 }}>
         <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.82rem', letterSpacing: '0.1em' }}>{isZh ? '← 取消' : '← Cancel'}</button>
         <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.78rem', letterSpacing: '0.15em', color: '#aaa', textTransform: 'uppercase' }}>{isZh ? '图片编辑器' : 'Image Editor'}</span>
-        <button onClick={handleSave} style={{ background: '#f7f7f5', color: '#1a1a1a', border: 'none', padding: '10px 24px', borderRadius: '10px', fontFamily: 'Space Mono, monospace', fontSize: '0.82rem', letterSpacing: '0.1em', cursor: 'pointer' }}>{isZh ? '保存' : 'Save'}</button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={() => { if (window.confirm(isZh ? '删除这张图片？' : 'Delete this image?')) onDelete() }} style={{ background: 'rgba(180,80,80,0.12)', color: '#bf4a4a', border: 'none', padding: '10px 18px', borderRadius: '10px', fontFamily: 'Space Mono, monospace', fontSize: '0.82rem', letterSpacing: '0.1em', cursor: 'pointer' }}>{isZh ? '删除' : 'Delete'}</button>
+          <button onClick={handleSave} style={{ background: '#f7f7f5', color: '#1a1a1a', border: 'none', padding: '10px 24px', borderRadius: '10px', fontFamily: 'Space Mono, monospace', fontSize: '0.82rem', letterSpacing: '0.1em', cursor: 'pointer' }}>{isZh ? '保存' : 'Save'}</button>
+        </div>
       </div>
       <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 280px', overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '32px', overflow: 'auto' }}>
