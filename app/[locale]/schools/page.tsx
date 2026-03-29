@@ -170,7 +170,7 @@ function WorldMap({ schools, selectedCountry, setSelectedCountry, isZh }: {
 
   return (
     <ComposableMap
-      projectionConfig={{ scale: 147, center: [15, 10] }}
+      projectionConfig={{ scale: 147, center: [15, 10] as [number, number] }}
       style={{ width: '100%', height: '100%' }}
     >
       <Geographies geography={GEO_URL}>
