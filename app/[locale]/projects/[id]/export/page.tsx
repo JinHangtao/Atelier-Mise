@@ -296,6 +296,7 @@ export default function ExportPage() {
   const [previewOpen, setPreviewOpen] = useState(false)
   const dragIndex = useRef<number | null>(null)
   const imageDragIndex = useRef<number | null>(null)
+  const localImageInputRef = useRef<HTMLInputElement | null>(null)
 
   if (!project) return (
     <div style={{ padding: '60px', fontFamily: 'Space Mono, monospace', color: '#888' }}>
@@ -395,6 +396,7 @@ export default function ExportPage() {
         .img-thumb { transition: transform 0.15s, box-shadow 0.15s; }
         .img-thumb:hover { transform: scale(1.03); box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
         .img-thumb.selected { outline: 2.5px solid #1a1a1a; outline-offset: 2px; }
+        .img-row-item:hover .img-row-del { opacity: 1 !important; }
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
         @keyframes fadeIn { from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:translateY(0)} }
         .draft-banner { animation: fadeIn 0.3s ease; }
@@ -537,8 +539,12 @@ export default function ExportPage() {
                             <img src={url} alt="" style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '6px', display: 'block', pointerEvents: 'none' }} />
                             <button
                               onMouseDown={e => { e.stopPropagation(); e.preventDefault(); setImageEditorUrl(url); setImageEditorIdx(-1); (window as any).__editingBlockId = block.id; (window as any).__editingImageIdx = idx }}
-                              style={{ position: 'absolute', top: '5px', right: '5px', background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none', borderRadius: '4px', width: '22px', height: '22px', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto' }}
+                              style={{ position: 'absolute', top: '5px', right: '32px', background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none', borderRadius: '4px', width: '22px', height: '22px', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto' }}
                               title={isZh ? '编辑图片' : 'Edit image'}>✎</button>
+                            <button
+                              onMouseDown={e => { e.stopPropagation(); e.preventDefault(); setBlocks(b => b.map(bl => { if (bl.id !== block.id) return bl; const imgs = [...(bl.images || [])]; imgs.splice(idx, 1); const caps = [...editingImageCaptions]; caps.splice(idx, 1); setEditingImageCaptions(caps); return { ...bl, images: imgs } })) }}
+                              style={{ position: 'absolute', top: '5px', right: '5px', background: 'rgba(180,60,60,0.75)', color: '#fff', border: 'none', borderRadius: '4px', width: '22px', height: '22px', cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto' }}
+                              title={isZh ? '删除此图' : 'Remove image'}>✕</button>
                             <input value={editingImageCaptions[idx] || ''} onChange={e => { const updated = [...editingImageCaptions]; updated[idx] = e.target.value; setEditingImageCaptions(updated) }}
                               placeholder={isZh ? `图片 ${idx + 1} 名称…` : `Image ${idx + 1} label…`}
                               style={{ width: '100%', marginTop: '6px', padding: '5px 8px', border: '1px solid rgba(26,26,26,0.12)', borderRadius: '6px', fontFamily: 'DM Sans, sans-serif', fontSize: '0.8rem', color: '#555', outline: 'none', background: '#f7f7f5' }} />
@@ -575,8 +581,13 @@ export default function ExportPage() {
                     <div>
                       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${(block.images || []).length}, 1fr)`, gap: '6px' }}>
                         {(block.images || []).map((url, idx) => (
-                          <div key={idx}>
+                          <div key={idx} style={{ position: 'relative' }} className="img-row-item">
                             <img src={url} alt="" style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '7px', display: 'block' }} />
+                            <button
+                              onClick={e => { e.stopPropagation(); setBlocks(b => b.map(bl => { if (bl.id !== block.id) return bl; const imgs = [...(bl.images || [])]; imgs.splice(idx, 1); const caps = [...(bl.imageCaptions || [])]; caps.splice(idx, 1); return { ...bl, images: imgs, imageCaptions: caps } })) }}
+                              className="img-row-del"
+                              style={{ position: 'absolute', top: '5px', right: '5px', background: 'rgba(180,60,60,0.8)', color: '#fff', border: 'none', borderRadius: '4px', width: '20px', height: '20px', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity 0.15s' }}
+                              title={isZh ? '删除此图' : 'Remove'}>✕</button>
                             {(block.imageCaptions || [])[idx] && <p style={{ fontSize: '0.72rem', color: '#999', marginTop: '4px', textAlign: 'center', fontStyle: 'italic', lineHeight: 1.4, fontFamily: 'Inter, DM Sans, sans-serif' }}>{(block.imageCaptions || [])[idx]}</p>}
                           </div>
                         ))}
@@ -704,6 +715,27 @@ export default function ExportPage() {
 
               <div style={{ height: '1px', background: 'rgba(26,26,26,0.06)', marginBottom: '24px' }} />
 
+              {/* 本地上传 hidden input */}
+              <input
+                ref={localImageInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                style={{ display: 'none' }}
+                onChange={e => {
+                  const files = Array.from(e.target.files || [])
+                  files.forEach(file => {
+                    const reader = new FileReader()
+                    reader.onload = ev => {
+                      const dataUrl = ev.target?.result as string
+                      if (dataUrl) addBlock('image', dataUrl)
+                    }
+                    reader.readAsDataURL(file)
+                  })
+                  e.target.value = ''
+                }}
+              />
+
               {/* 图片 */}
               {mediaUrls.length > 0 && (
                 <div style={{ marginBottom: '24px' }}>
@@ -711,10 +743,17 @@ export default function ExportPage() {
                     <p style={{ fontSize: '0.65rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b0b0ac', fontFamily: 'Inter, DM Sans, sans-serif' }}>
                       {isZh ? '图片' : 'Images'} <span style={{ color: '#d0d0cc' }}>({mediaUrls.length})</span>
                     </p>
-                    <button onClick={() => { setImagePickerOpen(o => !o); setSelectedImages([]) }}
-                      style={{ fontSize: '0.68rem', color: imagePickerOpen ? '#1a1a1a' : '#aaa', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Inter, DM Sans, sans-serif', letterSpacing: '0.06em' }}>
-                      {imagePickerOpen ? (isZh ? '取消' : 'Cancel') : (isZh ? '多选并排' : 'Multi-pick')}
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button onClick={() => localImageInputRef.current?.click()}
+                        style={{ fontSize: '0.68rem', color: '#aaa', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Inter, DM Sans, sans-serif', letterSpacing: '0.06em' }}
+                        title={isZh ? '从本地上传图片' : 'Upload from device'}>
+                        {isZh ? '本地上传' : 'Upload'}
+                      </button>
+                      <button onClick={() => { setImagePickerOpen(o => !o); setSelectedImages([]) }}
+                        style={{ fontSize: '0.68rem', color: imagePickerOpen ? '#1a1a1a' : '#aaa', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Inter, DM Sans, sans-serif', letterSpacing: '0.06em' }}>
+                        {imagePickerOpen ? (isZh ? '取消' : 'Cancel') : (isZh ? '多选并排' : 'Multi-pick')}
+                      </button>
+                    </div>
                   </div>
                   {imagePickerOpen ? (
                     <div>
@@ -783,6 +822,19 @@ export default function ExportPage() {
                       })}
                     </div>
                   )}
+                </div>
+              )}
+              {mediaUrls.length === 0 && (
+                <div style={{ marginBottom: '24px' }}>
+                  <p style={{ fontSize: '0.65rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b0b0ac', marginBottom: '10px', fontFamily: 'Inter, DM Sans, sans-serif' }}>
+                    {isZh ? '图片' : 'Images'}
+                  </p>
+                  <button onClick={() => localImageInputRef.current?.click()}
+                    style={{ width: '100%', padding: '10px 13px', border: '1px dashed rgba(26,26,26,0.15)', borderRadius: '9px', background: 'transparent', cursor: 'pointer', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.82rem', color: '#aaa', letterSpacing: '0.02em', transition: 'all 0.12s' }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(26,26,26,0.35)'; e.currentTarget.style.color = '#555' }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(26,26,26,0.15)'; e.currentTarget.style.color = '#aaa' }}>
+                    {isZh ? '+ 从本地上传图片' : '+ Upload from device'}
+                  </button>
                 </div>
               )}
 
