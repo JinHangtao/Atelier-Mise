@@ -5,444 +5,15 @@ import { Project } from '../../../../../types'
 import { exportPDF, exportDOCX } from '../../../../../lib/exportProject'
 import { useParams, usePathname, useRouter } from 'next/navigation'
 
+import {
+  Block, School, ExportOptions, DEFAULT_EXPORT_OPTIONS,
+  THEMES, FONTS, buildExportHTML,
+} from '../../../../../lib/exportStyles'
+
 type BlockType = 'title' | 'image' | 'image-row' | 'note' | 'custom' | 'milestone' | 'school-profile'
-
-interface Block {
-  id: string
-  type: BlockType
-  content: string
-  caption?: string
-  images?: string[]
-  imageCaptions?: string[]
-}
-
-interface School {
-  id: string
-  name: string
-  nameZh?: string
-  country: string
-  department: string
-  departmentZh?: string
-  deadline: string
-  requirements: string
-  notes: string
-  website: string
-  aiStatement: string
-  aiGeneratedAt: string
-  createdAt: string
-}
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 
-// ── Export options ────────────────────────────────────────────────────────────
-interface ExportOptions {
-  theme: string
-  font: string
-  width: number
-  radius: number
-  gap: number
-  imageStyle: string
-}
-
-const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
-  theme: 'sensei',
-  font: 'mixed',
-  width: 800,
-  radius: 16,
-  gap: 20,
-  imageStyle: 'cover',
-}
-
-// ── Theme definitions ─────────────────────────────────────────────────────────
-interface ThemeDef {
-  label: string
-  labelZh: string
-  bg: string
-  card: string
-  text: string
-  muted: string
-  subtle: string
-  border: string
-  accent: string
-  accentWarm: string
-  noteBorder: string
-  noteBg: string
-  schoolBorder: string
-  infoBox: string
-  statementBox: string
-  blockStyle: 'card' | 'editorial' | 'bare'
-}
-
-const THEMES: Record<string, ThemeDef> = {
-  sensei: {
-    label: 'Sensei', labelZh: '默认暖白',
-    bg: '#f4f2ee', card: '#ffffff', text: '#1a1a1a', muted: '#888887', subtle: '#c0c0bc',
-    border: 'rgba(0,0,0,0.07)', accent: '#4aab6f', accentWarm: '#c4a044',
-    noteBorder: '#4a8abf', noteBg: 'rgba(100,140,180,0.06)',
-    schoolBorder: '#c4a044', infoBox: '#f7f7f5', statementBox: 'rgba(196,160,68,0.06)',
-    blockStyle: 'card',
-  },
-  editorial: {
-    label: 'Editorial', labelZh: '杂志版式',
-    bg: '#ffffff', card: '#ffffff', text: '#1a1a1a', muted: '#666666', subtle: '#bbb',
-    border: 'rgba(0,0,0,0.1)', accent: '#1a1a1a', accentWarm: '#888888',
-    noteBorder: '#1a1a1a', noteBg: 'rgba(0,0,0,0.03)',
-    schoolBorder: '#1a1a1a', infoBox: '#f5f5f5', statementBox: 'rgba(0,0,0,0.03)',
-    blockStyle: 'editorial',
-  },
-  noir: {
-    label: 'Noir', labelZh: '深色高对比',
-    bg: '#111111', card: '#1c1c1c', text: '#f0f0ee', muted: '#888888', subtle: '#555',
-    border: 'rgba(255,255,255,0.08)', accent: '#4aab6f', accentWarm: '#e8c06a',
-    noteBorder: '#378ADD', noteBg: 'rgba(55,138,221,0.1)',
-    schoolBorder: '#c4a044', infoBox: '#252525', statementBox: 'rgba(196,160,68,0.08)',
-    blockStyle: 'card',
-  },
-  cream: {
-    label: 'Cream', labelZh: '奶油纸质',
-    bg: '#fdf8f0', card: '#fffdf7', text: '#2c2416', muted: '#9a8870', subtle: '#c8b89a',
-    border: 'rgba(180,140,80,0.13)', accent: '#7a6840', accentWarm: '#c4943a',
-    noteBorder: '#c4943a', noteBg: 'rgba(196,148,58,0.07)',
-    schoolBorder: '#c4943a', infoBox: 'rgba(180,140,80,0.07)', statementBox: 'rgba(196,148,58,0.05)',
-    blockStyle: 'card',
-  },
-  minimal: {
-    label: 'Minimal', labelZh: '极简无框',
-    bg: '#ffffff', card: '#ffffff', text: '#1a1a1a', muted: '#aaaaaa', subtle: '#ddd',
-    border: 'transparent', accent: '#1a1a1a', accentWarm: '#888',
-    noteBorder: 'rgba(0,0,0,0.15)', noteBg: 'transparent',
-    schoolBorder: 'rgba(0,0,0,0.15)', infoBox: '#f8f8f8', statementBox: '#f5f5f5',
-    blockStyle: 'bare',
-  },
-  blueprint: {
-    label: 'Blueprint', labelZh: '深蓝技术',
-    bg: '#0d1b2a', card: '#102236', text: '#d4e8ff', muted: '#6a9bbf', subtle: '#2a4a6a',
-    border: 'rgba(100,180,255,0.14)', accent: '#4db8ff', accentWarm: '#64d4b8',
-    noteBorder: '#4db8ff', noteBg: 'rgba(77,184,255,0.07)',
-    schoolBorder: '#64d4b8', infoBox: 'rgba(100,180,255,0.07)', statementBox: 'rgba(100,212,184,0.07)',
-    blockStyle: 'card',
-  },
-  ember: {
-    label: 'Ember', labelZh: '深棕暖调',
-    bg: '#1a0f0a', card: '#231510', text: '#f0e0d0', muted: '#9a7060', subtle: '#4a2a1a',
-    border: 'rgba(220,120,60,0.15)', accent: '#dc783c', accentWarm: '#e8a040',
-    noteBorder: '#dc783c', noteBg: 'rgba(220,120,60,0.08)',
-    schoolBorder: '#e8a040', infoBox: 'rgba(220,120,60,0.07)', statementBox: 'rgba(232,160,64,0.07)',
-    blockStyle: 'card',
-  },
-  gallery: {
-    label: 'Gallery', labelZh: '画廊留白',
-    bg: '#f8f8f6', card: '#ffffff', text: '#1a1a1a', muted: '#999', subtle: '#ddd',
-    border: 'rgba(0,0,0,0.06)', accent: '#1a1a1a', accentWarm: '#777',
-    noteBorder: '#aaa', noteBg: 'rgba(0,0,0,0.02)',
-    schoolBorder: '#aaa', infoBox: '#f0f0ee', statementBox: '#eeede9',
-    blockStyle: 'card',
-  },
-}
-
-// ── Font definitions ──────────────────────────────────────────────────────────
-interface FontDef {
-  label: string
-  labelZh: string
-  bodyStack: string
-  headingStack: string
-  googleUrl: string
-  h1size: string
-  h1weight: string
-  h1tracking: string
-}
-
-const FONTS: Record<string, FontDef> = {
-  mixed: {
-    label: 'Mixed', labelZh: '混排（推荐）',
-    bodyStack: '"DM Sans","PingFang SC","Microsoft YaHei",sans-serif',
-    headingStack: '"DM Serif Display",Georgia,serif',
-    googleUrl: 'https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&family=DM+Serif+Display:ital@0;1&display=swap',
-    h1size: '40px', h1weight: '400', h1tracking: '-0.02em',
-  },
-  sans: {
-    label: 'Sans-serif', labelZh: '无衬线',
-    bodyStack: '"Inter","DM Sans","PingFang SC","Microsoft YaHei",sans-serif',
-    headingStack: '"Inter","DM Sans","PingFang SC","Microsoft YaHei",sans-serif',
-    googleUrl: 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap',
-    h1size: '34px', h1weight: '700', h1tracking: '-0.025em',
-  },
-  serif: {
-    label: 'Serif', labelZh: '衬线体',
-    bodyStack: 'Georgia,"Noto Serif SC","Songti SC",serif',
-    headingStack: 'Georgia,"Noto Serif SC","Songti SC",serif',
-    googleUrl: '',
-    h1size: '36px', h1weight: '700', h1tracking: '-0.01em',
-  },
-  mono: {
-    label: 'Mono', labelZh: '等宽体',
-    bodyStack: '"Space Mono","Courier New",monospace',
-    headingStack: '"Space Mono","Courier New",monospace',
-    googleUrl: 'https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap',
-    h1size: '28px', h1weight: '700', h1tracking: '-0.01em',
-  },
-  elegant: {
-    label: 'Elegant', labelZh: '优雅衬线',
-    bodyStack: '"Cormorant Garamond","PingFang SC",Georgia,serif',
-    headingStack: '"Cormorant Garamond","PingFang SC",Georgia,serif',
-    googleUrl: 'https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&display=swap',
-    h1size: '44px', h1weight: '600', h1tracking: '-0.01em',
-  },
-}
-
-// ── CSS generator ─────────────────────────────────────────────────────────────
-function buildExportCSS(opts: ExportOptions, isZh: boolean): string {
-  const t = THEMES[opts.theme] || THEMES.sensei
-  const f = FONTS[opts.font] || FONTS.mixed
-  const r = opts.radius
-  const innerR = Math.max(0, r - 6)
-
-  const isEditorial = t.blockStyle === 'editorial'
-  const isBare = t.blockStyle === 'bare'
-
-  const blockBase = isEditorial
-    ? `background:transparent; border:none; border-bottom:1px solid ${t.border}; border-radius:0; padding:40px 0;`
-    : isBare
-    ? `background:transparent; border:none; border-radius:0; padding:32px 0;`
-    : `background:${t.card}; border-radius:${r}px; border:1px solid ${t.border}; padding:36px 40px;`
-
-  const h1Extra = isEditorial
-    ? `border-bottom:2px solid ${t.text}; padding-bottom:14px; margin-bottom:18px;`
-    : ''
-
-  return `
-    @import url('${f.googleUrl}');
-    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
-    html { -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
-    body {
-      font-family:${f.bodyStack};
-      background:${t.bg};
-      color:${t.text};
-      padding:56px 32px;
-      max-width:${opts.width}px;
-      margin:0 auto;
-      line-height:1.75;
-      font-size:16px;
-    }
-    .block {
-      ${blockBase}
-      margin-bottom:${opts.gap}px;
-    }
-    h1 {
-      font-family:${f.headingStack};
-      font-size:${f.h1size};
-      font-weight:${f.h1weight};
-      letter-spacing:${f.h1tracking};
-      line-height:1.15;
-      margin-bottom:10px;
-      ${h1Extra}
-    }
-    h2 {
-      font-family:${f.headingStack};
-      font-size:clamp(20px,2.2vw,26px);
-      font-weight:600;
-      letter-spacing:-0.01em;
-      margin-bottom:6px;
-      margin-top:4px;
-    }
-    h3 {
-      font-size:11px;
-      font-weight:600;
-      margin-bottom:16px;
-      text-transform:uppercase;
-      letter-spacing:0.2em;
-      color:${t.muted};
-    }
-    .meta {
-      color:${t.muted};
-      font-size:12px;
-      letter-spacing:0.12em;
-      text-transform:uppercase;
-      margin-bottom:14px;
-      font-weight:500;
-    }
-    .desc {
-      color:${t.muted};
-      line-height:1.85;
-      margin-top:16px;
-      font-size:15px;
-    }
-    .caption {
-      color:${t.subtle};
-      font-size:12px;
-      margin-top:10px;
-      font-style:italic;
-      text-align:center;
-      line-height:1.5;
-    }
-    img {
-      display:block;
-      width:100%;
-      border-radius:${innerR}px;
-    }
-    .img-cover { aspect-ratio:16/9; object-fit:cover; }
-    .img-contain { object-fit:contain; max-height:520px; }
-    .img-square { aspect-ratio:1; object-fit:cover; }
-    .note-block {
-      border-left:3px solid ${t.noteBorder} !important;
-      background:${t.noteBg} !important;
-      ${isBare || isEditorial ? 'border-radius:0 !important;' : `border-radius:0 ${r}px ${r}px 0 !important;`}
-    }
-    .note-block p { font-size:15px; line-height:1.85; }
-    .school-block {
-      border-left:3px solid ${t.schoolBorder} !important;
-      ${isBare || isEditorial ? 'border-radius:0 !important;' : `border-radius:0 ${r}px ${r}px 0 !important;`}
-    }
-    .dept { color:${t.muted}; margin-top:8px; font-size:15px; line-height:1.65; }
-    .info-box {
-      margin-top:18px;
-      padding:16px 20px;
-      background:${t.infoBox};
-      border-radius:${innerR}px;
-    }
-    .statement-box { background:${t.statementBox}; }
-    .box-label {
-      font-size:10px;
-      letter-spacing:0.2em;
-      text-transform:uppercase;
-      color:${t.muted};
-      margin-bottom:8px;
-      font-weight:600;
-    }
-    .info-box p:last-child { font-size:14px; color:${t.text}; line-height:1.85; white-space:pre-wrap; }
-    .ms-row { display:flex; align-items:baseline; gap:14px; margin-bottom:10px; font-size:15px; }
-    .done { color:${t.accent}; }
-    .pending { color:${t.subtle}; }
-    .ms-done { color:${t.muted}; text-decoration:line-through; }
-    .date { color:${t.subtle}; font-size:12px; margin-left:auto; }
-    .img-grid { display:grid; gap:10px; }
-    .img-caption { font-size:12px; color:${t.muted}; text-align:center; margin-top:6px; font-style:italic; line-height:1.4; }
-    @media (max-width:600px) {
-      body { padding:32px 18px; }
-      .block { padding:${isEditorial ? '32px 0' : '24px 20px'}; }
-      h1 { font-size:clamp(24px,6vw,${f.h1size}); }
-      .img-grid { grid-template-columns:1fr !important; }
-    }
-    @media print {
-      body { background:#fff; padding:20px; max-width:none; }
-      .block { break-inside:avoid; }
-    }
-  `.trim()
-}
-
-// ── HTML block renderer ───────────────────────────────────────────────────────
-function buildBlocksHTML(
-  blocks: Block[],
-  project: Project,
-  schools: School[],
-  opts: ExportOptions,
-  isZh: boolean,
-): string {
-  const imgClass = opts.imageStyle === 'cover' ? 'img-cover'
-    : opts.imageStyle === 'contain' ? 'img-contain'
-    : 'img-square'
-
-  return blocks.map(b => {
-    if (b.type === 'title') {
-      return `<div class="block">
-  <p class="meta">${[project.category, project.status].filter(Boolean).join(' · ')}</p>
-  <h1>${project.title}</h1>
-  ${project.description ? `<p class="desc">${project.description}</p>` : ''}
-</div>`
-    }
-
-    if (b.type === 'image') {
-      return `<div class="block" style="padding:0;overflow:hidden;border-radius:inherit">
-  <img src="${b.content}" class="${imgClass}" style="width:100%;display:block;" alt="${b.caption || ''}" />
-  ${b.caption ? `<p class="caption" style="padding:10px 16px 14px">${b.caption}</p>` : ''}
-</div>`
-    }
-
-    if (b.type === 'image-row') {
-      const imgs = b.images || []
-      const cols = Math.min(imgs.length, 4)
-      return `<div class="block" style="padding:0;overflow:hidden;border-radius:inherit">
-  <div class="img-grid" style="grid-template-columns:repeat(${cols},1fr)">
-    ${imgs.map((url, idx) => `<div>
-      <img src="${url}" class="img-square" style="width:100%;display:block;" alt="${(b.imageCaptions || [])[idx] || ''}" />
-      ${(b.imageCaptions || [])[idx] ? `<p class="img-caption">${(b.imageCaptions || [])[idx]}</p>` : ''}
-    </div>`).join('\n    ')}
-  </div>
-  ${b.caption ? `<p class="caption" style="padding:10px 16px 14px">${b.caption}</p>` : ''}
-</div>`
-    }
-
-    if (b.type === 'note') {
-      return `<div class="block note-block">
-  <p>${b.content}</p>
-  ${b.caption ? `<p class="caption" style="text-align:left;margin-top:12px">${b.caption}</p>` : ''}
-</div>`
-    }
-
-    if (b.type === 'milestone') {
-      return `<div class="block">
-  <h3>${isZh ? '进度节点' : 'Milestones'}</h3>
-  ${project.milestones.map(m => `  <div class="ms-row">
-    <span class="${m.status === 'done' ? 'done' : 'pending'}">${m.status === 'done' ? '✓' : '○'}</span>
-    <span class="${m.status === 'done' ? 'ms-done' : ''}">${m.title}</span>
-    ${m.date ? `<span class="date">${m.date}</span>` : ''}
-  </div>`).join('\n')}
-</div>`
-    }
-
-    if (b.type === 'custom') {
-      return `<div class="block">
-  <p style="white-space:pre-wrap;line-height:1.85;font-size:15px">${b.content}</p>
-</div>`
-    }
-
-    if (b.type === 'school-profile') {
-      const school = schools.find(s => s.id === b.content)
-      if (!school) return ''
-      const displayName = isZh ? (school.nameZh || school.name) : school.name
-      const displayDept = isZh ? (school.departmentZh || school.department) : school.department
-      return `<div class="block school-block">
-  <p class="meta">${school.country}${school.deadline ? ` · ${isZh ? '截止' : 'Deadline'}: ${school.deadline}` : ''}</p>
-  <h2>${displayName}</h2>
-  ${displayDept ? `<p class="dept">${displayDept}</p>` : ''}
-  ${school.requirements ? `<div class="info-box">
-    <p class="box-label">${isZh ? '申请要求' : 'Requirements'}</p>
-    <p>${school.requirements}</p>
-  </div>` : ''}
-  ${school.aiStatement ? `<div class="info-box statement-box">
-    <p class="box-label">${isZh ? 'AI 申请文书' : 'Application Statement'}</p>
-    <p>${school.aiStatement}</p>
-  </div>` : ''}
-</div>`
-    }
-
-    return ''
-  }).filter(Boolean).join('\n\n')
-}
-
-// ── Full HTML assembler ───────────────────────────────────────────────────────
-function buildExportHTML(
-  blocks: Block[],
-  project: Project,
-  schools: School[],
-  opts: ExportOptions,
-  isZh: boolean,
-): string {
-  const css = buildExportCSS(opts, isZh)
-  const blocksHTML = buildBlocksHTML(blocks, project, schools, opts, isZh)
-  return `<!DOCTYPE html>
-<html lang="${isZh ? 'zh-CN' : 'en'}">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${project.title}</title>
-  <style>${css}</style>
-</head>
-<body>
-${blocksHTML}
-</body>
-</html>`
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function draftKey(projectId: string) { return `ps-export-draft-${projectId}` }
@@ -722,6 +293,8 @@ export default function ExportPage() {
   const [imagePickerOpen, setImagePickerOpen] = useState(false)
   const [selectedImages, setSelectedImages] = useState<string[]>([])
   const [rightTab, setRightTab] = useState<'blocks' | 'style'>('blocks')
+  const [pagedExport, setPagedExport] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
   const dragIndex = useRef<number | null>(null)
   const imageDragIndex = useRef<number | null>(null)
 
@@ -765,12 +338,12 @@ export default function ExportPage() {
 
   const doExportHTML = () => {
     if (!project) return
-    const html = buildExportHTML(blocks, project, schools, exportOpts, isZh)
+    const html = buildExportHTML(blocks, project, schools, exportOpts, isZh, pagedExport)
     const blob = new Blob([html], { type: 'text/html' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${project.title.replace(/\s+/g, '_')}_${exportOpts.theme}.html`
+    a.download = `${project.title.replace(/\s+/g, '_')}_${exportOpts.theme}${pagedExport ? '_paged' : ''}.html`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -838,8 +411,8 @@ export default function ExportPage() {
             <span>{isZh ? '导出' : 'Export'}</span>
             <span style={{ fontSize: '0.68rem', background: 'rgba(255,255,255,0.15)', padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.04em' }}>HTML</span>
           </button>
-          <button onClick={() => exportPDF(project, blocks)} style={{ background: 'transparent', color: '#888', border: '1px solid rgba(26,26,26,0.15)', padding: '10px 16px', borderRadius: '10px', fontSize: '0.82rem', cursor: 'pointer' }}>PDF</button>
-          <button onClick={() => exportDOCX(project)} style={{ background: 'transparent', color: '#888', border: '1px solid rgba(26,26,26,0.15)', padding: '10px 16px', borderRadius: '10px', fontSize: '0.82rem', cursor: 'pointer' }}>Word</button>
+          <button onClick={() => exportPDF(project, blocks, schools, exportOpts, isZh)} style={{ background: 'transparent', color: '#888', border: '1px solid rgba(26,26,26,0.15)', padding: '10px 16px', borderRadius: '10px', fontSize: '0.82rem', cursor: 'pointer' }}>PDF</button>
+          <button onClick={() => exportDOCX(project, blocks, schools, exportOpts, isZh)} style={{ background: 'transparent', color: '#888', border: '1px solid rgba(26,26,26,0.15)', padding: '10px 16px', borderRadius: '10px', fontSize: '0.82rem', cursor: 'pointer' }}>Word</button>
         </div>
       </nav>
 
@@ -1030,12 +603,27 @@ export default function ExportPage() {
 
           {/* Tab switcher */}
           <div style={{ padding: '16px 16px 0', position: 'sticky', top: 0, background: '#fff', zIndex: 10, borderBottom: '1px solid rgba(26,26,26,0.06)', paddingBottom: '12px' }}>
-            <div style={{ display: 'flex', background: 'rgba(26,26,26,0.05)', borderRadius: '9px', padding: '3px', gap: '2px' }}>
-              <button style={tabStyle(rightTab === 'blocks')} onClick={() => setRightTab('blocks')}>
-                {isZh ? '内容块' : 'Blocks'}
-              </button>
-              <button style={tabStyle(rightTab === 'style')} onClick={() => setRightTab('style')}>
-                {isZh ? '样式设计' : 'Style'}
+            <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+              <div style={{ flex: 1, display: 'flex', background: 'rgba(26,26,26,0.05)', borderRadius: '9px', padding: '3px', gap: '2px' }}>
+                <button style={tabStyle(rightTab === 'blocks')} onClick={() => setRightTab('blocks')}>
+                  {isZh ? '内容块' : 'Blocks'}
+                </button>
+                <button style={tabStyle(rightTab === 'style')} onClick={() => setRightTab('style')}>
+                  {isZh ? '样式' : 'Style'}
+                </button>
+              </div>
+              <button
+                onClick={() => setPreviewOpen(o => !o)}
+                title={isZh ? '实时预览' : 'Live Preview'}
+                style={{
+                  padding: '7px 10px', borderRadius: '8px', border: '1px solid rgba(26,26,26,0.12)',
+                  background: previewOpen ? '#1a1a1a' : 'transparent',
+                  color: previewOpen ? '#f7f7f5' : '#888',
+                  fontSize: '0.78rem', cursor: 'pointer', flexShrink: 0,
+                  fontFamily: 'Inter, DM Sans, sans-serif', letterSpacing: '0.04em',
+                  transition: 'all 0.12s',
+                }}>
+                ⊡
               </button>
             </div>
           </div>
@@ -1181,23 +769,99 @@ export default function ExportPage() {
             <div style={{ padding: '24px 20px', flex: 1 }}>
               <ThemePickerPanel opts={exportOpts} setOpts={setExportOpts} isZh={isZh} />
 
+              {/* Paged export toggle */}
+              <div style={{ marginTop: '4px', marginBottom: '4px' }}>
+                <button
+                  onClick={() => setPagedExport(p => !p)}
+                  style={{
+                    width: '100%', padding: '11px 14px', borderRadius: '9px', cursor: 'pointer',
+                    border: `1px solid ${pagedExport ? 'rgba(26,26,26,0.3)' : 'rgba(26,26,26,0.1)'}`,
+                    background: pagedExport ? 'rgba(26,26,26,0.06)' : 'transparent',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    fontFamily: 'Inter, DM Sans, sans-serif', transition: 'all 0.12s',
+                  }}>
+                  <span style={{ fontSize: '0.8rem', color: '#3a3a3a', letterSpacing: '0.02em' }}>
+                    {isZh ? '翻页模式' : 'Paged mode'}
+                  </span>
+                  <span style={{ fontSize: '0.7rem', color: pagedExport ? '#1a1a1a' : '#bbb', letterSpacing: '0.06em' }}>
+                    {pagedExport ? (isZh ? '开 ●' : 'ON ●') : (isZh ? '关 ○' : 'OFF ○')}
+                  </span>
+                </button>
+                {pagedExport && (
+                  <p style={{ fontSize: '0.68rem', color: '#aaa', fontFamily: 'Inter, DM Sans, sans-serif', marginTop: '6px', lineHeight: 1.5, padding: '0 2px' }}>
+                    {isZh ? '每个 block 单独一页，← → 键翻页' : 'Each block is a page · ← → to navigate'}
+                  </p>
+                )}
+              </div>
+
               {/* Export summary + button */}
-              <div style={{ marginTop: '24px', padding: '14px 16px', background: 'rgba(26,26,26,0.04)', borderRadius: '10px' }}>
+              <div style={{ marginTop: '16px', padding: '14px 16px', background: 'rgba(26,26,26,0.04)', borderRadius: '10px' }}>
                 <p style={{ fontSize: '0.65rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#b0b0ac', fontFamily: 'Inter, DM Sans, sans-serif', marginBottom: '8px' }}>
                   {isZh ? '当前配置' : 'Current config'}
                 </p>
                 <p style={{ fontSize: '0.75rem', color: '#777', fontFamily: 'Inter, DM Sans, sans-serif', lineHeight: 1.6 }}>
-                  {THEMES[exportOpts.theme]?.label} · {FONTS[exportOpts.font]?.label} · {exportOpts.width}px · R{exportOpts.radius}
+                  {THEMES[exportOpts.theme]?.label} · {FONTS[exportOpts.font]?.label} · {exportOpts.width}px · R{exportOpts.radius} {pagedExport ? '· paged' : ''}
                 </p>
                 <button onClick={doExportHTML}
                   style={{ width: '100%', marginTop: '12px', padding: '11px', background: '#1a1a1a', color: '#f7f7f5', border: 'none', borderRadius: '9px', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.82rem', letterSpacing: '0.08em', cursor: 'pointer' }}>
-                  {isZh ? '导出此主题 HTML' : 'Export HTML with this style'}
+                  {isZh ? '导出 HTML' : 'Export HTML'}
                 </button>
               </div>
             </div>
           )}
         </div>
       </div>
+      {/* ── Floating Preview Window ── */}
+      {previewOpen && (
+        <Rnd
+          default={{ x: window.innerWidth - 480, y: window.innerHeight - 520, width: 420, height: 460 }}
+          minWidth={280}
+          minHeight={220}
+          bounds="window"
+          dragHandleClassName="preview-drag-handle"
+          style={{ zIndex: 200 }}
+        >
+          <div style={{
+            width: '100%', height: '100%', display: 'flex', flexDirection: 'column',
+            background: '#1a1a1a', borderRadius: '12px',
+            boxShadow: '0 24px 64px rgba(0,0,0,0.35)', overflow: 'hidden',
+            border: '1px solid rgba(255,255,255,0.08)',
+          }}>
+            {/* title bar */}
+            <div className="preview-drag-handle" style={{
+              padding: '9px 14px', display: 'flex', alignItems: 'center',
+              justifyContent: 'space-between', cursor: 'grab', flexShrink: 0,
+              borderBottom: '1px solid rgba(255,255,255,0.07)', userSelect: 'none',
+            }}>
+              <span style={{ fontSize: '0.68rem', color: '#888', letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: 'Inter, DM Sans, sans-serif' }}>
+                {isZh ? '预览' : 'Preview'} · {THEMES[exportOpts.theme]?.label}
+              </span>
+              <button onClick={() => setPreviewOpen(false)} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: '0.9rem', padding: '0 2px', lineHeight: 1 }}>✕</button>
+            </div>
+            {/* iframe */}
+            <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+              <iframe
+                key={JSON.stringify(exportOpts) + blocks.length}
+                srcDoc={buildExportHTML(blocks, project, schools, exportOpts, isZh)}
+                style={{ position: 'absolute', top: 0, left: 0, border: 'none', transformOrigin: 'top left' }}
+                sandbox="allow-same-origin"
+                onLoad={(e) => {
+                  const iframe = e.currentTarget
+                  const container = iframe.parentElement
+                  if (!container) return
+                  const cw = container.offsetWidth
+                  const ch = container.offsetHeight
+                  const contentW = exportOpts.width + 64
+                  const scale = Math.min(cw / contentW, 1)
+                  iframe.style.width = `${contentW}px`
+                  iframe.style.height = `${ch / scale}px`
+                  iframe.style.transform = `scale(${scale})`
+                }}
+              />
+            </div>
+          </div>
+        </Rnd>
+      )}
     </main>
   )
 }
