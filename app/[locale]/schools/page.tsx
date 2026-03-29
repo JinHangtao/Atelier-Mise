@@ -166,6 +166,7 @@ export default function SchoolsPage() {
   const [aiLoading, setAiLoading] = useState(false)
   const [copied, setCopied] = useState(false)
   const [localStatement, setLocalStatement] = useState('')
+  const [selectedCountry, setSelectedCountry] = useState<string | null>(null)
 
   useEffect(() => {
     const SCHEMA_VERSION = 'v2-bilingual'
