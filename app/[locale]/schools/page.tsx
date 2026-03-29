@@ -675,55 +675,13 @@ Requirements: The statement should be sincere and specific, highlighting alignme
           <h1 style={{ fontSize: 'clamp(2rem, 3vw, 3rem)', fontWeight: 700, color: '#1a1a1a', letterSpacing: '-0.02em', marginBottom: '10px' }}>{t.title}</h1>
           <p style={{ fontSize: '1rem', color: '#888884', marginBottom: '32px' }}>{t.subtitle}</p>
 
-          {/* 装饰地图 + 国家筛选 */}
-          <div style={{ position: 'relative', marginBottom: '24px' }}>
-            <svg viewBox="0 0 960 360" style={{ width: '100%', maxWidth: '860px', height: '90px', opacity: 0.06, display: 'block', pointerEvents: 'none' }} xmlns="http://www.w3.org/2000/svg">
-              <path d="M62,65 L95,50 L135,44 L178,48 L212,60 L240,80 L254,108 L250,138 L234,157 L207,167 L178,166 L150,153 L128,145 L112,153 L98,165 L85,155 L75,137 L66,109 L60,83Z" fill="#1a1a1a"/>
-              <path d="M228,14 L264,6 L294,16 L292,40 L266,50 L234,40Z" fill="#1a1a1a"/>
-              <path d="M176,180 L204,172 L228,182 L238,209 L232,244 L218,282 L197,312 L174,316 L157,295 L151,263 L155,228 L162,201Z" fill="#1a1a1a"/>
-              <path d="M434,71 L448,63 L464,65 L478,71 L492,79 L498,93 L492,107 L478,115 L462,119 L445,114 L434,103 L428,87Z" fill="#1a1a1a"/>
-              <path d="M458,41 L472,33 L488,38 L492,58 L485,75 L472,78 L460,71 L455,55Z" fill="#1a1a1a"/>
-              <path d="M445,128 L468,118 L492,122 L508,138 L515,170 L512,212 L500,255 L480,290 L458,298 L436,285 L420,255 L416,215 L422,170 L432,142Z" fill="#1a1a1a"/>
-              <path d="M512,28 L580,14 L660,8 L740,14 L808,24 L842,41 L848,64 L830,84 L798,96 L752,104 L700,104 L648,98 L600,91 L558,84 L528,74 L512,54Z" fill="#1a1a1a"/>
-              <path d="M590,112 L610,105 L625,115 L622,139 L608,159 L592,154 L582,136Z" fill="#1a1a1a"/>
-              <path d="M690,108 L720,102 L745,110 L748,127 L730,137 L705,132 L688,122Z" fill="#1a1a1a"/>
-              <path d="M710,222 L745,210 L785,212 L808,227 L812,254 L800,277 L772,290 L740,287 L715,270 L705,247Z" fill="#1a1a1a"/>
-            </svg>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '10px' }}>
-              <span style={{ fontSize: '0.72rem', letterSpacing: '0.15em', color: '#b8b8b4', textTransform: 'uppercase' }}>
-                {isZh ? '地区' : 'Region'}
-              </span>
-              {[...new Set(schools.map(s => s.country))].sort().map(country => {
-                const isSelected = selectedCountry === country
-                const count = schools.filter(s => s.country === country).length
-                const label = isZh ? (COUNTRY_ZH[country] || country) : country
-                return (
-                  <button key={country}
-                    onClick={() => setSelectedCountry(isSelected ? null : country)}
-                    style={{
-                      padding: '6px 14px', borderRadius: '20px',
-                      border: isSelected ? '1px solid #1a1a1a' : '1px solid rgba(26,26,26,0.12)',
-                      background: isSelected ? '#1a1a1a' : 'rgba(255,255,255,0.8)',
-                      color: isSelected ? '#f7f7f5' : '#888884',
-                      fontFamily: 'Space Mono, monospace', fontSize: '0.72rem',
-                      letterSpacing: '0.08em', cursor: 'pointer', transition: 'all 0.15s',
-                    }}
-                    onMouseEnter={e => { if (!isSelected) { e.currentTarget.style.background = 'rgba(26,26,26,0.06)'; e.currentTarget.style.color = '#1a1a1a' }}}
-                    onMouseLeave={e => { if (!isSelected) { e.currentTarget.style.background = 'rgba(255,255,255,0.8)'; e.currentTarget.style.color = '#888884' }}}
-                  >
-                    {label} <span style={{ opacity: 0.5 }}>{count}</span>
-                  </button>
-                )
-              })}
-              {selectedCountry && (
-                <button onClick={() => setSelectedCountry(null)}
-                  style={{ padding: '6px 10px', borderRadius: '20px', border: 'none', background: 'transparent', color: '#b8b8b4', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem', cursor: 'pointer' }}>
-                  {isZh ? '✕ 清除' : '✕ clear'}
-                </button>
-              )}
-            </div>
-          </div>
-
+          {/* 世界地图 */}
+          <WorldMap
+            schools={schools}
+            selectedCountry={selectedCountry}
+            setSelectedCountry={setSelectedCountry}
+            isZh={isZh}
+          />
           {/* 搜索 + 排序 */}
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
             <input
@@ -748,26 +706,6 @@ Requirements: The statement should be sincere and specific, highlighting alignme
         {/* TIMELINE + MAP BACKGROUND */}
         <div style={{ padding: '0 48px 96px', position: 'relative', zIndex: 1 }}>
 
-          {/* 背景世界地图 SVG */}
-          <div aria-hidden style={{ position: 'fixed', bottom: 0, right: 0, width: '70vw', height: '70vh', opacity: 0.045, pointerEvents: 'none', zIndex: 0 }}>
-            <svg viewBox="0 0 960 500" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: '100%' }}>
-              <path d="M62,82 L95,65 L135,58 L178,63 L212,76 L240,97 L254,125 L250,155 L234,174 L207,184 L178,183 L150,170 L128,162 L112,170 L98,182 L85,172 L75,154 L66,126 L60,100Z" fill="#1a1a1a"/>
-              <path d="M228,30 L264,22 L294,32 L292,57 L266,67 L234,56Z" fill="#1a1a1a"/>
-              <path d="M53,188 L68,180 L78,190 L72,202 L55,200Z" fill="#1a1a1a"/>
-              <path d="M176,216 L204,208 L228,218 L238,246 L232,282 L218,320 L197,350 L174,354 L157,333 L151,300 L155,265 L162,238Z" fill="#1a1a1a"/>
-              <path d="M434,108 L448,100 L464,102 L478,108 L492,116 L498,130 L492,144 L478,152 L462,156 L445,151 L434,140 L428,124Z" fill="#1a1a1a"/>
-              <path d="M458,78 L472,70 L488,75 L492,95 L485,112 L472,115 L460,108 L455,92Z" fill="#1a1a1a"/>
-              <path d="M388,88 L402,83 L412,90 L408,100 L395,103Z" fill="#1a1a1a"/>
-              <path d="M445,168 L468,158 L492,162 L508,178 L515,210 L512,252 L500,295 L480,330 L458,338 L436,325 L420,295 L416,255 L422,210 L432,182Z" fill="#1a1a1a"/>
-              <path d="M505,155 L532,148 L558,155 L562,172 L545,182 L518,178Z" fill="#1a1a1a"/>
-              <path d="M512,62 L580,48 L660,42 L740,48 L808,58 L842,75 L848,98 L830,118 L798,130 L752,138 L700,138 L648,132 L600,125 L558,118 L528,108 L512,88Z" fill="#1a1a1a"/>
-              <path d="M588,165 L612,160 L628,170 L625,196 L610,218 L592,212 L582,194Z" fill="#1a1a1a"/>
-              <path d="M688,175 L722,170 L748,178 L750,196 L730,206 L705,202 L688,190Z" fill="#1a1a1a"/>
-              <path d="M708,282 L748,268 L788,272 L810,288 L814,315 L800,338 L772,350 L740,347 L714,330 L704,306Z" fill="#1a1a1a"/>
-              <path d="M828,332 L838,324 L846,330 L843,344 L832,346Z" fill="#1a1a1a"/>
-              <path d="M778,105 L790,100 L798,108 L794,122 L782,124Z" fill="#1a1a1a"/>
-            </svg>
-          </div>
 
           {filtered.length === 0 && (
             <div style={{ textAlign: 'center', padding: '100px 0', color: '#b8b8b4', fontSize: '0.95rem', letterSpacing: '0.08em', position: 'relative', zIndex: 1 }}>
