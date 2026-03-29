@@ -9,6 +9,7 @@ import {
   Block, School, ExportOptions, DEFAULT_EXPORT_OPTIONS,
   THEMES, FONTS, buildExportHTML,
 } from '../../../../../lib/exportStyles'
+import { Rnd } from 'react-rnd'
 
 type BlockType = 'title' | 'image' | 'image-row' | 'note' | 'custom' | 'milestone' | 'school-profile'
 
@@ -55,8 +56,8 @@ function DraftBanner({ blocks, isZh, onClear }: { blocks: Block[]; isZh: boolean
         </span>
       </div>
       <div style={{ display: 'flex', gap: '8px' }}>
-        <button onClick={onClear} style={{ fontSize: '0.72rem', color: '#888', background: 'none', border: 'none', cursor: 'pointer', letterSpacing: '0.06em' }}>{isZh ? '清空重来' : 'Start fresh'}</button>
-        <button onClick={() => setVisible(false)} style={{ fontSize: '0.72rem', color: '#4aab6f', background: 'none', border: 'none', cursor: 'pointer', letterSpacing: '0.06em' }}>{isZh ? '继续编辑 →' : 'Keep editing →'}</button>
+       <button onClick={() => exportPDF(project, blocks, schools, exportOpts, isZh)}
+       <button onClick={() => exportDOCX(project, blocks, schools, exportOpts, isZh)}
       </div>
     </div>
   )

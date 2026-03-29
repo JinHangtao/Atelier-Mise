@@ -25,6 +25,7 @@
     "next-intl": "^4.8.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-rnd": "^10.5.3",
     "react-simple-maps": "^3.0.0",
     "replicate": "^1.4.0",
     "world-map-country-shapes": "^1.0.0"
