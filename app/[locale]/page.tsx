@@ -58,15 +58,43 @@ export default function Home() {
         .fade-up-4 { animation-delay: 0.46s; }
         .noise-overlay {
           position: fixed; inset: 0; pointer-events: none; z-index: 2;
-          opacity: 0.038;
-          background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-          background-size: 160px;
+          opacity: 0.055;
+          background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+          background-size: 140px;
           background-repeat: repeat;
+        }
+        .halo-warm {
+          position: fixed; pointer-events: none; z-index: 0;
+          width: 900px; height: 900px; border-radius: 50%;
+          bottom: -300px; left: -200px;
+          background: radial-gradient(circle, rgba(210,190,150,0.22) 0%, rgba(210,190,150,0.08) 40%, transparent 70%);
+          filter: blur(40px);
+          animation: floatB 24s ease-in-out infinite;
+        }
+        .halo-cool {
+          position: fixed; pointer-events: none; z-index: 0;
+          width: 800px; height: 800px; border-radius: 50%;
+          top: -200px; right: -180px;
+          background: radial-gradient(circle, rgba(180,190,210,0.18) 0%, rgba(180,190,210,0.06) 40%, transparent 70%);
+          filter: blur(50px);
+          animation: floatA 28s ease-in-out infinite;
+        }
+        .halo-mid {
+          position: fixed; pointer-events: none; z-index: 0;
+          width: 500px; height: 500px; border-radius: 50%;
+          top: 40%; left: 35%;
+          background: radial-gradient(circle, rgba(200,195,180,0.1) 0%, transparent 65%);
+          filter: blur(60px);
+          animation: floatC 20s ease-in-out infinite;
         }
       `}</style>
 
       <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden', background: '#f7f7f5' }}>
 
+        {/* ── 光晕层 ── */}
+        <div className="halo-warm" aria-hidden />
+        <div className="halo-cool" aria-hidden />
+        <div className="halo-mid" aria-hidden />
         {/* ── 噪点纹理层 ── */}
         <div className="noise-overlay" aria-hidden />
 
