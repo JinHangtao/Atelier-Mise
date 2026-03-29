@@ -55,10 +55,6 @@ function DraftBanner({ blocks, isZh, onClear }: { blocks: Block[]; isZh: boolean
           {isZh ? `已恢复上次草稿（${blocks.length} 个块）` : `Draft restored — ${blocks.length} block${blocks.length !== 1 ? 's' : ''}`}
         </span>
       </div>
-      <div style={{ display: 'flex', gap: '8px' }}>
-       <button onClick={() => exportPDF(project, blocks, schools, exportOpts, isZh)}
-       <button onClick={() => exportDOCX(project, blocks, schools, exportOpts, isZh)}
-      </div>
     </div>
   )
 }
