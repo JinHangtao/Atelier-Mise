@@ -56,54 +56,64 @@ export default function Home() {
         .fade-up-2 { animation-delay: 0.22s; }
         .fade-up-3 { animation-delay: 0.34s; }
         .fade-up-4 { animation-delay: 0.46s; }
+        .noise-overlay {
+          position: fixed; inset: 0; pointer-events: none; z-index: 2;
+          opacity: 0.038;
+          background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+          background-size: 160px;
+          background-repeat: repeat;
+        }
       `}</style>
 
       <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden', background: '#f7f7f5' }}>
+
+        {/* ── 噪点纹理层 ── */}
+        <div className="noise-overlay" aria-hidden />
 
         {/* ── 背景圆圈动画 ── */}
         <div aria-hidden style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0 }}>
           <div style={{
             position: 'absolute', top: '-160px', right: '-120px',
             width: '600px', height: '600px', borderRadius: '50%',
-            border: '1.5px solid rgba(26,26,26,0.13)',
+            border: '1.5px solid rgba(26,26,26,0.25)',
             animation: 'floatA 18s ease-in-out infinite',
           }}/>
           <div style={{
             position: 'absolute', top: '-80px', right: '-50px',
             width: '420px', height: '420px', borderRadius: '50%',
-            border: '1px solid rgba(26,26,26,0.09)',
+            border: '1px solid rgba(26,26,26,0.18)',
             filter: 'blur(1px)',
             animation: 'floatA 22s ease-in-out infinite reverse',
           }}/>
           <div style={{
             position: 'absolute', top: '60px', right: '80px',
             width: '200px', height: '200px', borderRadius: '50%',
-            border: '1.5px solid rgba(26,26,26,0.18)',
+            border: '1.5px solid rgba(26,26,26,0.28)',
             animation: 'floatB 14s ease-in-out infinite',
           }}/>
           <div style={{
             position: 'absolute', bottom: '-140px', left: '-140px',
             width: '560px', height: '560px', borderRadius: '50%',
-            border: '1.5px solid rgba(26,26,26,0.11)',
+            border: '1.5px solid rgba(26,26,26,0.22)',
             animation: 'floatB 20s ease-in-out infinite',
           }}/>
           <div style={{
             position: 'absolute', bottom: '60px', left: '-30px',
             width: '280px', height: '280px', borderRadius: '50%',
-            border: '1px solid rgba(26,26,26,0.16)',
+            border: '1px solid rgba(26,26,26,0.2)',
             filter: 'blur(0.5px)',
             animation: 'floatA 16s ease-in-out infinite',
           }}/>
           <div style={{
             position: 'absolute', bottom: '180px', left: '120px',
             width: '100px', height: '100px', borderRadius: '50%',
-            border: '1.5px solid rgba(26,26,26,0.2)',
+            border: '1.5px solid rgba(26,26,26,0.3)',
             animation: 'floatC 10s ease-in-out infinite',
           }}/>
           <div style={{
             position: 'absolute', top: '50%', left: '50%',
             width: '1000px', height: '1000px', borderRadius: '50%',
-            border: '1px solid rgba(26,26,26,0.04)',
+            border: '1px solid rgba(26,26,26,0.07)',
             filter: 'blur(2px)',
             transform: 'translate(-50%,-50%)',
             animation: 'floatC 30s ease-in-out infinite',
@@ -111,9 +121,41 @@ export default function Home() {
           <div style={{
             position: 'absolute', bottom: '40px', right: '80px',
             width: '160px', height: '160px', borderRadius: '50%',
-            border: '1px solid rgba(26,26,26,0.14)',
+            border: '1px solid rgba(26,26,26,0.22)',
             animation: 'floatB 12s ease-in-out infinite',
           }}/>
+          {/* 额外加两个小圆增加密度 */}
+          <div style={{
+            position: 'absolute', top: '30%', left: '8%',
+            width: '60px', height: '60px', borderRadius: '50%',
+            border: '1px solid rgba(26,26,26,0.18)',
+            animation: 'floatC 8s ease-in-out infinite',
+          }}/>
+          <div style={{
+            position: 'absolute', top: '20%', right: '22%',
+            width: '40px', height: '40px', borderRadius: '50%',
+            border: '1.5px solid rgba(26,26,26,0.22)',
+            animation: 'floatB 9s ease-in-out infinite reverse',
+          }}/>
+        </div>
+
+        {/* ── 坐标感装饰文字 ── */}
+        <div aria-hidden style={{
+          position: 'fixed', bottom: '28px', left: '48px',
+          fontFamily: 'Space Mono, monospace', fontSize: '0.5rem',
+          letterSpacing: '0.22em', color: 'rgba(26,26,26,0.2)',
+          zIndex: 1, pointerEvents: 'none', textTransform: 'uppercase',
+        }}>
+          EST. 2024 · OPEN SOURCE
+        </div>
+        <div aria-hidden style={{
+          position: 'fixed', top: '50%', right: '28px',
+          fontFamily: 'Space Mono, monospace', fontSize: '0.48rem',
+          letterSpacing: '0.18em', color: 'rgba(26,26,26,0.15)',
+          zIndex: 1, pointerEvents: 'none', writingMode: 'vertical-rl',
+          textTransform: 'uppercase', transform: 'translateY(-50%)',
+        }}>
+          ART · DESIGN · PORTFOLIO
         </div>
 
         {/* ── NAV ── */}
@@ -177,8 +219,8 @@ export default function Home() {
           justifyContent: 'center',
           padding: '120px 48px 80px',
           textAlign: 'center',
-          gap: '24px',
-          position: 'relative', zIndex: 1,
+          gap: '28px',
+          position: 'relative', zIndex: 3,
         }}>
           <div className="font-mono fade-up fade-up-1" style={{
             fontSize: '0.5rem',
@@ -195,15 +237,21 @@ export default function Home() {
           </div>
 
           <h1 className="font-mono fade-up fade-up-2" style={{
-            fontSize: 'clamp(1.9rem, 4.5vw, 3.6rem)',
+            fontSize: 'clamp(3rem, 7vw, 6.5rem)',
             fontWeight: 700,
             color: '#1a1a1a',
-            lineHeight: 1.12,
-            maxWidth: '700px',
+            lineHeight: 1.05,
+            maxWidth: '900px',
             letterSpacing: '-0.03em',
           }}>
             {t('hero.title1')}<br />
-            <span style={{ color: '#888884' }}>{t('hero.title2')}</span>{' '}
+            <span style={{
+              color: '#aaaaaa',
+              fontStyle: 'italic',
+              fontFamily: 'Georgia, "DM Serif Display", serif',
+              fontWeight: 400,
+              letterSpacing: '-0.01em',
+            }}>{t('hero.title2')}</span>{' '}
             {t('hero.title3')}
           </h1>
 
@@ -277,7 +325,7 @@ export default function Home() {
           maxWidth: '1080px',
           margin: '0 auto',
           width: '100%',
-          position: 'relative', zIndex: 1,
+          position: 'relative', zIndex: 3,
         }}>
           {([
             { key: 'schools', href: `/${locale}/schools` },
@@ -327,7 +375,7 @@ export default function Home() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          position: 'relative', zIndex: 1,
+          position: 'relative', zIndex: 3,
         }}>
           <span className="font-mono" style={{ fontSize: '0.55rem', color: '#b8b8b4', letterSpacing: '0.12em' }}>
             {t('footer.label')}
