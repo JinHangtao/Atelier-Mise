@@ -366,15 +366,19 @@ export default function ExportPage() {
           src={imageEditorUrl}
           isZh={isZh}
           onSave={dataUrl => {
-            if (imageEditorIdx === -1) {
-              // 更新画布上的image block
-              const blockId = (window as any).__editingBlockId
-              setBlocks(b => b.map(bl => bl.id === blockId ? { ...bl, content: dataUrl } : bl))
-            } else {
-              // 更新mediaUrls里的图片
-              const updated = [...(project.mediaUrls || [])]
-              updated[imageEditorIdx] = dataUrl
-              setProjects(projects.map(p => p.id === id ? { ...p, mediaUrls: updated, updatedAt: new Date().toISOString() } : p))
+            const blockId = (window as any).__editingBlockId
+            const imgIdx = (window as any).__editingImageIdx ?? null
+            if (blockId) {
+              setBlocks(b => b.map(bl => {
+                if (bl.id !== blockId) return bl
+                if (bl.type === 'image') return { ...bl, content: dataUrl }
+                if (bl.type === 'image-row' && imgIdx !== null) {
+                  const imgs = [...(bl.images || [])]
+                  imgs[imgIdx] = dataUrl
+                  return { ...bl, images: imgs }
+                }
+                return bl
+              }))
             }
             setImageEditorUrl(null)
             setImageEditorIdx(null)
@@ -529,8 +533,12 @@ export default function ExportPage() {
                               }
                               imageDragIndex.current = null
                             }}
-                            style={{ cursor: 'grab' }}>
+                            style={{ cursor: 'grab', position: 'relative' }}>
                             <img src={url} alt="" style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '6px', display: 'block', pointerEvents: 'none' }} />
+                            <button
+                              onMouseDown={e => { e.stopPropagation(); e.preventDefault(); setImageEditorUrl(url); setImageEditorIdx(-1); (window as any).__editingBlockId = block.id; (window as any).__editingImageIdx = idx }}
+                              style={{ position: 'absolute', top: '5px', right: '5px', background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none', borderRadius: '4px', width: '22px', height: '22px', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto' }}
+                              title={isZh ? '编辑图片' : 'Edit image'}>✎</button>
                             <input value={editingImageCaptions[idx] || ''} onChange={e => { const updated = [...editingImageCaptions]; updated[idx] = e.target.value; setEditingImageCaptions(updated) }}
                               placeholder={isZh ? `图片 ${idx + 1} 名称…` : `Image ${idx + 1} label…`}
                               style={{ width: '100%', marginTop: '6px', padding: '5px 8px', border: '1px solid rgba(26,26,26,0.12)', borderRadius: '6px', fontFamily: 'DM Sans, sans-serif', fontSize: '0.8rem', color: '#555', outline: 'none', background: '#f7f7f5' }} />
@@ -565,13 +573,20 @@ export default function ExportPage() {
                   )}
                   {block.type === 'image-row' && (
                     <div>
-                      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${(block.images || []).length}, 1fr)`, gap: '6px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${(block.images || []).length + 1}, 1fr)`, gap: '6px' }}>
                         {(block.images || []).map((url, idx) => (
                           <div key={idx}>
                             <img src={url} alt="" style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '7px', display: 'block' }} />
                             {(block.imageCaptions || [])[idx] && <p style={{ fontSize: '0.72rem', color: '#999', marginTop: '4px', textAlign: 'center', fontStyle: 'italic', lineHeight: 1.4, fontFamily: 'Inter, DM Sans, sans-serif' }}>{(block.imageCaptions || [])[idx]}</p>}
                           </div>
                         ))}
+                        {/* + 添加更多图片 */}
+                        <div onClick={() => { setImagePickerOpen(true); setSelectedImages([]); (window as any).__addToBlockId = block.id }}
+                          style={{ aspectRatio: '1', border: '1.5px dashed rgba(26,26,26,0.15)', borderRadius: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', background: 'rgba(26,26,26,0.02)' }}
+                          onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(26,26,26,0.35)')}
+                          onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(26,26,26,0.15)')}>
+                          <span style={{ fontSize: '1.2rem', color: '#ccc' }}>+</span>
+                        </div>
                       </div>
                       {block.caption && <p style={{ fontSize: '0.78rem', color: '#bbb', marginTop: '7px', fontStyle: 'italic', fontFamily: 'Inter, DM Sans, sans-serif' }}>{block.caption}</p>}
                     </div>
@@ -623,7 +638,7 @@ export default function ExportPage() {
                       title={isZh ? '编辑' : 'Edit'}>✎</button>
                   )}
                   {block.type === 'image' && (
-                    <button className="edit-btn" onClick={() => { setImageEditorUrl(block.content); setImageEditorIdx(-1); (window as any).__editingBlockId = block.id }}
+                    <button className="edit-btn" onClick={() => { setImageEditorUrl(block.content); setImageEditorIdx(-1);(window as any).__editingBlockId = block.id;(window as any).__editingImageIdx = null }}
                       style={{ background: 'rgba(26,26,26,0.06)', border: 'none', borderRadius: '6px', width: '28px', height: '28px', cursor: 'pointer', color: '#888', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                       title={isZh ? '编辑图片' : 'Edit image'}>✎</button>
                   )}
@@ -732,6 +747,10 @@ export default function ExportPage() {
                           <img src={url} alt="" className="img-thumb" onClick={() => addBlock('image', url)}
                             style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '7px', cursor: 'pointer', border: '1px solid rgba(26,26,26,0.08)', display: 'block' }} />
                           <span style={{ position: 'absolute', bottom: '5px', right: '5px', background: 'rgba(0,0,0,0.45)', color: '#fff', fontSize: '11px', width: '18px', height: '18px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>+</span>
+                          <button
+                            onClick={e => { e.stopPropagation(); setImageEditorUrl(url); setImageEditorIdx(i) }}
+                            style={{ position: 'absolute', top: '5px', right: '5px', background: 'rgba(0,0,0,0.5)', color: '#fff', border: 'none', borderRadius: '4px', width: '22px', height: '22px', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            title={isZh ? '编辑图片' : 'Edit image'}>✎</button>
                         </div>
                       ))}
                     </div>
