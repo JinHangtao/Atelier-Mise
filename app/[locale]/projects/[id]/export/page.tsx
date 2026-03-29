@@ -343,7 +343,7 @@ export default function ExportPage() {
     setEditingBlockId(block.id)
     setEditingContent(block.content)
     setEditingCaption(block.caption || '')
-    setEditingImageCaptions(block.imageCaptions || (block.images || []).map(() => ''))
+    setEditingImageCaptions(block.imageCaptions || (block.type === 'image' ? [''] : (block.images || []).map(() => '')))
   }
   const saveEdit = () => {
     setBlocks(b => b.map(block =>
@@ -534,7 +534,12 @@ export default function ExportPage() {
                       style={{ width: '100%', padding: '10px 14px', border: '1px solid rgba(26,26,26,0.15)', borderRadius: '10px', fontFamily: 'DM Sans, sans-serif', fontSize: '0.95rem', color: '#1a1a1a', outline: 'none', resize: 'vertical', background: '#f7f7f5', marginBottom: '10px' }} />
                   )}
                   {block.type === 'image' && (
-                    <img src={block.content} alt="" style={{ width: '100%', maxHeight: '180px', objectFit: 'cover', borderRadius: '8px', marginBottom: '10px' }} />
+                    <div style={{ marginBottom: '10px' }}>
+                      <img src={block.content} alt="" style={{ width: '100%', maxHeight: '180px', objectFit: 'cover', borderRadius: '8px', marginBottom: '8px' }} />
+                      <input value={editingImageCaptions[0] || ''} onChange={e => { const updated = [...editingImageCaptions]; updated[0] = e.target.value; setEditingImageCaptions(updated) }}
+                        placeholder={isZh ? '图片名称…' : 'Image label…'}
+                        style={{ width: '100%', marginTop: '6px', padding: '5px 8px', border: '1px solid rgba(26,26,26,0.12)', borderRadius: '6px', fontFamily: 'DM Sans, sans-serif', fontSize: '0.8rem', color: '#555', outline: 'none', background: '#f7f7f5' }} />
+                    </div>
                   )}
                   {block.type === 'image-row' && (
                     <div style={{ marginBottom: '10px' }}>
@@ -602,18 +607,8 @@ export default function ExportPage() {
                   {block.type === 'image' && (
                     <div>
                       <img src={block.content} alt="" style={{ width: '100%', maxHeight: '200px', objectFit: 'cover', borderRadius: '8px' }} />
-                      <input
-                        value={(block.imageCaptions || [])[0] || ''}
-                        onChange={e => setBlocks(b => b.map(bl => bl.id !== block.id ? bl : { ...bl, imageCaptions: [e.target.value] }))}
-                        placeholder={isZh ? '图片名称…' : 'Image label…'}
-                        onClick={e => e.stopPropagation()}
-                        style={{ width: '100%', marginTop: '8px', padding: '5px 0', border: 'none', borderBottom: '1px solid rgba(26,26,26,0.1)', background: 'transparent', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.8rem', color: '#555', outline: 'none' }} />
-                      <input
-                        value={block.caption || ''}
-                        onChange={e => setBlocks(b => b.map(bl => bl.id !== block.id ? bl : { ...bl, caption: e.target.value }))}
-                        placeholder={isZh ? '图片说明…' : 'Caption…'}
-                        onClick={e => e.stopPropagation()}
-                        style={{ width: '100%', marginTop: '6px', padding: '5px 0', border: 'none', borderBottom: '1px solid rgba(26,26,26,0.08)', background: 'transparent', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.76rem', color: '#aaa', outline: 'none', fontStyle: 'italic' }} />
+                      {(block.imageCaptions || [])[0] && <p style={{ fontSize: '0.72rem', color: '#999', marginTop: '4px', textAlign: 'center', fontStyle: 'italic', lineHeight: 1.4, fontFamily: 'Inter, DM Sans, sans-serif' }}>{(block.imageCaptions || [])[0]}</p>}
+                      {block.caption && <p style={{ fontSize: '0.78rem', color: '#bbb', marginTop: '7px', fontStyle: 'italic', fontFamily: 'Inter, DM Sans, sans-serif' }}>{block.caption}</p>}
                     </div>
                   )}
                   {block.type === 'image-row' && (
@@ -675,15 +670,15 @@ export default function ExportPage() {
 
               {editingBlockId !== block.id && (
                 <div style={{ position: 'absolute', top: '12px', right: '12px', display: 'flex', gap: '6px' }}>
-                  {['custom', 'note', 'image-row'].includes(block.type) && (
+                  {['custom', 'note', 'image-row', 'image'].includes(block.type) && (
                     <button className="edit-btn" onClick={() => startEdit(block)}
                       style={{ background: 'rgba(26,26,26,0.06)', border: 'none', borderRadius: '6px', width: '28px', height: '28px', cursor: 'pointer', color: '#888', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                       title={isZh ? '编辑' : 'Edit'}>✎</button>
                   )}
                   {block.type === 'image' && (
-                    <button className="edit-btn" onClick={() => { setImageEditorUrl(block.content); setImageEditorIdx(-1);(window as any).__editingBlockId = block.id;(window as any).__editingImageIdx = null }}
-                      style={{ background: 'rgba(26,26,26,0.06)', border: 'none', borderRadius: '6px', width: '28px', height: '28px', cursor: 'pointer', color: '#888', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                      title={isZh ? '编辑图片' : 'Edit image'}>✎</button>
+                    <button className="edit-btn" onClick={e => { e.stopPropagation(); setImageEditorUrl(block.content); setImageEditorIdx(-1);(window as any).__editingBlockId = block.id;(window as any).__editingImageIdx = null }}
+                      style={{ background: 'rgba(26,26,26,0.06)', border: 'none', borderRadius: '6px', width: '28px', height: '28px', cursor: 'pointer', color: '#888', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      title={isZh ? '编辑图片' : 'Edit image'}>🖼</button>
                   )}
                   <button onClick={() => removeBlock(block.id)}
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(180,80,80,0.4)', fontSize: '0.85rem', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
