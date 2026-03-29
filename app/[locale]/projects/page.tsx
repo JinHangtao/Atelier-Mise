@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 import { useState, useRef } from 'react'
 import { useLocalStorage } from '../../../hooks/useLocalStorage'
 import { Project, ProjectStatus, ProjectCategory, Milestone, Proposal, Note, NoteVisibility } from '../../../types'
@@ -267,8 +267,8 @@ export default function ProjectsPage() {
               <button onClick={() => router.push(`${isZh ? '/zh' : '/en'}/projects/${detail.id}/export`)} style={{ background: 'transparent', color: '#888884', border: '1px solid rgba(26,26,26,0.12)', padding: '14px 22px', borderRadius: '12px', fontFamily: 'Space Mono, monospace', fontSize: '0.85rem', letterSpacing: '0.1em', cursor: 'pointer' }}>
                 {isZh ? '编辑导出' : 'Export Editor'}
               </button>
-              <button onClick={() => exportPDF(detail)} style={{ background: 'transparent', color: '#888884', border: '1px solid rgba(26,26,26,0.12)', padding: '14px 22px', borderRadius: '12px', fontFamily: 'Space Mono, monospace', fontSize: '0.85rem', letterSpacing: '0.1em', cursor: 'pointer' }}>PDF</button>
-              <button onClick={() => exportDOCX(detail)} style={{ background: 'transparent', color: '#888884', border: '1px solid rgba(26,26,26,0.12)', padding: '14px 22px', borderRadius: '12px', fontFamily: 'Space Mono, monospace', fontSize: '0.85rem', letterSpacing: '0.1em', cursor: 'pointer' }}>Word</button>
+              <button onClick={() => exportPDF(detail, [], [], { theme: 'sensei', font: 'mixed', size: 'a4', showLogo: false }, isZh)} style={{ background: 'transparent', color: '#888884', border: '1px solid rgba(26,26,26,0.12)', padding: '14px 22px', borderRadius: '12px', fontFamily: 'Space Mono, monospace', fontSize: '0.85rem', letterSpacing: '0.1em', cursor: 'pointer' }}>PDF</button>
+              <button onClick={() => exportDOCX(detail, [], [], { theme: 'sensei', font: 'mixed', size: 'a4', showLogo: false }, isZh)} style={{ background: 'transparent', color: '#888884', border: '1px solid rgba(26,26,26,0.12)', padding: '14px 22px', borderRadius: '12px', fontFamily: 'Space Mono, monospace', fontSize: '0.85rem', letterSpacing: '0.1em', cursor: 'pointer' }}>Word</button>
               <button onClick={() => openEdit(detail)} style={{ background: '#1a1a1a', color: '#f7f7f5', border: 'none', padding: '14px 28px', borderRadius: '12px', fontFamily: 'Space Mono, monospace', fontSize: '0.9rem', letterSpacing: '0.12em', cursor: 'pointer' }}>{tx.edit}</button>
             </div>
           </nav>
