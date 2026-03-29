@@ -1,7 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { ComposableMap, Geographies, Geography, Marker } from '@vnedyalk0v/react19-simple-maps'
 
 interface School {
   id: string
@@ -140,99 +139,6 @@ const COUNTRY_ZH: Record<string, string> = {
   'Sweden': '瑞典', 'Australia': '澳大利亚', 'Singapore': '新加坡',
 }
 
-// Longitude, Latitude for each country
-const COUNTRY_COORDS: Record<string, [number, number]> = {
-  'USA':       [-100, 40],
-  'UK':        [-2, 54],
-  'France':    [2, 46],
-  'Italy':     [12, 42],
-  'Sweden':    [18, 62],
-  'Australia': [134, -25],
-  'Singapore': [104, 1],
-}
-
-
-// ── WORLD MAP COMPONENT ──
-const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json'
-
-const COUNTRY_ISO: Record<string, string> = {
-  'USA': '840', 'UK': '826', 'France': '250', 'Italy': '380',
-  'Sweden': '752', 'Australia': '036', 'Singapore': '702',
-}
-
-function WorldMap({ schools, selectedCountry, setSelectedCountry, isZh }: {
-  schools: School[]
-  selectedCountry: string | null
-  setSelectedCountry: (c: string | null) => void
-  isZh: boolean
-}) {
-  const activeCountries = [...new Set(schools.map(s => s.country))]
-
-  return (
-    <ComposableMap
-      projectionConfig={{ scale: 147, center: [15, 10] as [number, number] }}
-      style={{ width: '100%', height: '100%' }}
-    >
-      <Geographies geography={GEO_URL}>
-        {({ geographies }: { geographies: any[] }) =>
-          geographies.map((geo) => {
-            const isoNum = String(geo.id)
-            const matched = Object.entries(COUNTRY_ISO).find(([, iso]) => iso === isoNum)?.[0]
-            const isActive = matched ? activeCountries.includes(matched) : false
-            const isSelected = matched ? selectedCountry === matched : false
-            return (
-              <Geography
-                key={geo.rsmKey}
-                geography={geo}
-                onClick={() => {
-                  if (isActive && matched) setSelectedCountry(isSelected ? null : matched)
-                }}
-                style={{
-                  default: {
-                    fill: isSelected ? '#1a1a1a' : isActive ? '#7a7a74' : '#e2e2de',
-                    stroke: '#fff', strokeWidth: 0.5, outline: 'none', transition: 'fill 0.2s',
-                  },
-                  hover: {
-                    fill: isActive ? (isSelected ? '#333' : '#4a4a44') : '#d8d8d4',
-                    stroke: '#fff', strokeWidth: 0.5, outline: 'none',
-                    cursor: isActive ? 'pointer' : 'default',
-                  },
-                  pressed: { fill: '#1a1a1a', outline: 'none' },
-                }}
-              />
-            )
-          })
-        }
-      </Geographies>
-      {Object.entries(COUNTRY_COORDS).map(([country, coords]) => {
-        if (!activeCountries.includes(country)) return null
-        const count = schools.filter(s => s.country === country).length
-        const isSelected = selectedCountry === country
-        const label = isZh ? (COUNTRY_ZH[country] || country) : country
-        return (
-          <Marker key={country} coordinates={coords}>
-            <circle
-              r={isSelected ? 9 : 7}
-              fill={isSelected ? '#f7f7f5' : '#1a1a1a'}
-              stroke={isSelected ? '#1a1a1a' : '#f7f7f5'}
-              strokeWidth={1.5}
-              style={{ cursor: 'pointer' }}
-              onClick={() => setSelectedCountry(isSelected ? null : country)}
-            />
-            <text y={-12} textAnchor="middle"
-              style={{ fontSize: '7px', fontFamily: 'Space Mono, monospace', fill: '#1a1a1a', fontWeight: 700, pointerEvents: 'none' }}>
-              {label}
-            </text>
-            <text y={3} textAnchor="middle"
-              style={{ fontSize: '7px', fontFamily: 'Space Mono, monospace', fill: isSelected ? '#1a1a1a' : '#f7f7f5', pointerEvents: 'none' }}>
-              {count}
-            </text>
-          </Marker>
-        )
-      })}
-    </ComposableMap>
-  )
-}
 
 function getDeadlineInfo(deadline: string, isZh: boolean, t: typeof TX.en) {
   if (!deadline) return { label: t.noDeadline, color: '#c8c8c4', bg: 'transparent', urgent: false }
@@ -260,7 +166,6 @@ export default function SchoolsPage() {
   const [aiLoading, setAiLoading] = useState(false)
   const [copied, setCopied] = useState(false)
   const [localStatement, setLocalStatement] = useState('')
-  const [selectedCountry, setSelectedCountry] = useState<string | null>(null)
 
   useEffect(() => {
     const SCHEMA_VERSION = 'v2-bilingual'
@@ -407,7 +312,6 @@ Requirements: The statement should be sincere and specific, highlighting alignme
 
   const filtered = schools
     .filter(s => {
-      if (selectedCountry && s.country !== selectedCountry) return false
       if (!search) return true
       return (
         s.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -688,38 +592,54 @@ Requirements: The statement should be sincere and specific, highlighting alignme
           <h1 style={{ fontSize: 'clamp(2rem, 3vw, 3rem)', fontWeight: 700, color: '#1a1a1a', letterSpacing: '-0.02em', marginBottom: '10px' }}>{t.title}</h1>
           <p style={{ fontSize: '1rem', color: '#888884', marginBottom: '32px' }}>{t.subtitle}</p>
 
-          {/* 世界地图 */}
-          {(() => {
-            const activeCountries = [...new Set(schools.map(s => s.country))]
-            // Country pill buttons — clean, no dependency needed
-            const allCountries = Object.keys(COUNTRY_COORDS).filter(c => activeCountries.includes(c))
-            return (
-              <div style={{ marginBottom: '24px' }}>
-                <div style={{ position: 'relative', width: '100%', maxWidth: '860px', height: '280px', marginBottom: '16px', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(26,26,26,0.08)', borderRadius: '20px', overflow: 'hidden' }}>
-                  <WorldMap
-                    schools={schools}
-                    selectedCountry={selectedCountry}
-                    setSelectedCountry={setSelectedCountry}
-                    isZh={isZh}
-                  />
-                  <div style={{ position: 'absolute', bottom: '12px', right: '16px', fontSize: '0.65rem', color: '#c8c8c4', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em' }}>
-                    {isZh ? '点击国家筛选' : 'Click country to filter'}
-                  </div>
-                  {selectedCountry && (
-                    <div style={{ position: 'absolute', top: '12px', left: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '0.72rem', fontFamily: 'Space Mono, monospace', color: '#1a1a1a', letterSpacing: '0.08em' }}>
-                        {isZh ? (COUNTRY_ZH[selectedCountry] || selectedCountry) : selectedCountry}
-                      </span>
-                      <button onClick={() => setSelectedCountry(null)}
-                        style={{ fontSize: '0.65rem', color: '#888884', border: 'none', cursor: 'pointer', padding: '2px 6px', borderRadius: '4px', background: 'rgba(26,26,26,0.06)' }}>
-                        {isZh ? '清除' : 'Clear'} ✕
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-          })()}
+          {/* 装饰地图 + 国家筛选 */}
+          <div style={{ position: 'relative', marginBottom: '24px' }}>
+            <svg viewBox="0 0 960 360" style={{ width: '100%', maxWidth: '860px', height: '90px', opacity: 0.06, display: 'block', pointerEvents: 'none' }} xmlns="http://www.w3.org/2000/svg">
+              <path d="M62,65 L95,50 L135,44 L178,48 L212,60 L240,80 L254,108 L250,138 L234,157 L207,167 L178,166 L150,153 L128,145 L112,153 L98,165 L85,155 L75,137 L66,109 L60,83Z" fill="#1a1a1a"/>
+              <path d="M228,14 L264,6 L294,16 L292,40 L266,50 L234,40Z" fill="#1a1a1a"/>
+              <path d="M176,180 L204,172 L228,182 L238,209 L232,244 L218,282 L197,312 L174,316 L157,295 L151,263 L155,228 L162,201Z" fill="#1a1a1a"/>
+              <path d="M434,71 L448,63 L464,65 L478,71 L492,79 L498,93 L492,107 L478,115 L462,119 L445,114 L434,103 L428,87Z" fill="#1a1a1a"/>
+              <path d="M458,41 L472,33 L488,38 L492,58 L485,75 L472,78 L460,71 L455,55Z" fill="#1a1a1a"/>
+              <path d="M445,128 L468,118 L492,122 L508,138 L515,170 L512,212 L500,255 L480,290 L458,298 L436,285 L420,255 L416,215 L422,170 L432,142Z" fill="#1a1a1a"/>
+              <path d="M512,28 L580,14 L660,8 L740,14 L808,24 L842,41 L848,64 L830,84 L798,96 L752,104 L700,104 L648,98 L600,91 L558,84 L528,74 L512,54Z" fill="#1a1a1a"/>
+              <path d="M590,112 L610,105 L625,115 L622,139 L608,159 L592,154 L582,136Z" fill="#1a1a1a"/>
+              <path d="M690,108 L720,102 L745,110 L748,127 L730,137 L705,132 L688,122Z" fill="#1a1a1a"/>
+              <path d="M710,222 L745,210 L785,212 L808,227 L812,254 L800,277 L772,290 L740,287 L715,270 L705,247Z" fill="#1a1a1a"/>
+            </svg>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginTop: '10px' }}>
+              <span style={{ fontSize: '0.72rem', letterSpacing: '0.15em', color: '#b8b8b4', textTransform: 'uppercase' }}>
+                {isZh ? '地区' : 'Region'}
+              </span>
+              {[...new Set(schools.map(s => s.country))].sort().map(country => {
+                const isSelected = selectedCountry === country
+                const count = schools.filter(s => s.country === country).length
+                const label = isZh ? (COUNTRY_ZH[country] || country) : country
+                return (
+                  <button key={country}
+                    onClick={() => setSelectedCountry(isSelected ? null : country)}
+                    style={{
+                      padding: '6px 14px', borderRadius: '20px',
+                      border: isSelected ? '1px solid #1a1a1a' : '1px solid rgba(26,26,26,0.12)',
+                      background: isSelected ? '#1a1a1a' : 'rgba(255,255,255,0.8)',
+                      color: isSelected ? '#f7f7f5' : '#888884',
+                      fontFamily: 'Space Mono, monospace', fontSize: '0.72rem',
+                      letterSpacing: '0.08em', cursor: 'pointer', transition: 'all 0.15s',
+                    }}
+                    onMouseEnter={e => { if (!isSelected) { e.currentTarget.style.background = 'rgba(26,26,26,0.06)'; e.currentTarget.style.color = '#1a1a1a' }}}
+                    onMouseLeave={e => { if (!isSelected) { e.currentTarget.style.background = 'rgba(255,255,255,0.8)'; e.currentTarget.style.color = '#888884' }}}
+                  >
+                    {label} <span style={{ opacity: 0.5 }}>{count}</span>
+                  </button>
+                )
+              })}
+              {selectedCountry && (
+                <button onClick={() => setSelectedCountry(null)}
+                  style={{ padding: '6px 10px', borderRadius: '20px', border: 'none', background: 'transparent', color: '#b8b8b4', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem', cursor: 'pointer' }}>
+                  {isZh ? '✕ 清除' : '✕ clear'}
+                </button>
+              )}
+            </div>
+          </div>
 
           {/* 搜索 + 排序 */}
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -742,52 +662,112 @@ Requirements: The statement should be sincere and specific, highlighting alignme
           </div>
         </div>
 
-        {/* LIST */}
+        {/* TIMELINE + MAP BACKGROUND */}
         <div style={{ padding: '0 48px 96px', position: 'relative', zIndex: 1 }}>
+
+          {/* 背景世界地图 SVG */}
+          <div aria-hidden style={{ position: 'fixed', bottom: 0, right: 0, width: '70vw', height: '70vh', opacity: 0.045, pointerEvents: 'none', zIndex: 0 }}>
+            <svg viewBox="0 0 960 500" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: '100%' }}>
+              <path d="M62,82 L95,65 L135,58 L178,63 L212,76 L240,97 L254,125 L250,155 L234,174 L207,184 L178,183 L150,170 L128,162 L112,170 L98,182 L85,172 L75,154 L66,126 L60,100Z" fill="#1a1a1a"/>
+              <path d="M228,30 L264,22 L294,32 L292,57 L266,67 L234,56Z" fill="#1a1a1a"/>
+              <path d="M53,188 L68,180 L78,190 L72,202 L55,200Z" fill="#1a1a1a"/>
+              <path d="M176,216 L204,208 L228,218 L238,246 L232,282 L218,320 L197,350 L174,354 L157,333 L151,300 L155,265 L162,238Z" fill="#1a1a1a"/>
+              <path d="M434,108 L448,100 L464,102 L478,108 L492,116 L498,130 L492,144 L478,152 L462,156 L445,151 L434,140 L428,124Z" fill="#1a1a1a"/>
+              <path d="M458,78 L472,70 L488,75 L492,95 L485,112 L472,115 L460,108 L455,92Z" fill="#1a1a1a"/>
+              <path d="M388,88 L402,83 L412,90 L408,100 L395,103Z" fill="#1a1a1a"/>
+              <path d="M445,168 L468,158 L492,162 L508,178 L515,210 L512,252 L500,295 L480,330 L458,338 L436,325 L420,295 L416,255 L422,210 L432,182Z" fill="#1a1a1a"/>
+              <path d="M505,155 L532,148 L558,155 L562,172 L545,182 L518,178Z" fill="#1a1a1a"/>
+              <path d="M512,62 L580,48 L660,42 L740,48 L808,58 L842,75 L848,98 L830,118 L798,130 L752,138 L700,138 L648,132 L600,125 L558,118 L528,108 L512,88Z" fill="#1a1a1a"/>
+              <path d="M588,165 L612,160 L628,170 L625,196 L610,218 L592,212 L582,194Z" fill="#1a1a1a"/>
+              <path d="M688,175 L722,170 L748,178 L750,196 L730,206 L705,202 L688,190Z" fill="#1a1a1a"/>
+              <path d="M708,282 L748,268 L788,272 L810,288 L814,315 L800,338 L772,350 L740,347 L714,330 L704,306Z" fill="#1a1a1a"/>
+              <path d="M828,332 L838,324 L846,330 L843,344 L832,346Z" fill="#1a1a1a"/>
+              <path d="M778,105 L790,100 L798,108 L794,122 L782,124Z" fill="#1a1a1a"/>
+            </svg>
+          </div>
+
           {filtered.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '100px 0', color: '#b8b8b4', fontSize: '0.95rem', letterSpacing: '0.08em' }}>
+            <div style={{ textAlign: 'center', padding: '100px 0', color: '#b8b8b4', fontSize: '0.95rem', letterSpacing: '0.08em', position: 'relative', zIndex: 1 }}>
               {schools.length === 0 ? t.empty : (isZh ? '没有匹配的院校' : 'No schools match your search')}
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '14px' }}>
+          {/* 时间线 */}
+          <div style={{ position: 'relative', zIndex: 1 }}>
+            {/* 竖线 */}
+            {filtered.length > 0 && (
+              <div style={{ position: 'absolute', left: '119px', top: 0, bottom: 0, width: '1px', background: 'rgba(26,26,26,0.08)' }}/>
+            )}
+
             {filtered.map((s, i) => {
               const dl = getDeadlineInfo(s.deadline, isZh, t)
               return (
-                <div key={s.id} className="school-card"
+                <div key={s.id}
                   onClick={() => { setDetailId(s.id); setLocalStatement('') }}
-                  style={{ background: 'rgba(255,255,255,0.75)', border: '1px solid rgba(26,26,26,0.08)', borderRadius: '22px', padding: '28px 30px', backdropFilter: 'blur(12px)', animation: `fadeUp 0.5s ${i * 0.05}s both`, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-
-                  {/* 顶部：国家 + 截止状态 */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <span style={{ fontSize: '0.75rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: '#b8b8b4' }}>{s.country || '—'}</span>
-                    {s.deadline && (
-                      <span style={{ fontSize: '0.72rem', letterSpacing: '0.1em', color: dl.color, background: dl.bg, padding: '4px 10px', borderRadius: '12px', fontWeight: dl.urgent ? 700 : 400 }}>
-                        {dl.label}
-                      </span>
+                  style={{ display: 'flex', gap: '0', marginBottom: '12px', animation: `fadeUp 0.4s ${i * 0.04}s both`, cursor: 'pointer' }}
+                >
+                  {/* 左侧日期 */}
+                  <div style={{ width: '120px', flexShrink: 0, paddingTop: '22px', textAlign: 'right', paddingRight: '24px' }}>
+                    {s.deadline ? (
+                      <>
+                        <div style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.7rem', color: dl.color, fontWeight: dl.urgent ? 700 : 400, letterSpacing: '0.05em' }}>
+                          {new Date(s.deadline).toLocaleDateString(isZh ? 'zh-CN' : 'en-US', { month: 'short', day: 'numeric' })}
+                        </div>
+                        <div style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.62rem', color: '#c8c8c4', letterSpacing: '0.05em' }}>
+                          {new Date(s.deadline).getFullYear()}
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.62rem', color: '#c8c8c4' }}>—</div>
                     )}
                   </div>
 
-                  {/* 院校名 */}
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1a1a1a', letterSpacing: '-0.01em', lineHeight: 1.3 }}>
-                    {isZh ? (s.nameZh || s.name) : s.name}
-                  </h3>
+                  {/* 节点圆点 */}
+                  <div style={{ width: '0', position: 'relative', flexShrink: 0 }}>
+                    <div style={{
+                      position: 'absolute', left: '-5px', top: '28px',
+                      width: '10px', height: '10px', borderRadius: '50%',
+                      background: dl.urgent ? dl.color : '#c8c8c4',
+                      border: '2px solid #f7f7f5',
+                      zIndex: 2,
+                    }}/>
+                  </div>
 
-                  {/* 专业 */}
-                  {(s.department || s.departmentZh) && (
-                    <p style={{ fontSize: '0.9rem', color: '#888884', lineHeight: 1.6 }}>
-                      {isZh ? (s.departmentZh || s.department) : s.department}
-                    </p>
-                  )}
-
-                  {/* 底部状态 */}
-                  <div style={{ marginTop: 'auto', paddingTop: '14px', borderTop: '1px solid rgba(26,26,26,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: '0.72rem', letterSpacing: '0.1em', color: s.aiStatement ? '#4aab6f' : '#c8c8c4' }}>
-                      {s.aiStatement ? (isZh ? '✓ 已有文书' : '✓ Statement ready') : (isZh ? '○ 未生成文书' : '○ No statement')}
-                    </span>
-                    <span style={{ fontSize: '0.78rem', color: '#b8b8b4', letterSpacing: '0.08em' }}>
-                      {isZh ? '查看 →' : 'Open →'}
-                    </span>
+                  {/* 卡片 */}
+                  <div className="school-card" style={{
+                    flex: 1, marginLeft: '24px',
+                    background: 'rgba(255,255,255,0.75)',
+                    border: '1px solid rgba(26,26,26,0.08)',
+                    borderRadius: '16px', padding: '18px 24px',
+                    backdropFilter: 'blur(12px)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px',
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '6px', flexWrap: 'wrap' }}>
+                        <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: '#b8b8b4' }}>
+                          {s.country || '—'}
+                        </span>
+                        {s.deadline && (
+                          <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.68rem', color: dl.color, background: dl.bg, padding: '2px 8px', borderRadius: '8px', fontWeight: dl.urgent ? 700 : 400 }}>
+                            {dl.label}
+                          </span>
+                        )}
+                      </div>
+                      <h3 style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.95rem', fontWeight: 700, color: '#1a1a1a', letterSpacing: '-0.01em', lineHeight: 1.3, marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {isZh ? (s.nameZh || s.name) : s.name}
+                      </h3>
+                      {(s.department || s.departmentZh) && (
+                        <p style={{ fontSize: '0.82rem', color: '#888884', lineHeight: 1.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {isZh ? (s.departmentZh || s.department) : s.department}
+                        </p>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px', flexShrink: 0 }}>
+                      <span style={{ fontSize: '0.68rem', color: s.aiStatement ? '#4aab6f' : '#c8c8c4', letterSpacing: '0.05em' }}>
+                        {s.aiStatement ? (isZh ? '✓ 已有文书' : '✓ Ready') : (isZh ? '○ 未生成' : '○ Draft')}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: '#b8b8b4' }}>{isZh ? '查看 →' : 'Open →'}</span>
+                    </div>
                   </div>
                 </div>
               )
