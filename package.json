@@ -13,8 +13,10 @@
     "@ai-sdk/openai": "^0.0.66",
     "@ai-sdk/react": "^3.0.118",
     "@google/generative-ai": "^0.24.1",
+    "@types/d3-geo": "^3.1.0",
     "@vnedyalk0v/react19-simple-maps": "^2.0.2",
     "ai": "^3.4.33",
+    "d3-geo": "^3.1.1",
     "docx": "^9.6.1",
     "file-saver": "^2.0.5",
     "html2canvas": "^1.4.1",
@@ -24,7 +26,8 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-simple-maps": "^3.0.0",
-    "replicate": "^1.4.0"
+    "replicate": "^1.4.0",
+    "world-map-country-shapes": "^1.0.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
+import worldShapes from 'world-map-country-shapes'
 
 interface School {
   id: string
@@ -139,6 +140,87 @@ const COUNTRY_ZH: Record<string, string> = {
   'Sweden': '瑞典', 'Australia': '澳大利亚', 'Singapore': '新加坡',
 }
 
+
+// ── WORLD MAP ──
+const COUNTRY_ISO: Record<string, string> = {
+  'USA': 'US', 'UK': 'GB', 'France': 'FR',
+  'Italy': 'IT', 'Sweden': 'SE', 'Australia': 'AU', 'Singapore': 'SG',
+}
+
+function WorldMap({ schools, selectedCountry, setSelectedCountry, isZh }: {
+  schools: School[]
+  selectedCountry: string | null
+  setSelectedCountry: (c: string | null) => void
+  isZh: boolean
+}) {
+  const activeCountries = [...new Set(schools.map(s => s.country))]
+
+  return (
+    <div style={{ position: 'relative', width: '100%', maxWidth: '860px', marginBottom: '24px', background: 'rgba(255,255,255,0.6)', border: '1px solid rgba(26,26,26,0.08)', borderRadius: '20px', overflow: 'hidden', aspectRatio: '2/1' }}>
+      <svg
+        viewBox="0 0 1010 666"
+        style={{ width: '100%', height: '100%' }}
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        {/* All countries in grey */}
+        {(worldShapes as { id: string; shape: string }[]).map(c => {
+          const countryName = Object.entries(COUNTRY_ISO).find(([, iso]) => iso === c.id)?.[0]
+          const isActive = countryName ? activeCountries.includes(countryName) : false
+          const isSelected = countryName ? selectedCountry === countryName : false
+          return (
+            <path
+              key={c.id}
+              d={c.shape}
+              fill={isSelected ? '#1a1a1a' : isActive ? '#888884' : '#e2e2de'}
+              stroke="#fff"
+              strokeWidth="0.5"
+              style={{ cursor: isActive ? 'pointer' : 'default', transition: 'fill 0.2s' }}
+              onClick={() => {
+                if (isActive && countryName) setSelectedCountry(isSelected ? null : countryName)
+              }}
+              onMouseEnter={e => { if (isActive && !isSelected) (e.target as SVGPathElement).setAttribute('fill', '#555') }}
+              onMouseLeave={e => { if (isActive && !isSelected) (e.target as SVGPathElement).setAttribute('fill', '#888884') }}
+            />
+          )
+        })}
+      </svg>
+
+      {/* Country labels for active countries */}
+      <div style={{ position: 'absolute', bottom: '12px', left: '16px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+        {activeCountries.map(country => {
+          const isSelected = selectedCountry === country
+          const count = schools.filter(s => s.country === country).length
+          const label = isZh ? (COUNTRY_ZH[country] || country) : country
+          return (
+            <button key={country}
+              onClick={() => setSelectedCountry(isSelected ? null : country)}
+              style={{
+                padding: '4px 10px', borderRadius: '12px',
+                background: isSelected ? '#1a1a1a' : 'rgba(255,255,255,0.9)',
+                color: isSelected ? '#f7f7f5' : '#1a1a1a',
+                border: '1px solid rgba(26,26,26,0.15)',
+                fontFamily: 'Space Mono, monospace', fontSize: '0.65rem',
+                letterSpacing: '0.08em', cursor: 'pointer',
+              }}>
+              {label} {count}
+            </button>
+          )
+        })}
+      </div>
+
+      <div style={{ position: 'absolute', top: '12px', right: '16px', fontSize: '0.62rem', color: '#c8c8c4', fontFamily: 'Space Mono, monospace', letterSpacing: '0.1em' }}>
+        {isZh ? '点击国家筛选' : 'Click to filter'}
+      </div>
+
+      {selectedCountry && (
+        <button onClick={() => setSelectedCountry(null)}
+          style={{ position: 'absolute', top: '10px', left: '16px', padding: '4px 10px', borderRadius: '12px', background: 'rgba(26,26,26,0.08)', border: 'none', fontFamily: 'Space Mono, monospace', fontSize: '0.65rem', color: '#888884', cursor: 'pointer' }}>
+          {isZh ? '清除 ✕' : 'Clear ✕'}
+        </button>
+      )}
+    </div>
+  )
+}
 
 function getDeadlineInfo(deadline: string, isZh: boolean, t: typeof TX.en) {
   if (!deadline) return { label: t.noDeadline, color: '#c8c8c4', bg: 'transparent', urgent: false }
