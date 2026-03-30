@@ -10,6 +10,8 @@ import {
   THEMES, FONTS, buildExportHTML,
 } from '../../../../../lib/exportStyles'
 import { Rnd } from 'react-rnd'
+import GridLayout from 'react-grid-layout'
+import 'react-grid-layout/css/styles.css'
 
 type BlockType = 'title' | 'image' | 'image-row' | 'note' | 'custom' | 'milestone' | 'school-profile'
 
@@ -46,7 +48,17 @@ function PanelButton({ onClick, label, icon }: { onClick: () => void; label: str
 
 function DraftBanner({ blocks, isZh, onClear }: { blocks: Block[]; isZh: boolean; onClear: () => void }) {
   const [visible, setVisible] = useState(true)
+  const [countdown, setCountdown] = useState(5)
+
+  useEffect(() => {
+    if (!visible) return
+    if (countdown <= 0) { setVisible(false); return }
+    const t = setTimeout(() => setCountdown(c => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [countdown, visible])
+
   if (!visible) return null
+
   return (
     <div className="draft-banner" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(74,171,111,0.08)', border: '1px solid rgba(74,171,111,0.2)', borderRadius: '10px', padding: '10px 16px', marginBottom: '20px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -54,6 +66,15 @@ function DraftBanner({ blocks, isZh, onClear }: { blocks: Block[]; isZh: boolean
         <span style={{ fontSize: '0.8rem', color: '#3a8a58', letterSpacing: '0.04em' }}>
           {isZh ? `已恢复上次草稿（${blocks.length} 个块）` : `Draft restored — ${blocks.length} block${blocks.length !== 1 ? 's' : ''}`}
         </span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <span style={{ fontSize: '0.68rem', color: '#7abf96', fontFamily: 'Space Mono, monospace', minWidth: '14px', textAlign: 'right' }}>{countdown}</span>
+        <button
+          onClick={() => setVisible(false)}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7abf96', fontSize: '0.9rem', lineHeight: 1, padding: '2px 4px', borderRadius: '4px', transition: 'color 0.12s' }}
+          onMouseEnter={e => (e.currentTarget.style.color = '#3a8a58')}
+          onMouseLeave={e => (e.currentTarget.style.color = '#7abf96')}
+        >✕</button>
       </div>
     </div>
   )
@@ -273,6 +294,41 @@ export default function ExportPage() {
     return () => window.removeEventListener('keydown', handler)
   }, [undo])
 
+  // 原生 wheel 监听（non-passive），让 preventDefault 生效
+  useEffect(() => {
+    const el = canvasWrapRef.current
+    if (!el) return
+    const MIN_ZOOM = 0.3, MAX_ZOOM = 3
+    const handler = (e: WheelEvent) => {
+      if (e.ctrlKey) {
+        // 触控板双指捏合缩放
+        e.preventDefault()
+        setCanvasZoom(z => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(z - e.deltaY * 0.008).toFixed(3))))
+      } else if (e.altKey) {
+        // Alt + 滚轮：只缩放，完全阻止任何滚动
+        e.preventDefault()
+        e.stopPropagation()
+        setCanvasZoom(z => {
+          const delta = e.deltaY > 0 ? -0.08 : 0.08
+          return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(z + delta).toFixed(2)))
+        })
+      } else {
+        // 双指平移
+        e.preventDefault()
+        const wrap = canvasWrapRef.current
+        const W = wrap ? wrap.offsetWidth : 800
+        const H = wrap ? wrap.offsetHeight : 600
+        const MARGIN = 120
+        setCanvasPan(p => ({
+          x: Math.min(W - MARGIN, Math.max(-(W * 2), p.x - e.deltaX)),
+          y: Math.min(H - MARGIN, Math.max(-(H * 4), p.y - e.deltaY)),
+        }))
+      }
+    }
+    el.addEventListener('wheel', handler, { passive: false })
+    return () => el.removeEventListener('wheel', handler)
+  }, [])
+
   const clearDraft = useCallback(() => {
     try { localStorage.removeItem(draftKey(id)) } catch {}
     setBlocksRaw([])
@@ -297,6 +353,30 @@ export default function ExportPage() {
   const dragIndex = useRef<number | null>(null)
   const imageDragIndex = useRef<number | null>(null)
   const localImageInputRef = useRef<HTMLInputElement | null>(null)
+  const [canvasZoom, setCanvasZoom] = useState(1)
+  const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 })
+  const isPanning = useRef(false)
+  const panStart = useRef({ mx: 0, my: 0, px: 0, py: 0 })
+  const canvasWrapRef = useRef<HTMLDivElement | null>(null)
+
+  // 浮动工具卡片：6个锚点吸附
+  type Anchor = 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right'
+  const [toolbarAnchor, setToolbarAnchor] = useState<Anchor>('top-center')
+  const [toolbarDragging, setToolbarDragging] = useState(false)
+  const [toolbarDragPos, setToolbarDragPos] = useState<{ x: number; y: number } | null>(null)
+  const toolbarDragStart = useRef<{ mx: number; my: number; ex: number; ey: number } | null>(null)
+  const toolbarRef = useRef<HTMLDivElement | null>(null)
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; gridX: number; gridY: number } | null>(null)
+  const ctxImageInputRef = useRef<HTMLInputElement | null>(null)
+
+  const addBlockAt = (type: BlockType, content: string, gridX: number, gridY: number, caption?: string, images?: string[]) => {
+    const defaultH = type === 'image' || type === 'image-row' ? 6 : type === 'title' ? 4 : 3
+    const defaultW = type === 'title' ? 12 : 6
+    setBlocks(b => [...b, {
+      id: generateId(), type, content, caption, images,
+      gridPos: { x: Math.min(gridX, 12 - defaultW), y: gridY, w: defaultW, h: defaultH }
+    }])
+  }
 
   if (!project) return (
     <div style={{ padding: '60px', fontFamily: 'Space Mono, monospace', color: '#888' }}>
@@ -333,7 +413,19 @@ export default function ExportPage() {
   }
 
   const addBlock = (type: BlockType, content: string, caption?: string, images?: string[]) => {
-    setBlocks(b => [...b, { id: generateId(), type, content, caption, images }])
+    setBlocks(b => {
+      // 计算新block的y坐标：放在所有现有block的下方
+      const maxY = b.reduce((acc, bl) => {
+        const pos = bl.gridPos
+        return pos ? Math.max(acc, pos.y + pos.h) : acc
+      }, 0)
+      const defaultH = type === 'image' || type === 'image-row' ? 6 : type === 'title' ? 4 : 3
+      const newBlock = {
+        id: generateId(), type, content, caption, images,
+        gridPos: { x: 0, y: maxY, w: 12, h: defaultH }
+      }
+      return [...b, newBlock]
+    })
   }
   const removeBlock = (blockId: string) => setBlocks(b => b.filter(x => x.id !== blockId))
   const moveBlock = (from: number, to: number) => {
@@ -389,7 +481,7 @@ export default function ExportPage() {
   })
 
   return (
-    <main style={{ minHeight: '100vh', background: '#f7f7f5', fontFamily: 'Space Mono, monospace' }}>
+    <main style={{ height: '100vh', background: '#f7f7f5', fontFamily: 'Space Mono, monospace', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {imageEditorUrl !== null && imageEditorIdx !== null && (
         <ImageEditor
           src={imageEditorUrl}
@@ -416,10 +508,6 @@ export default function ExportPage() {
         />
       )}
       <style>{`
-        .block-card { transition: box-shadow 0.15s; }
-        .block-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.06); }
-        .edit-btn { opacity: 0; transition: opacity 0.15s; }
-        .block-card:hover .edit-btn { opacity: 1; }
         .school-item:hover { background: rgba(26,26,26,0.03) !important; }
         .img-thumb { transition: transform 0.15s, box-shadow 0.15s; }
         .img-thumb:hover { transform: scale(1.03); box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
@@ -485,52 +573,528 @@ export default function ExportPage() {
         </div>
       </nav>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '0', minHeight: 'calc(100vh - 52px)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '0', flex: 1, minHeight: 0 }}>
 
         {/* ── 画布 ── */}
-        <div style={{ padding: '32px 40px', borderRight: '1px solid rgba(26,26,26,0.08)', background: '#f4f4f2' }}>
-          {justRestored && <DraftBanner blocks={blocks} isZh={isZh} onClear={clearDraft} />}
+        <div
+          ref={canvasWrapRef}
+          style={{ borderRight: '1px solid rgba(26,26,26,0.08)', background: '#EBEBF0', overflow: 'hidden', position: 'relative', cursor: isPanning.current ? 'grabbing' : 'default', height: '100%' }}
+          onMouseDown={e => {
+            // 只有点在空白区域（非 block、非 header）才启动平移
+            const target = e.target as HTMLElement
+            if (target.closest('.react-grid-item') || target.closest('button') || target.closest('input') || target.closest('textarea')) return
+            if (e.button !== 0) return
+            isPanning.current = true
+            panStart.current = { mx: e.clientX, my: e.clientY, px: canvasPan.x, py: canvasPan.y }
+            e.preventDefault()
+          }}
+          onMouseMove={e => {
+            if (!isPanning.current) return
+            const wrap = canvasWrapRef.current
+            const W = wrap ? wrap.offsetWidth : 800
+            const H = wrap ? wrap.offsetHeight : 600
+            const MARGIN = 120
+            const nx = panStart.current.px + e.clientX - panStart.current.mx
+            const ny = panStart.current.py + e.clientY - panStart.current.my
+            setCanvasPan({
+              x: Math.min(W - MARGIN, Math.max(-(W * 2), nx)),
+              y: Math.min(H - MARGIN, Math.max(-(H * 4), ny)),
+            })
+          }}
+          onMouseUp={() => { isPanning.current = false }}
+          onMouseLeave={() => { isPanning.current = false }}
+          onWheel={e => { /* handled by native listener */ }}
+        >
+          <style>{`
+            .react-grid-layout {
+              background-image: radial-gradient(circle, rgba(0,0,0,0.08) 1px, transparent 1px);
+              background-size: 40px 40px;
+              min-height: calc(100vh - 52px);
+            }
+            .react-grid-item {
+              border-radius: 14px;
+              border: none;
+              box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.06);
+              overflow: visible !important;
+              transition: box-shadow 0.2s;
+              will-change: transform;
+              -webkit-font-smoothing: antialiased;
+              background: transparent !important;
+              position: relative;
+            }
+            .react-grid-item:hover { box-shadow: 0 2px 6px rgba(0,0,0,0.08), 0 8px 24px rgba(0,0,0,0.10); }
+            .react-resizable-handle { display: none !important; }
+            .react-grid-item.react-draggable-dragging,
+            .react-grid-item.resizing {
+              box-shadow: 0 1px 4px rgba(0,0,0,0.04) !important;
+              transition: none !important;
+            }
+            .react-grid-item.react-grid-placeholder {
+              background: rgba(74,171,111,0.12) !important;
+              border: 1.5px dashed rgba(74,171,111,0.4) !important;
+              border-radius: 12px;
+              box-shadow: none !important;
+              transition: none !important;
+            }
+            .block-card {
+              display: flex;
+              flex-direction: column;
+              background: rgba(255,255,255,0.82);
+              backdrop-filter: blur(20px);
+              -webkit-backdrop-filter: blur(20px);
+              border-radius: 14px;
+              overflow: visible;
+              position: relative;
+              height: 100%;
+            }
+            .block-body {
+              flex: 1;
+              overflow-y: auto;
+              overflow-x: hidden;
+              padding: 14px 18px 16px;
+              min-height: 0;
+              border-radius: 0 0 14px 14px;
+            }
+            .block-header {
+              display: flex;
+              align-items: center;
+              gap: 6px;
+              padding: 0 10px 0 14px;
+              height: 34px;
+              min-height: 34px;
+              background: rgba(0,0,0,0.025);
+              border-bottom: 1px solid rgba(0,0,0,0.05);
+              cursor: grab;
+              flex-shrink: 0;
+              border-radius: 14px 14px 0 0;
+            }
+            .block-header:active { cursor: grabbing; }
+            .block-header-label {
+              font-size: 0.58rem;
+              letter-spacing: 0.18em;
+              text-transform: uppercase;
+              color: #c4c4c0;
+              font-family: Inter, DM Sans, sans-serif;
+              font-weight: 600;
+              flex: 1;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+            }
+            .block-header-btn {
+              background: none;
+              border: none;
+              cursor: pointer;
+              width: 26px;
+              height: 26px;
+              border-radius: 6px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              flex-shrink: 0;
+              opacity: 0;
+              transition: opacity 0.15s, background 0.12s;
+            }
+            .react-grid-item:hover .block-header-btn { opacity: 1; }
+            .block-header-btn:hover { background: rgba(26,26,26,0.07); }
+            .react-grid-item:hover .resize-icon-se,
+            .react-grid-item:hover .resize-icon-sw,
+            .react-grid-item:hover .custom-resize-handle-sw,
+            .react-grid-item:hover .custom-resize-handle-se { opacity: 1 !important; }
+            .custom-resize-handle {
+              position: absolute;
+              z-index: 10;
+              width: 48px;
+              height: 48px;
+              opacity: 0;
+              transition: opacity 0.15s;
+              pointer-events: auto;
+              display: flex;
+            }
+            .react-grid-item:hover .custom-resize-handle { opacity: 1; }
+            .custom-resize-handle-se {
+              bottom: 0;
+              right: 0;
+              cursor: se-resize;
+              align-items: flex-end;
+              justify-content: flex-end;
+            }
+            .custom-resize-handle-sw {
+              bottom: 0;
+              left: 0;
+              cursor: sw-resize;
+              align-items: flex-end;
+              justify-content: flex-start;
+            }
+            .custom-resize-handle-icon {
+              width: 16px;
+              height: 16px;
+              margin: 5px;
+              flex-shrink: 0;
+              display: block;
+            }
+            .react-grid-item.react-draggable-dragging {
+              user-select: none;
+              -webkit-user-select: none;
+              cursor: grabbing !important;
+            }
+            .react-grid-item.react-draggable-dragging * {
+              user-select: none;
+              -webkit-user-select: none;
+              pointer-events: none;
+            }
+            .react-grid-item input,
+            .react-grid-item textarea {
+              user-select: text;
+              -webkit-user-select: text;
+            }
+          `}</style>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <p style={{ fontSize: '0.6rem', letterSpacing: '0.28em', textTransform: 'uppercase', color: '#b8b8b4', fontFamily: 'Inter, DM Sans, sans-serif', fontWeight: 600 }}>
-              {isZh ? 'CANVAS — 拖动调整顺序' : 'CANVAS — DRAG TO REORDER'}
-            </p>
-            {blocks.length > 0 && (
-              <button onClick={undo} disabled={undoStack.current.length === 0}
-                style={{ fontSize: '0.62rem', color: undoStack.current.length > 0 ? '#aaa' : '#ddd', background: 'none', border: 'none', cursor: undoStack.current.length > 0 ? 'pointer' : 'default', letterSpacing: '0.1em', fontFamily: 'Inter, DM Sans, sans-serif' }}>
-                ↩ {isZh ? 'UNDO' : 'UNDO'}
-              </button>
+          {/* 浮动工具卡片 — 6锚点吸附 */}
+          {(() => {
+            const PAD = 16
+            const anchorStyles: Record<Anchor, React.CSSProperties> = {
+              'top-left':      { top: PAD, left: PAD, transform: 'none' },
+              'top-center':    { top: PAD, left: '50%', transform: 'translateX(-50%)' },
+              'top-right':     { top: PAD, right: PAD, transform: 'none' },
+              'bottom-left':   { bottom: PAD, left: PAD, transform: 'none' },
+              'bottom-center': { bottom: PAD, left: '50%', transform: 'translateX(-50%)' },
+              'bottom-right':  { bottom: PAD, right: PAD, transform: 'none' },
+            }
+            const posStyle: React.CSSProperties = toolbarDragging && toolbarDragPos
+              ? { top: toolbarDragPos.y, left: toolbarDragPos.x, transform: 'none', transition: 'none' }
+              : { ...anchorStyles[toolbarAnchor], transition: 'top 0.35s cubic-bezier(0.34,1.56,0.64,1), bottom 0.35s cubic-bezier(0.34,1.56,0.64,1), left 0.35s cubic-bezier(0.34,1.56,0.64,1), right 0.35s cubic-bezier(0.34,1.56,0.64,1), transform 0.35s cubic-bezier(0.34,1.56,0.64,1)' }
+
+            return (
+              <div
+                ref={toolbarRef}
+                style={{
+                  position: 'absolute', zIndex: 30,
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  background: 'rgba(255,255,255,0.6)',
+                  backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+                  borderRadius: '14px', padding: '6px 14px',
+                  boxShadow: toolbarDragging
+                    ? '0 8px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)'
+                    : '0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.05)',
+                  border: '1px solid rgba(255,255,255,0.8)',
+                  cursor: toolbarDragging ? 'grabbing' : 'grab',
+                  userSelect: 'none',
+                  ...posStyle,
+                }}
+                onMouseDown={e => {
+                  e.stopPropagation()
+                  if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('span[data-zoom]')) return
+                  e.preventDefault()
+                  const rect = toolbarRef.current!.getBoundingClientRect()
+                  const wrapRect = canvasWrapRef.current!.getBoundingClientRect()
+                  toolbarDragStart.current = {
+                    mx: e.clientX, my: e.clientY,
+                    ex: rect.left - wrapRect.left,
+                    ey: rect.top - wrapRect.top,
+                  }
+                  setToolbarDragging(true)
+                  setToolbarDragPos({ x: rect.left - wrapRect.left, y: rect.top - wrapRect.top })
+
+                  const onMove = (me: MouseEvent) => {
+                    if (!toolbarDragStart.current) return
+                    const nx = toolbarDragStart.current.ex + me.clientX - toolbarDragStart.current.mx
+                    const ny = toolbarDragStart.current.ey + me.clientY - toolbarDragStart.current.my
+                    setToolbarDragPos({ x: nx, y: ny })
+                  }
+                  const onUp = (me: MouseEvent) => {
+                    window.removeEventListener('mousemove', onMove)
+                    window.removeEventListener('mouseup', onUp)
+                    setToolbarDragging(false)
+                    setToolbarDragPos(null)
+                    // 计算最近锚点
+                    if (!toolbarDragStart.current || !canvasWrapRef.current || !toolbarRef.current) return
+                    const wRect = canvasWrapRef.current.getBoundingClientRect()
+                    const tRect = toolbarRef.current.getBoundingClientRect()
+                    const cx = (tRect.left - wRect.left) + tRect.width / 2  // 卡片中心x（相对wrap）
+                    const cy = (tRect.top - wRect.top) + tRect.height / 2   // 卡片中心y
+                    const W = wRect.width, H = wRect.height
+                    const isBottom = cy > H / 2
+                    const isLeft = cx < W / 3
+                    const isRight = cx > W * 2 / 3
+                    const col = isLeft ? 'left' : isRight ? 'right' : 'center'
+                    const row = isBottom ? 'bottom' : 'top'
+                    setToolbarAnchor(`${row}-${col}` as Anchor)
+                    toolbarDragStart.current = null
+                  }
+                  window.addEventListener('mousemove', onMove)
+                  window.addEventListener('mouseup', onUp)
+                }}
+              >
+                <span style={{ fontSize: '0.58rem', letterSpacing: '0.22em', textTransform: 'uppercase', color: '#c8c8c4', fontFamily: 'Inter, DM Sans, sans-serif', fontWeight: 600, pointerEvents: 'none' }}>Canvas</span>
+                <div style={{ width: '1px', height: '12px', background: 'rgba(0,0,0,0.08)', flexShrink: 0 }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                  <button onClick={() => setCanvasZoom(z => Math.max(0.3, +(z - 0.1).toFixed(1)))}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '1rem', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', transition: 'background 0.12s' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.06)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'none'}>−</button>
+                  <span data-zoom onClick={() => { setCanvasZoom(1); setCanvasPan({ x: 0, y: 0 }) }}
+                    style={{ fontSize: '0.65rem', color: '#aaa', fontFamily: 'Space Mono, monospace', minWidth: '34px', textAlign: 'center', cursor: 'pointer', letterSpacing: '0.04em' }}>
+                    {Math.round(canvasZoom * 100)}%
+                  </span>
+                  <button onClick={() => setCanvasZoom(z => Math.min(3, +(z + 0.1).toFixed(1)))}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '1rem', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '6px', transition: 'background 0.12s' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.06)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'none'}>+</button>
+                </div>
+              </div>
+            )
+          })()}
+
+          <div style={{ padding: '16px 20px', position: 'absolute', inset: 0, userSelect: 'none', WebkitUserSelect: 'none' }}
+            onContextMenu={e => {
+              // 只有点在空白区域才触发（不在 block 上）
+              const target = e.target as HTMLElement
+              if (target.closest('.react-grid-item')) return
+              e.preventDefault()
+              const gridEl = e.currentTarget.querySelector('.react-grid-layout') as HTMLElement
+              const cols = 12, rowH = 60, margin = 12
+              if (!gridEl) return
+              const rect = gridEl.getBoundingClientRect()
+              const colW = gridEl.offsetWidth / cols
+              const gridX = Math.floor((e.clientX - rect.left) / colW / canvasZoom)
+              const gridY = Math.floor((e.clientY - rect.top) / ((rowH + margin) * canvasZoom))
+              setCtxMenu({ x: e.clientX, y: e.clientY, gridX: Math.max(0, gridX), gridY: Math.max(0, gridY) })
+            }}
+            onClick={() => setCtxMenu(null)}
+          >
+            {justRestored && <DraftBanner blocks={blocks} isZh={isZh} onClear={clearDraft} />}
+
+            {/* ── 右键菜单 ── */}
+            {ctxMenu && (
+              <div
+                style={{
+                  position: 'fixed', top: ctxMenu.y, left: ctxMenu.x,
+                  zIndex: 999, background: '#fff',
+                  border: '1px solid rgba(26,26,26,0.1)',
+                  borderRadius: '12px',
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)',
+                  padding: '6px',
+                  minWidth: '180px',
+                  fontFamily: 'Inter, DM Sans, sans-serif',
+                  animation: 'fadeIn 0.12s ease',
+                }}
+                onClick={e => e.stopPropagation()}
+                onContextMenu={e => e.preventDefault()}
+              >
+                {/* 小标题 */}
+                <div style={{ padding: '4px 10px 8px', fontSize: '0.58rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#c4c4c0', fontWeight: 600 }}>
+                  {isZh ? '插入块' : 'Insert Block'}
+                </div>
+
+                {[
+                  { type: 'title' as BlockType,  icon: '✦', label: isZh ? '标题块' : 'Title',       sub: isZh ? '大标题' : 'Heading' },
+                  { type: 'note' as BlockType,   icon: '✎', label: isZh ? '文字块' : 'Text',        sub: isZh ? '段落文字' : 'Paragraph' },
+                  { type: 'custom' as BlockType, icon: '⊞', label: isZh ? '自定义块' : 'Custom',    sub: isZh ? '自由编辑' : 'Free text' },
+                  { type: 'milestone' as BlockType, icon: '◎', label: isZh ? '进度块' : 'Milestone', sub: isZh ? '时间线' : 'Timeline' },
+                ].map(item => (
+                  <button key={item.type}
+                    onClick={() => {
+                      addBlockAt(item.type, item.type === 'title' ? (isZh ? '新标题' : 'New Title') : item.type === 'milestone' ? '' : (isZh ? '在此输入内容…' : 'Type something…'), ctxMenu.gridX, ctxMenu.gridY)
+                      setCtxMenu(null)
+                    }}
+                    style={{
+                      width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
+                      padding: '8px 10px', border: 'none', background: 'transparent',
+                      borderRadius: '7px', cursor: 'pointer', textAlign: 'left',
+                      transition: 'background 0.1s',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.05)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <span style={{ fontSize: '0.9rem', width: '20px', textAlign: 'center', color: '#888', flexShrink: 0 }}>{item.icon}</span>
+                    <div>
+                      <div style={{ fontSize: '0.8rem', color: '#1a1a1a', fontWeight: 500 }}>{item.label}</div>
+                      <div style={{ fontSize: '0.65rem', color: '#bbb', marginTop: '1px' }}>{item.sub}</div>
+                    </div>
+                  </button>
+                ))}
+
+                <div style={{ height: '1px', background: 'rgba(26,26,26,0.07)', margin: '4px 0' }} />
+
+                {/* 插入图片 */}
+                <button
+                  onClick={() => ctxImageInputRef.current?.click()}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
+                    padding: '8px 10px', border: 'none', background: 'transparent',
+                    borderRadius: '7px', cursor: 'pointer', textAlign: 'left',
+                    transition: 'background 0.1s',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.05)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <span style={{ fontSize: '0.9rem', width: '20px', textAlign: 'center', color: '#888', flexShrink: 0 }}>🖼</span>
+                  <div>
+                    <div style={{ fontSize: '0.8rem', color: '#1a1a1a', fontWeight: 500 }}>{isZh ? '插入图片' : 'Image'}</div>
+                    <div style={{ fontSize: '0.65rem', color: '#bbb', marginTop: '1px' }}>{isZh ? '从本地上传' : 'Upload from device'}</div>
+                  </div>
+                </button>
+
+              </div>
             )}
-          </div>
 
-          {blocks.length === 0 && (
-            <div style={{ border: '1.5px dashed rgba(26,26,26,0.12)', borderRadius: '14px', padding: '60px', textAlign: 'center', color: '#c8c8c4', fontSize: '0.78rem', fontFamily: 'Inter, DM Sans, sans-serif', letterSpacing: '0.1em', background: 'rgba(255,255,255,0.5)' }}>
-              {isZh ? '从右侧添加内容块' : 'ADD BLOCKS FROM THE RIGHT PANEL'}
-            </div>
-          )}
+            {/* 右键插入图片的隐藏 input */}
+            <input ref={ctxImageInputRef} type="file" accept="image/*" style={{ display: 'none' }}
+              onChange={e => {
+                const file = e.target.files?.[0]
+                if (!file || !ctxMenu) return
+                const reader = new FileReader()
+                reader.onload = ev => {
+                  const dataUrl = ev.target?.result as string
+                  compressImage(dataUrl).then(compressed => {
+                    addBlockAt('image', compressed, ctxMenu.gridX, ctxMenu.gridY)
+                    addToMediaLibrary(compressed)
+                  })
+                }
+                reader.readAsDataURL(file)
+                setCtxMenu(null)
+                e.target.value = ''
+              }}
+            />
 
-          {blocks.map((block, i) => (
-            <div key={block.id} className="block-card"
-              draggable={editingBlockId !== block.id}
-              onDragStart={() => { dragIndex.current = i }}
-              onDragOver={e => e.preventDefault()}
-              onDrop={() => { if (dragIndex.current !== null && dragIndex.current !== i) moveBlock(dragIndex.current, i); dragIndex.current = null }}
-              style={{ background: '#fff', border: `1px solid ${editingBlockId === block.id ? '#1a1a1a' : 'rgba(26,26,26,0.07)'}`, borderRadius: '12px', padding: '16px 20px', marginBottom: '8px', cursor: editingBlockId === block.id ? 'default' : 'grab', position: 'relative', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
+            {blocks.length === 0 && (
+              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', textAlign: 'center', color: '#c8c8c4', fontSize: '0.78rem', fontFamily: 'Inter, DM Sans, sans-serif', letterSpacing: '0.1em', pointerEvents: 'none' }}>
+                {isZh ? '从右侧添加内容块' : 'ADD BLOCKS FROM THE RIGHT PANEL'}
+              </div>
+            )}
+
+            <div style={{
+              transformOrigin: 'top left',
+              transform: `translate(${canvasPan.x}px, ${canvasPan.y}px) scale(${canvasZoom})`,
+              width: `${100 / canvasZoom}%`,
+              transition: isPanning.current ? 'none' : 'transform 0.1s ease',
+            }}>
+            <GridLayout
+              className="react-grid-layout"
+              cols={12}
+              rowHeight={60}
+              width={window !== undefined ? (window.innerWidth - 300 - 40) : 900}
+              layout={blocks.map(b => ({
+                i: b.id,
+                x: b.gridPos?.x ?? 0,
+                y: b.gridPos?.y ?? 0,
+                w: b.gridPos?.w ?? 12,
+                h: b.gridPos?.h ?? 4,
+                minW: 3,
+                minH: 2,
+              }))}
+              onLayoutChange={layout => {
+                setBlocks(prev => prev.map(b => {
+                  const item = layout.find(l => l.i === b.id)
+                  if (!item) return b
+                  return { ...b, gridPos: { x: item.x, y: item.y, w: item.w, h: item.h } }
+                }))
+              }}
+              draggableHandle=".block-header"
+              draggableCancel=".no-drag"
+              margin={[12, 12]}
+              containerPadding={[0, 0]}
+              isResizable={true}
+              isDraggable={true}
+              transformScale={canvasZoom}
+              resizeHandles={['se', 'sw']}
+              resizeHandle={(handleAxis: string, ref: React.Ref<HTMLDivElement>) => (
+                <div ref={ref} style={{ display: 'none' }} />
+              )}
             >
-              <span style={{ fontSize: '0.62rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#d0d0cc', display: 'block', marginBottom: '10px', fontFamily: 'Inter, DM Sans, sans-serif' }}>
-                {block.type === 'image-row' ? (isZh ? '图片行' : 'Image Row') :
-                 block.type === 'school-profile' ? (isZh ? '院校' : 'School') :
-                 block.type === 'milestone' ? (isZh ? '进度' : 'Milestone') :
-                 block.type === 'custom' ? (isZh ? '自定义' : 'Custom') :
-                 block.type === 'note' ? (isZh ? '笔记' : 'Note') :
-                 block.type === 'title' ? (isZh ? '标题' : 'Title') :
-                 block.type === 'image' ? (isZh ? '图片' : 'Image') : block.type}
-              </span>
+              {blocks.map((block) => (
+                <div key={block.id} className="block-card">
 
+                  {/* ── 左下角 SW handle ── */}
+                  <div className="custom-resize-handle custom-resize-handle-sw"
+                    onMouseDown={e => {
+                      e.stopPropagation(); e.preventDefault()
+                      const gridEl = e.currentTarget.closest('.react-grid-layout') as HTMLElement
+                      if (!gridEl) return
+                      const cols = 12, rowH = 60, margin = 12
+                      const colW = gridEl.offsetWidth / cols
+                      const gridRect = gridEl.getBoundingClientRect()
+                      const startX = e.clientX
+                      const startY = e.clientY
+                      const startGridH = block.gridPos?.h ?? 4
+                      const startGridX = block.gridPos?.x ?? 0
+                      const startGridW = block.gridPos?.w ?? 12
+                      const rightEdgeCol = startGridX + startGridW
+                      const onMove = (me: MouseEvent) => {
+                        const dCols = Math.round((me.clientX - startX) / (colW * canvasZoom))
+                        const newX = Math.max(0, Math.min(startGridX + dCols, rightEdgeCol - 3))
+                        const newW = rightEdgeCol - newX
+                        const dRows = Math.round((me.clientY - startY) / ((rowH + margin) * canvasZoom))
+                        const newH = Math.max(2, startGridH + dRows)
+                        setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, gridPos: { ...b.gridPos!, x: newX, w: newW, h: newH } } : b))
+                      }
+                      const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+                      window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp)
+                    }}
+                  >
+                  </div>
+
+                  {/* ── 右下角 SE handle ── */}
+                  <div className="custom-resize-handle custom-resize-handle-se"
+                    onMouseDown={e => {
+                      e.stopPropagation(); e.preventDefault()
+                      const gridEl = e.currentTarget.closest('.react-grid-layout') as HTMLElement
+                      if (!gridEl) return
+                      const cols = 12, rowH = 60, margin = 12
+                      const colW = gridEl.offsetWidth / cols
+                      const startX = e.clientX
+                      const startY = e.clientY
+                      const startGridH = block.gridPos?.h ?? 4
+                      const startGridW = block.gridPos?.w ?? 12
+                      const startGridX = block.gridPos?.x ?? 0
+                      const onMove = (me: MouseEvent) => {
+                        const dCols = Math.round((me.clientX - startX) / (colW * canvasZoom))
+                        const newW = Math.max(3, Math.min(cols - startGridX, startGridW + dCols))
+                        const dRows = Math.round((me.clientY - startY) / ((rowH + margin) * canvasZoom))
+                        const newH = Math.max(2, startGridH + dRows)
+                        setBlocks(prev => prev.map(b => b.id === block.id ? { ...b, gridPos: { ...b.gridPos!, w: newW, h: newH } } : b))
+                      }
+                      const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+                      window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp)
+                    }}
+                  >
+                  </div>
+                  {/* ── 页眉 ── */}
+                  <div className="block-header" onMouseDown={e => { /* header is the drag zone */ }}>
+                    <span className="block-header-label">
+                      {block.type === 'image-row' ? (isZh ? '图片行' : 'Image Row') :
+                       block.type === 'school-profile' ? (isZh ? '院校' : 'School') :
+                       block.type === 'milestone' ? (isZh ? '进度' : 'Milestone') :
+                       block.type === 'custom' ? (isZh ? '自定义' : 'Custom') :
+                       block.type === 'note' ? (isZh ? '笔记' : 'Note') :
+                       block.type === 'title' ? (isZh ? '标题' : 'Title') :
+                       block.type === 'image' ? (isZh ? '图片' : 'Image') : block.type}
+                    </span>
+                    {['custom', 'note', 'image-row', 'image'].includes(block.type) && editingBlockId !== block.id && (
+                      <button className="block-header-btn no-drag" onMouseDown={e => e.stopPropagation()} onClick={() => startEdit(block)}
+                        title={isZh ? '编辑' : 'Edit'} style={{ color: '#888', fontSize: '0.8rem' }}>✎</button>
+                    )}
+                    {block.type === 'image' && editingBlockId !== block.id && (
+                      <button className="block-header-btn no-drag" onMouseDown={e => e.stopPropagation()}
+                        onClick={e => { e.stopPropagation(); setImageEditorUrl(block.content); setImageEditorIdx(-1); (window as any).__editingBlockId = block.id; (window as any).__editingImageIdx = null }}
+                        title={isZh ? '编辑图片' : 'Edit image'} style={{ color: '#888', fontSize: '0.82rem' }}>🖼</button>
+                    )}
+                    {editingBlockId !== block.id && (
+                      <button className="block-header-btn no-drag" onMouseDown={e => e.stopPropagation()} onClick={() => removeBlock(block.id)}
+                        title={isZh ? '删除' : 'Delete'}
+                        style={{ color: 'rgba(180,80,80,0.5)', fontSize: '0.82rem' }}
+                        onMouseEnter={e => (e.currentTarget.style.color = 'rgba(180,80,80,1)')}
+                        onMouseLeave={e => (e.currentTarget.style.color = 'rgba(180,80,80,0.5)')}>✕</button>
+                    )}
+                  </div>
+                  {/* ── 内容区 ── */}
+                  <div className="block-body no-drag">
               {editingBlockId === block.id ? (
                 <div>
                   {(block.type === 'custom' || block.type === 'note') && (
                     <textarea autoFocus value={editingContent} onChange={e => setEditingContent(e.target.value)} rows={5}
+                      className="no-drag"
                       style={{ width: '100%', padding: '10px 14px', border: '1px solid rgba(26,26,26,0.15)', borderRadius: '10px', fontFamily: 'DM Sans, sans-serif', fontSize: '0.95rem', color: '#1a1a1a', outline: 'none', resize: 'vertical', background: '#f7f7f5', marginBottom: '10px' }} />
                   )}
                   {block.type === 'image' && (
@@ -589,11 +1153,12 @@ export default function ExportPage() {
                   {(block.type === 'image' || block.type === 'image-row' || block.type === 'note') && (
                     <input value={editingCaption} onChange={e => setEditingCaption(e.target.value)}
                       placeholder={isZh ? '图片说明（可选）' : 'Caption (optional)'}
+                      className="no-drag"
                       style={{ width: '100%', padding: '8px 12px', border: '1px solid rgba(26,26,26,0.12)', borderRadius: '8px', fontFamily: 'DM Sans, sans-serif', fontSize: '0.88rem', color: '#888', outline: 'none', background: '#f7f7f5' }} />
                   )}
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                    <button onClick={saveEdit} style={{ padding: '8px 18px', background: '#1a1a1a', color: '#f7f7f5', border: 'none', borderRadius: '8px', fontFamily: 'Space Mono, monospace', fontSize: '0.75rem', letterSpacing: '0.08em', cursor: 'pointer' }}>{isZh ? '保存' : 'Save'}</button>
-                    <button onClick={cancelEdit} style={{ padding: '8px 18px', background: 'transparent', color: '#888', border: '1px solid rgba(26,26,26,0.12)', borderRadius: '8px', fontFamily: 'Space Mono, monospace', fontSize: '0.75rem', cursor: 'pointer' }}>{isZh ? '取消' : 'Cancel'}</button>
+                  <div className="no-drag" style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                    <button className="no-drag" onMouseDown={e => e.stopPropagation()} onClick={saveEdit} style={{ padding: '8px 18px', background: '#1a1a1a', color: '#f7f7f5', border: 'none', borderRadius: '8px', fontFamily: 'Space Mono, monospace', fontSize: '0.75rem', letterSpacing: '0.08em', cursor: 'pointer' }}>{isZh ? '保存' : 'Save'}</button>
+                    <button className="no-drag" onMouseDown={e => e.stopPropagation()} onClick={cancelEdit} style={{ padding: '8px 18px', background: 'transparent', color: '#888', border: '1px solid rgba(26,26,26,0.12)', borderRadius: '8px', fontFamily: 'Space Mono, monospace', fontSize: '0.75rem', cursor: 'pointer' }}>{isZh ? '取消' : 'Cancel'}</button>
                   </div>
                 </div>
               ) : (
@@ -606,7 +1171,7 @@ export default function ExportPage() {
                   )}
                   {block.type === 'image' && (
                     <div>
-                      <img src={block.content} alt="" style={{ width: '100%', maxHeight: '200px', objectFit: 'cover', borderRadius: '8px' }} />
+                      <img src={block.content} alt="" style={{ width: '100%', height: 'auto', objectFit: 'contain', borderRadius: '8px', display: 'block' }} />
                       {(block.imageCaptions || [])[0] && <p style={{ fontSize: '0.72rem', color: '#999', marginTop: '4px', textAlign: 'center', fontStyle: 'italic', lineHeight: 1.4, fontFamily: 'Inter, DM Sans, sans-serif' }}>{(block.imageCaptions || [])[0]}</p>}
                       {block.caption && <p style={{ fontSize: '0.78rem', color: '#bbb', marginTop: '7px', fontStyle: 'italic', fontFamily: 'Inter, DM Sans, sans-serif' }}>{block.caption}</p>}
                     </div>
@@ -667,27 +1232,25 @@ export default function ExportPage() {
                   })()}
                 </div>
               )}
-
-              {editingBlockId !== block.id && (
-                <div style={{ position: 'absolute', top: '12px', right: '12px', display: 'flex', gap: '6px' }}>
-                  {['custom', 'note', 'image-row', 'image'].includes(block.type) && (
-                    <button className="edit-btn" onClick={() => startEdit(block)}
-                      style={{ background: 'rgba(26,26,26,0.06)', border: 'none', borderRadius: '6px', width: '28px', height: '28px', cursor: 'pointer', color: '#888', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                      title={isZh ? '编辑' : 'Edit'}>✎</button>
-                  )}
-                  {block.type === 'image' && (
-                    <button className="edit-btn" onClick={e => { e.stopPropagation(); setImageEditorUrl(block.content); setImageEditorIdx(-1);(window as any).__editingBlockId = block.id;(window as any).__editingImageIdx = null }}
-                      style={{ background: 'rgba(26,26,26,0.06)', border: 'none', borderRadius: '6px', width: '28px', height: '28px', cursor: 'pointer', color: '#888', fontSize: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                      title={isZh ? '编辑图片' : 'Edit image'}>🖼</button>
-                  )}
-                  <button onClick={() => removeBlock(block.id)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(180,80,80,0.4)', fontSize: '0.85rem', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                    onMouseEnter={e => (e.currentTarget.style.color = 'rgba(180,80,80,0.9)')}
-                    onMouseLeave={e => (e.currentTarget.style.color = 'rgba(180,80,80,0.4)')}>✕</button>
+                  </div>
+                  {/* 시각적 resize 아이콘 — pointer-events:none */}
+                  <div style={{ position: 'absolute', bottom: 0, right: 0, width: '28px', height: '28px', display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', pointerEvents: 'none', zIndex: 20, opacity: 0, transition: 'opacity 0.15s' }} className="resize-icon-se">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ margin: '4px' }}>
+                      <path d="M1 13 L13 13 L13 1" stroke="rgba(26,26,26,0.2)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M5 13 L13 13 L13 5" stroke="rgba(26,26,26,0.5)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
+                  <div style={{ position: 'absolute', bottom: 0, left: 0, width: '28px', height: '28px', display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-start', pointerEvents: 'none', zIndex: 20, opacity: 0, transition: 'opacity 0.15s' }} className="resize-icon-sw">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ margin: '4px' }}>
+                      <path d="M13 13 L1 13 L1 1" stroke="rgba(26,26,26,0.2)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M9 13 L1 13 L1 5" stroke="rgba(26,26,26,0.5)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </div>
                 </div>
-              )}
+              ))}
+            </GridLayout>
             </div>
-          ))}
+          </div>
         </div>
 
         {/* ── 右侧面板 ── */}

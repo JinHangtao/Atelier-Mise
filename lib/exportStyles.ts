@@ -323,9 +323,9 @@ export function buildExportCSS(opts: ExportOptions, isZh: boolean): string {
   `.trim()
 }
 
-// ── HTML block renderer ───────────────────────────────────────────────────────
-export function buildBlocksHTML(
-  blocks: Block[],
+// ── Single block HTML ────────────────────────────────────────────────────────
+function renderBlockHTML(
+  b: Block,
   project: Project,
   schools: School[],
   opts: ExportOptions,
@@ -335,26 +335,25 @@ export function buildBlocksHTML(
     : opts.imageStyle === 'contain' ? 'img-contain'
     : 'img-square'
 
-  return blocks.map(b => {
-    if (b.type === 'title') {
-      return `<div class="block">
+  if (b.type === 'title') {
+    return `<div class="block">
   <p class="meta">${[project.category, project.status].filter(Boolean).join(' · ')}</p>
   <h1>${project.title}</h1>
   ${project.description ? `<p class="desc">${project.description}</p>` : ''}
 </div>`
-    }
+  }
 
-    if (b.type === 'image') {
-      return `<div class="block" style="padding:0;overflow:hidden;border-radius:inherit">
+  if (b.type === 'image') {
+    return `<div class="block" style="padding:0;overflow:hidden;border-radius:inherit">
   <img src="${b.content}" class="${imgClass}" style="width:100%;display:block;" alt="${b.caption || ''}" />
   ${b.caption ? `<p class="caption" style="padding:10px 16px 14px">${b.caption}</p>` : ''}
 </div>`
-    }
+  }
 
-    if (b.type === 'image-row') {
-      const imgs = b.images || []
-      const cols = Math.min(imgs.length, 4)
-      return `<div class="block" style="padding:0;overflow:hidden;border-radius:inherit">
+  if (b.type === 'image-row') {
+    const imgs = b.images || []
+    const cols = Math.min(imgs.length, 4)
+    return `<div class="block" style="padding:0;overflow:hidden;border-radius:inherit">
   <div class="img-grid" style="grid-template-columns:repeat(${cols},1fr)">
     ${imgs.map((url, idx) => `<div>
       <img src="${url}" class="img-square" style="width:100%;display:block;" alt="${(b.imageCaptions || [])[idx] || ''}" />
@@ -363,17 +362,17 @@ export function buildBlocksHTML(
   </div>
   ${b.caption ? `<p class="caption" style="padding:10px 16px 14px">${b.caption}</p>` : ''}
 </div>`
-    }
+  }
 
-    if (b.type === 'note') {
-      return `<div class="block note-block">
+  if (b.type === 'note') {
+    return `<div class="block note-block">
   <p>${b.content}</p>
   ${b.caption ? `<p class="caption" style="text-align:left;margin-top:12px">${b.caption}</p>` : ''}
 </div>`
-    }
+  }
 
-    if (b.type === 'milestone') {
-      return `<div class="block">
+  if (b.type === 'milestone') {
+    return `<div class="block">
   <h3>${isZh ? '进度节点' : 'Milestones'}</h3>
   ${project.milestones.map(m => `  <div class="ms-row">
     <span class="${m.status === 'done' ? 'done' : 'pending'}">${m.status === 'done' ? '✓' : '○'}</span>
@@ -381,20 +380,20 @@ export function buildBlocksHTML(
     ${m.date ? `<span class="date">${m.date}</span>` : ''}
   </div>`).join('\n')}
 </div>`
-    }
+  }
 
-    if (b.type === 'custom') {
-      return `<div class="block">
+  if (b.type === 'custom') {
+    return `<div class="block">
   <p style="white-space:pre-wrap;line-height:1.85;font-size:15px">${b.content}</p>
 </div>`
-    }
+  }
 
-    if (b.type === 'school-profile') {
-      const school = schools.find(s => s.id === b.content)
-      if (!school) return ''
-      const displayName = isZh ? (school.nameZh || school.name) : school.name
-      const displayDept = isZh ? (school.departmentZh || school.department) : school.department
-      return `<div class="block school-block">
+  if (b.type === 'school-profile') {
+    const school = schools.find(s => s.id === b.content)
+    if (!school) return ''
+    const displayName = isZh ? (school.nameZh || school.name) : school.name
+    const displayDept = isZh ? (school.departmentZh || school.department) : school.department
+    return `<div class="block school-block">
   <p class="meta">${school.country}${school.deadline ? ` · ${isZh ? '截止' : 'Deadline'}: ${school.deadline}` : ''}</p>
   <h2>${displayName}</h2>
   ${displayDept ? `<p class="dept">${displayDept}</p>` : ''}
@@ -407,10 +406,89 @@ export function buildBlocksHTML(
     <p>${school.aiStatement}</p>
   </div>` : ''}
 </div>`
+  }
+
+  return ''
+}
+
+// ── HTML block renderer ───────────────────────────────────────────────────────
+export function buildBlocksHTML(
+  blocks: Block[],
+  project: Project,
+  schools: School[],
+  opts: ExportOptions,
+  isZh: boolean,
+): string {
+  // 检查是否所有 block 都有 gridPos，有则用网格布局
+  const hasGrid = blocks.every(b => b.gridPos)
+
+  if (!hasGrid) {
+    // 旧版线性输出，兜底
+    return blocks
+      .map(b => renderBlockHTML(b, project, schools, opts, isZh))
+      .filter(Boolean)
+      .join('\n\n')
+  }
+
+  // ── 网格模式：按 y 坐标分行，同行 block 并排 ──
+  // 1. 按 y 排序
+  const sorted = [...blocks].sort((a, b) => {
+    const ay = a.gridPos!.y, by = b.gridPos!.y
+    if (ay !== by) return ay - by
+    return a.gridPos!.x - b.gridPos!.x
+  })
+
+  // 2. 分组：y 相差 < 2 的归为同一行
+  const rows: Block[][] = []
+  for (const block of sorted) {
+    const y = block.gridPos!.y
+    const lastRow = rows[rows.length - 1]
+    if (lastRow && Math.abs(lastRow[0].gridPos!.y - y) < 2) {
+      lastRow.push(block)
+    } else {
+      rows.push([block])
+    }
+  }
+
+  // rowHeight 画布单位 → 导出 px 映射（画布 rowHeight=60，导出按比例缩小）
+  const ROW_HEIGHT = 48 // 导出里每格行高px，比画布稍小更适合阅读
+
+  // 3. 每行生成 CSS Grid 容器
+  return rows.map(row => {
+    if (row.length === 1 && row[0].gridPos!.w >= 10) {
+      // 全宽 block
+      const minH = row[0].gridPos!.h * ROW_HEIGHT
+      const html = renderBlockHTML(row[0], project, schools, opts, isZh)
+      // 把 min-height 注入 block 的第一个 div
+      return html.replace(
+        /^<div class="block([^"]*)"([^>]*)>/,
+        `<div class="block$1"$2 style="min-height:${minH}px;margin-bottom:${opts.gap}px">`
+      )
     }
 
-    return ''
-  }).filter(Boolean).join('\n\n')
+    // 多列行：用 fr 单位按 gridPos.w 分配宽度
+    const gridTemplateColumns = row
+      .map(b => `${b.gridPos!.w}fr`)
+      .join(' ')
+
+    // 行高取这一行里最高的 block
+    const rowMinH = Math.max(...row.map(b => b.gridPos!.h)) * ROW_HEIGHT
+
+    const innerBlocks = row.map(b => {
+      const html = renderBlockHTML(b, project, schools, opts, isZh)
+      const blockMinH = b.gridPos!.h * ROW_HEIGHT
+      // 注入 min-height 到每个 block
+      const styled = html.replace(
+        /^<div class="block([^"]*)"([^>]*)>/,
+        `<div class="block$1"$2 style="min-height:${blockMinH}px;height:100%">`
+      )
+      return `<div style="min-width:0">${styled}</div>`
+    }).join('\n')
+
+    return `<div style="display:grid;grid-template-columns:${gridTemplateColumns};gap:${opts.gap}px;margin-bottom:${opts.gap}px;align-items:stretch;min-height:${rowMinH}px">
+${innerBlocks}
+</div>`
+  }).join('\n\n')
 }
 
 // ── Paged mode JS ────────────────────────────────────────────────────────────

@@ -153,11 +153,66 @@ export async function exportDOCX(
     }
 
     if (b.type === 'image' || b.type === 'image-row') {
-      // docx image embedding requires ArrayBuffer from URL — skip silently or add note
-      children.push(
-        para(`[${isZh ? '图片' : 'Image'}${b.caption ? `: ${b.caption}` : ''}]`, { size: 18, color: mutedColor, italic: true }),
-        gap(),
-      )
+      const { ImageRun, AlignmentType } = await import('docx')
+      const urls = b.type === 'image' ? [b.content] : (b.images || [])
+
+      for (let i = 0; i < urls.length; i++) {
+        const url = urls[i]
+        try {
+          // base64 dataUrl → ArrayBuffer
+          const base64 = url.split(',')[1]
+          if (!base64) continue
+          const binary = atob(base64)
+          const bytes = new Uint8Array(binary.length)
+          for (let j = 0; j < binary.length; j++) bytes[j] = binary.charCodeAt(j)
+
+          // 读取图片尺寸
+          const dims = await new Promise<{ w: number; h: number }>(resolve => {
+            const img = new Image()
+            img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+            img.onerror = () => resolve({ w: 800, h: 450 })
+            img.src = url
+          })
+
+          // 最大宽度 480pt，等比缩放
+          const maxW = 480
+          const scale = Math.min(1, maxW / dims.w)
+          const w = Math.round(dims.w * scale)
+          const h = Math.round(dims.h * scale)
+
+          const isPng = url.startsWith('data:image/png')
+
+          children.push(
+            new Paragraph({
+              alignment: AlignmentType.CENTER,
+              children: [
+                new ImageRun({
+                  data: bytes.buffer,
+                  transformation: { width: w, height: h },
+                  type: isPng ? 'png' : 'jpg',
+                }),
+              ],
+            }),
+          )
+
+          // 图片名称（imageCaptions）
+          const caption = b.type === 'image-row'
+            ? (b.imageCaptions || [])[i]
+            : (b.imageCaptions || [])[0]
+          if (caption) {
+            children.push(para(caption, { size: 18, color: mutedColor, italic: true }))
+          }
+        } catch {
+          children.push(
+            para(`[${isZh ? '图片' : 'Image'} ${i + 1}]`, { size: 18, color: mutedColor, italic: true }),
+          )
+        }
+      }
+
+      if (b.caption) {
+        children.push(para(b.caption, { size: 18, color: mutedColor, italic: true }))
+      }
+      children.push(gap())
       continue
     }
 
