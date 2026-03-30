@@ -10,6 +10,7 @@ export interface Block {
   caption?: string
   images?: string[]
   imageCaptions?: string[]
+  gridPos?: { x: number; y: number; w: number; h: number }
 }
 
 export interface School {
