@@ -11,6 +11,7 @@ import {
 } from '../../../../../lib/exportStyles'
 import { Rnd } from 'react-rnd'
 import GridLayout from 'react-grid-layout'
+const GL = GridLayout as any
 import 'react-grid-layout/css/styles.css'
 
 type BlockType = 'title' | 'image' | 'image-row' | 'note' | 'custom' | 'milestone' | 'school-profile'
@@ -970,8 +971,7 @@ export default function ExportPage() {
               width: `${100 / canvasZoom}%`,
               transition: isPanning.current ? 'none' : 'transform 0.1s ease',
             }}>
-            {/* @ts-ignore */}
-            <GridLayout
+            <GL
               className="react-grid-layout"
               cols={12}
               rowHeight={60}
@@ -1249,7 +1249,7 @@ export default function ExportPage() {
                   </div>
                 </div>
               ))}
-            </GridLayout>
+            </GL>
             </div>
           </div>
         </div>
