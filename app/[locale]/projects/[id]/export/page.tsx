@@ -305,16 +305,8 @@ export default function ExportPage() {
         // 触控板双指捏合缩放
         e.preventDefault()
         setCanvasZoom(z => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(z - e.deltaY * 0.008).toFixed(3))))
-      } else if (e.altKey) {
-        // Alt + 滚轮：只缩放，完全阻止任何滚动
-        e.preventDefault()
-        e.stopPropagation()
-        setCanvasZoom(z => {
-          const delta = e.deltaY > 0 ? -0.08 : 0.08
-          return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(z + delta).toFixed(2)))
-        })
-      } else {
-        // 双指平移
+      } else if (e.shiftKey) {
+        // Shift + 滚轮：平移
         e.preventDefault()
         const wrap = canvasWrapRef.current
         const W = wrap ? wrap.offsetWidth : 800
@@ -324,6 +316,14 @@ export default function ExportPage() {
           x: Math.min(W - MARGIN, Math.max(-(W * 2), p.x - e.deltaX)),
           y: Math.min(H - MARGIN, Math.max(-(H * 4), p.y - e.deltaY)),
         }))
+      } else {
+        // 直接滚轮缩放
+        e.preventDefault()
+        e.stopPropagation()
+        setCanvasZoom(z => {
+          const delta = e.deltaY > 0 ? -0.08 : 0.08
+          return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(z + delta).toFixed(2)))
+        })
       }
     }
     el.addEventListener('wheel', handler, { passive: false })
@@ -640,7 +640,7 @@ export default function ExportPage() {
             .block-card {
               display: flex;
               flex-direction: column;
-              background: rgba(255,255,255,0.82);
+              background: rgba(255,255,255,0.97);
               backdrop-filter: blur(20px);
               -webkit-backdrop-filter: blur(20px);
               border-radius: 14px;
