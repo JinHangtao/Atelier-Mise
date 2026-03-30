@@ -985,7 +985,7 @@ export default function ExportPage() {
                 minW: 3,
                 minH: 2,
               }))}
-              onLayoutChange={layout => {
+              onLayoutChange={(layout: any[]) => {
                 setBlocks(prev => prev.map(b => {
                   const item = layout.find(l => l.i === b.id)
                   if (!item) return b
