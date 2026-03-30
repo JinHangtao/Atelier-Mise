@@ -10,8 +10,7 @@ import {
   THEMES, FONTS, buildExportHTML,
 } from '../../../../../lib/exportStyles'
 import { Rnd } from 'react-rnd'
-import GridLayout, { WidthProvider } from 'react-grid-layout'
-const ResponsiveGridLayout = WidthProvider(GridLayout)
+import GridLayout from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 
 type BlockType = 'title' | 'image' | 'image-row' | 'note' | 'custom' | 'milestone' | 'school-profile'
@@ -971,10 +970,12 @@ export default function ExportPage() {
               width: `${100 / canvasZoom}%`,
               transition: isPanning.current ? 'none' : 'transform 0.1s ease',
             }}>
-            <ResponsiveGridLayout
+            {/* @ts-ignore */}
+            <GridLayout
               className="react-grid-layout"
               cols={12}
               rowHeight={60}
+              width={window !== undefined ? (window.innerWidth - 300 - 40) : 900}
               layout={blocks.map(b => ({
                 i: b.id,
                 x: b.gridPos?.x ?? 0,
@@ -1248,7 +1249,7 @@ export default function ExportPage() {
                   </div>
                 </div>
               ))}
-            </ResponsiveGridLayout>
+            </GridLayout>
             </div>
           </div>
         </div>
