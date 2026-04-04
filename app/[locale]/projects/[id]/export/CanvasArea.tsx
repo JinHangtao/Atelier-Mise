@@ -165,6 +165,7 @@ export function CanvasArea(s: ExportPageState) {
     if (!svg) return
     Array.from(svg.querySelectorAll('[data-size-hint]')).forEach(el => el.remove())
     if (!hint) return
+    return
     const NS = 'http://www.w3.org/2000/svg'
     const g = document.createElementNS(NS, 'g')
     g.setAttribute('data-size-hint', '1')
