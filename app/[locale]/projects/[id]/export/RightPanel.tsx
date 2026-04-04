@@ -929,7 +929,7 @@ export function RightPanel(s: ExportPageState) {
             <p style={{ fontSize: '0.75rem', color: '#777', fontFamily: 'Inter, DM Sans, sans-serif', lineHeight: 1.6 }}>
               {THEMES[exportOpts.theme]?.label} · {FONTS[exportOpts.font]?.label} · {exportOpts.width}px · R{exportOpts.radius} · {pages.length}p {pagedExport ? '· paged' : ''}
             </p>
-            <button onClick={doExportHTML}
+            <button onClick={() => doExportHTML()}
               style={{ width: '100%', marginTop: '12px', padding: '11px', background: '#1a1a1a', color: '#f7f7f5', border: 'none', borderRadius: '9px', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.82rem', letterSpacing: '0.08em', cursor: 'pointer' }}>
               {isZh ? '导出 HTML' : 'Export HTML'}
             </button>
