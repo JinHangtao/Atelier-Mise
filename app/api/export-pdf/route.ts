@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
       copied.forEach(p => merged.addPage(p))
     }
 
-    const mergedBytes = await merged.save()
+    const mergedBytes = Buffer.from(await merged.save())
 
     return new NextResponse(mergedBytes, {
       status: 200,
