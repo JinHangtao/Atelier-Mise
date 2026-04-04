@@ -1,6 +1,18 @@
 import { Project } from '../types'
 // ── Types ─────────────────────────────────────────────────────────────────────
 export type BlockType = 'title' | 'image' | 'image-row' | 'note' | 'custom' | 'milestone' | 'school-profile' | 'table' | 'sticky'
+
+export type TableCell = { text: string; align: 'left' | 'center' | 'right'; bold?: boolean; color?: string }
+export type TableData = {
+  rows: TableCell[][]
+  colWidths: number[]
+  headerRow?: boolean
+  headerCol?: boolean
+  borderColor?: string
+  fontSize?: number
+  fontFamily?: string
+  cellPadding?: number
+}
 export interface Block {
   id: string
   type: BlockType
@@ -21,7 +33,7 @@ export interface Block {
   imgOffsetY?: number
   imgScale?: number
   imgClipRange?: [[number, number], [number, number]]
-  tableData?: import('./TableBlock').TableData
+  tableData?: TableData
   // sticky note 专用
   stickyColor?: string   // 背景色，如 '#fef08a'
   stickyW?: number       // 宽度 px，默认 200
