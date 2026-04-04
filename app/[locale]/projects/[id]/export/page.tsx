@@ -472,16 +472,7 @@ export default function ExportPage() {
             </div>
             <div style={{ flex: 1, overflow: 'auto', padding: '20px' }}>
               <div style={{ background: '#ffffff', minHeight: '100%', padding: '20px', borderRadius: '4px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
-                {buildExportHTML({ 
-                  project, 
-                  schools, 
-                  pages, 
-                  blocks: allBlocksForExport,
-                  theme: exportOpts.theme,
-                  isZh,
-                  includeSchools: exportOpts.includeSchools,
-                  includeLogo: exportOpts.includeLogo
-                })}
+                {buildExportHTML(allBlocksForExport, project, schools, exportOpts, isZh)}
               </div>
             </div>
           </div>
