@@ -165,26 +165,6 @@ export function CanvasArea(s: ExportPageState) {
     if (!svg) return
     Array.from(svg.querySelectorAll('[data-size-hint]')).forEach(el => el.remove())
     if (!hint) return
-    return
-    const NS = 'http://www.w3.org/2000/svg'
-    const g = document.createElementNS(NS, 'g')
-    g.setAttribute('data-size-hint', '1')
-    const cx = hint.x + hint.w / 2
-    const cy = hint.y - 20
-    const bg = document.createElementNS(NS, 'rect')
-    bg.setAttribute('x', String(cx - 28)); bg.setAttribute('y', String(cy - 8))
-    bg.setAttribute('width', '56');        bg.setAttribute('height', '14')
-    bg.setAttribute('rx', '3')
-    bg.setAttribute('fill', 'rgba(12,10,8,0.65)')
-    const txt = document.createElementNS(NS, 'text')
-    txt.setAttribute('x', String(cx)); txt.setAttribute('y', String(cy + 3))
-    txt.setAttribute('text-anchor', 'middle')
-    txt.setAttribute('fill', 'rgba(196,160,68,0.9)')
-    txt.setAttribute('font-size', '8')
-    txt.setAttribute('font-family', 'Space Mono, monospace')
-    txt.textContent = `${hint.w} × ${hint.h}`
-    g.appendChild(bg); g.appendChild(txt)
-    svg.appendChild(g)
   }, [])
 
   const clearSizeHint = React.useCallback((pageId?: string) => {
