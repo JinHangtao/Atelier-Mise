@@ -342,8 +342,8 @@ composite() {
 
     const lastVelRef = { current: this._lastVel }
     const distAccRef = { current: this._distAcc }
-    // smear: 传入离屏 canvas（类型绕过用 as unknown as ImageData）
-    universalRenderStroke(ctx, window, state, brush, lastVelRef, distAccRef, this._smearCanvas as unknown as ImageData ?? undefined)
+    // smear: 传入离屏 canvas
+    universalRenderStroke(ctx, window, state, brush, lastVelRef, distAccRef, this._smearCanvas ?? undefined)
     this._lastVel = lastVelRef.current
     this._distAcc = distAccRef.current
 
