@@ -113,6 +113,8 @@ export type SegmentationControls = {
   /** 快速选择点击：左键加入，右键/Alt 减去 */
   onQuickSelect: (canvasX: number, canvasY: number, isSubtract: boolean) => void
   undoLastPoint: () => void
+  undoMask: () => void
+  canUndo: boolean
   reset: () => void
   applyMaskToImage: (img: HTMLImageElement) => string | null
 }
