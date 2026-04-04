@@ -15,6 +15,7 @@ export type BlockType =
   | 'milestone'
   | 'school-profile'
   | 'sticky'
+  | 'table'
 
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 
