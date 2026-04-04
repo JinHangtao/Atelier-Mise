@@ -28,6 +28,9 @@ export type Page = {
   aspect: Aspect     // canvas dimensions rule
   isCover?: boolean  // cover page gets special editor
   background?: string // page background color, defaults to #ffffff
+  backgroundImage?: string // optional background image URL
+  bgSize?: string          // CSS background-size, e.g. 'cover' | 'contain'
+  bgPosition?: string      // CSS background-position, e.g. 'center'
   blocks: Block[]
 }
 
