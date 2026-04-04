@@ -20,6 +20,7 @@ export interface Block {
   imgOffsetX?: number
   imgOffsetY?: number
   imgScale?: number
+  imgClipRange?: [[number, number], [number, number]]
   tableData?: import('./TableBlock').TableData
   // sticky note 专用
   stickyColor?: string   // 背景色，如 '#fef08a'
