@@ -262,6 +262,7 @@ export type BrushType =
   | 'wetbrush'
   | 'watercolor'   // SAI-style color-mixing watercolor
   | 'blur'         // true local gaussian blur
+  | 'softblur'     // soft gaussian blur variant
   | 'smear'        // pixel-drag smear
   | 'oilpaint'     // thick oil paint with canvas color pickup
   | 'airbrush'     // pressure-sensitive spray
