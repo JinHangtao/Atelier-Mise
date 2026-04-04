@@ -1719,7 +1719,7 @@ ref={el => {
                                     })()
                                     return (
                                       <div data-blockid={block.id}
-                                        style={{ width: '100%', height: '100%', overflow: isImgPanning ? 'hidden' : 'visible', position: 'relative', cursor: isImgPanning ? 'grab' : 'default', borderRadius: `${block.imgRadius ?? 0}px` }}
+                                        style={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative', cursor: isImgPanning ? 'grab' : 'default', borderRadius: `${block.imgRadius ?? 0}px` }}
                                         onMouseDown={!isImgPanning ? undefined : e => {
                                           e.stopPropagation()
                                           const startX = e.clientX - tx; const startY = e.clientY - ty
@@ -1737,8 +1737,10 @@ ref={el => {
                                         <img src={block.content} alt="" draggable={false} onDragStart={e => e.preventDefault()}
                                           style={{
                                             position: isImgPanning ? 'absolute' : 'relative',
-                                            top: isImgPanning ? imgPos.top : undefined, left: isImgPanning ? imgPos.left : undefined,
-                                            width: isImgPanning ? imgPos.width : '100%', height: isImgPanning ? imgPos.height : '100%',
+                                            top: isImgPanning ? imgPos.top : '-0.5px',
+                                            left: isImgPanning ? imgPos.left : '-0.5px',
+                                            width: isImgPanning ? imgPos.width : 'calc(100% + 1px)',
+                                            height: isImgPanning ? imgPos.height : 'calc(100% + 1px)',
                                             objectFit: isImgPanning ? undefined : 'fill',
                                             transform: isImgPanning ? `translate(${tx}px, ${ty}px) scale(${scale})` : undefined,
                                             transformOrigin: 'center center', display: 'block', userSelect: 'none',
