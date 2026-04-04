@@ -999,4 +999,10 @@ export function useExportPage() {
   }
 }
 
-export type ExportPageState = ReturnType<typeof useExportPage>
+import type { UseGridSystemReturn } from './useGridSystem'
+
+export type ExportPageState = ReturnType<typeof useExportPage> &
+  UseGridSystemReturn & {
+    gridEditMode: boolean
+    setGridEditMode: (v: boolean) => void
+  }

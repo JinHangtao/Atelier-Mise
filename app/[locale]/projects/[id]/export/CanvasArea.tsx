@@ -32,8 +32,8 @@ export function CanvasArea(s: ExportPageState) {
     isZh, project, schools, setRightTab,
     gridState,
   } = s
-  const gridEditMode: boolean = (s as any).gridEditMode ?? false
-  const setGridEditMode: (v: boolean) => void = (s as any).setGridEditMode ?? (() => {})
+  const gridEditMode: boolean = s.gridEditMode
+  const setGridEditMode: (v: boolean) => void = s.setGridEditMode
 
   // ── Draw overlay refs (one canvas per page, keyed by page.id) ────────────
   // These canvases sit above all rnd-blocks and receive pointer events only
