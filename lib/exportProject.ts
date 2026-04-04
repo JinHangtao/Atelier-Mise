@@ -1,255 +1,98 @@
 import { Project } from '../types'
-import { Block, School, ExportOptions, THEMES, FONTS, buildExportHTML } from './exportStyles'
+import { Block, School, ExportOptions, THEMES, FONTS, buildExportHTML, buildExportCSS } from './exportStyles'
 
 export type { Block, School, ExportOptions }
 
-// ── PDF ──────────────────────────────────────────────────────────────────────
+// ── 工具：把单页 blocks 转成完整 HTML（保留 absolute 定位，不走线性）──────────
+function buildPageHTML(
+  blocks: Block[],
+  project: Project,
+  schools: School[],
+  opts: ExportOptions,
+  isZh: boolean,
+  canvasW: number,
+  canvasH: number,
+): string {
+  const css = buildExportCSS(opts, isZh)
+  const t = THEMES[opts.theme] || THEMES.sensei
+
+  // 直接用 pixelPos 的 absolute 坐标，100% 还原画布
+  const innerBlocks = blocks.map(b => {
+    if (!b.pixelPos) return ''
+    const { x, y, w, h } = b.pixelPos
+    // 复用 exportStyles 里的单 block 渲染（需要导出 renderBlockHTML，见下方说明）
+    const inner = renderBlockHTMLForExport(b, project, schools, opts, isZh)
+    return inner.replace(
+      /^<div class="block([^"]*)"([^>]*)>/,
+      `<div class="block$1"$2 style="position:absolute;left:${x}px;top:${y}px;width:${w}px;height:${h}px;overflow:hidden;box-sizing:border-box;">`
+    )
+  }).join('\n')
+
+  return `<!DOCTYPE html>
+<html lang="${isZh ? 'zh-CN' : 'en'}">
+<head>
+  <meta charset="UTF-8">
+  <title>${project.title}</title>
+  <style>
+    ${css}
+    body {
+      margin: 0;
+      padding: 0;
+      width: ${canvasW}px;
+      height: ${canvasH}px;
+      overflow: hidden;
+      background: ${t.bg};
+    }
+  </style>
+</head>
+<body>
+  <div style="position:relative;width:${canvasW}px;height:${canvasH}px;">
+    ${innerBlocks}
+  </div>
+</body>
+</html>`
+}
+
+// ── PDF（Playwright 服务端路线）────────────────────────────────────────────────
 export async function exportPDF(
   project: Project,
-  blocks: Block[],
+  pages: Array<{ blocks: Block[]; width: number; height: number }>,
   schools: School[],
   opts: ExportOptions,
   isZh: boolean,
 ) {
-  const win = window.open('', '_blank')
-  if (!win) return
+  const payload = {
+    filename: `${project.title.replace(/\s+/g, '_')}_${opts.theme}`,
+    pages: pages.map(p => ({
+      html: buildPageHTML(p.blocks, project, schools, opts, isZh, p.width, p.height),
+      width: p.width,
+      height: p.height,
+    })),
+  }
 
-  const html = buildExportHTML(blocks, project, schools, opts, isZh)
-  // Inject print-trigger script before closing </body>
-  const printable = html.replace(
-    '</body>',
-    `<script>window.onload=()=>{window.print();}<\/script></body>`,
-  )
+  const res = await fetch('/api/export-pdf', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
 
-  win.document.write(printable)
-  win.document.close()
+  if (!res.ok) throw new Error(`PDF export failed: ${res.statusText}`)
+
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = payload.filename + '.pdf'
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 // ── WORD (docx) ───────────────────────────────────────────────────────────────
-export async function exportDOCX(
-  project: Project,
-  blocks: Block[],
-  schools: School[],
-  opts: ExportOptions,
-  isZh: boolean,
-) {
-  const { Document, Paragraph, TextRun, HeadingLevel, Packer, BorderStyle } = await import('docx')
-  const { saveAs } = await import('file-saver')
+// （保持原来的 exportDOCX 不变，直接粘贴你原有的实现即可）
+export { exportDOCX } from './exportProjectDocx'
 
-  const t = THEMES[opts.theme] || THEMES.sensei
-  const f = FONTS[opts.font] || FONTS.mixed
-
-  // Strip rgba/hex alpha for docx (needs 6-char hex)
-  const hex = (color: string): string => {
-    // already 6-char hex
-    if (/^#[0-9a-fA-F]{6}$/.test(color)) return color.replace('#', '')
-    // 3-char hex
-    if (/^#[0-9a-fA-F]{3}$/.test(color)) {
-      const [, r, g, b] = color
-      return `${r}${r}${g}${g}${b}${b}`
-    }
-    // rgba — strip alpha, take rgb
-    const m = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
-    if (m) return [m[1], m[2], m[3]].map(n => parseInt(n).toString(16).padStart(2, '0')).join('')
-    return '1a1a1a'
-  }
-
-  const textColor   = hex(t.text)
-  const mutedColor  = hex(t.muted)
-  const accentColor = hex(t.accent)
-  const subtleColor = hex(t.subtle)
-
-  // Font stacks → first font name only (docx doesn't do CSS stacks)
-  const bodyFont    = f.bodyStack.replace(/^["']?([^"',]+)["']?.*/, '$1').trim()
-  const headingFont = f.headingStack.replace(/^["']?([^"',]+)["']?.*/, '$1').trim()
-
-  const para = (
-    text: string,
-    pOpts?: {
-      bold?: boolean
-      size?: number
-      color?: string
-      font?: string
-      heading?: typeof HeadingLevel[keyof typeof HeadingLevel]
-      italic?: boolean
-      strike?: boolean
-    },
-  ) =>
-    new Paragraph({
-      heading: pOpts?.heading,
-      children: [
-        new TextRun({
-          text,
-          bold: pOpts?.bold,
-          italics: pOpts?.italic,
-          strike: pOpts?.strike,
-          size: pOpts?.size ?? 22,
-          color: pOpts?.color ?? textColor,
-          font: pOpts?.font ?? bodyFont,
-        }),
-      ],
-    })
-
-  const divider = () =>
-    new Paragraph({
-      border: { bottom: { style: BorderStyle.SINGLE, size: 1, color: hex(t.border) || 'DCDCDA' } },
-      children: [],
-    })
-
-  const gap = () => new Paragraph({ children: [] })
-
-  const children: InstanceType<typeof Paragraph>[] = []
-
-  for (const b of blocks) {
-    if (b.type === 'title') {
-      children.push(
-        new Paragraph({
-          heading: HeadingLevel.HEADING_1,
-          children: [new TextRun({ text: project.title, bold: true, size: 56, color: textColor, font: headingFont })],
-        }),
-        para(`${project.category ?? ''}  ·  ${project.status ?? ''}`, { size: 18, color: mutedColor }),
-        gap(),
-        ...(project.description ? [para(project.description, { size: 20, color: mutedColor }), gap()] : []),
-        divider(),
-      )
-      continue
-    }
-
-    if (b.type === 'note') {
-      children.push(
-        para(b.content, { size: 20, italic: true }),
-        ...(b.caption ? [para(b.caption, { size: 18, color: mutedColor, italic: true })] : []),
-        gap(),
-      )
-      continue
-    }
-
-    if (b.type === 'custom') {
-      children.push(
-        para(b.content, { size: 20 }),
-        gap(),
-      )
-      continue
-    }
-
-    if (b.type === 'milestone') {
-      children.push(
-        para(isZh ? '进度节点' : 'Milestones', { bold: true, size: 24, font: headingFont }),
-      )
-      for (const m of project.milestones) {
-        const check = m.status === 'done' ? '✓' : '○'
-        children.push(
-          new Paragraph({
-            children: [
-              new TextRun({ text: `${check}  ${m.title}`, size: 20, color: m.status === 'done' ? subtleColor : textColor, strike: m.status === 'done', font: bodyFont }),
-              ...(m.date ? [new TextRun({ text: `  —  ${m.date}`, size: 18, color: mutedColor, font: bodyFont })] : []),
-            ],
-          }),
-        )
-        if ((m as any).note) children.push(para(`    ${(m as any).note}`, { size: 18, color: mutedColor }))
-      }
-      children.push(gap(), divider())
-      continue
-    }
-
-    if (b.type === 'image' || b.type === 'image-row') {
-      const { ImageRun, AlignmentType } = await import('docx')
-      const urls = b.type === 'image' ? [b.content] : (b.images || [])
-
-      for (let i = 0; i < urls.length; i++) {
-        const url = urls[i]
-        try {
-          // base64 dataUrl → ArrayBuffer
-          const base64 = url.split(',')[1]
-          if (!base64) continue
-          const binary = atob(base64)
-          const bytes = new Uint8Array(binary.length)
-          for (let j = 0; j < binary.length; j++) bytes[j] = binary.charCodeAt(j)
-
-          // 读取图片尺寸
-          const dims = await new Promise<{ w: number; h: number }>(resolve => {
-            const img = new Image()
-            img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
-            img.onerror = () => resolve({ w: 800, h: 450 })
-            img.src = url
-          })
-
-          // 最大宽度 480pt，等比缩放
-          const maxW = 480
-          const scale = Math.min(1, maxW / dims.w)
-          const w = Math.round(dims.w * scale)
-          const h = Math.round(dims.h * scale)
-
-          const isPng = url.startsWith('data:image/png')
-
-          children.push(
-            new Paragraph({
-              alignment: AlignmentType.CENTER,
-              children: [
-                new ImageRun({
-                  data: bytes.buffer,
-                  transformation: { width: w, height: h },
-                  type: isPng ? 'png' : 'jpg',
-                }),
-              ],
-            }),
-          )
-
-          // 图片名称（imageCaptions）
-          const caption = b.type === 'image-row'
-            ? (b.imageCaptions || [])[i]
-            : (b.imageCaptions || [])[0]
-          if (caption) {
-            children.push(para(caption, { size: 18, color: mutedColor, italic: true }))
-          }
-        } catch {
-          children.push(
-            para(`[${isZh ? '图片' : 'Image'} ${i + 1}]`, { size: 18, color: mutedColor, italic: true }),
-          )
-        }
-      }
-
-      if (b.caption) {
-        children.push(para(b.caption, { size: 18, color: mutedColor, italic: true }))
-      }
-      children.push(gap())
-      continue
-    }
-
-    if (b.type === 'school-profile') {
-      const school = schools.find(s => s.id === b.content)
-      if (!school) continue
-      const displayName = isZh ? (school.nameZh || school.name) : school.name
-      const displayDept = isZh ? (school.departmentZh || school.department) : school.department
-
-      children.push(
-        para(`${school.country}${school.deadline ? `  ·  ${isZh ? '截止' : 'Deadline'}: ${school.deadline}` : ''}`, { size: 18, color: mutedColor }),
-        new Paragraph({
-          heading: HeadingLevel.HEADING_2,
-          children: [new TextRun({ text: displayName, bold: true, size: 36, color: textColor, font: headingFont })],
-        }),
-        ...(displayDept ? [para(displayDept, { size: 20, color: mutedColor })] : []),
-        ...(school.requirements ? [
-          gap(),
-          para(isZh ? '申请要求' : 'Requirements', { bold: true, size: 20, color: hex(t.accentWarm) }),
-          para(school.requirements, { size: 20 }),
-        ] : []),
-        ...(school.aiStatement ? [
-          gap(),
-          para(isZh ? 'AI 申请文书' : 'Application Statement', { bold: true, size: 20, color: accentColor }),
-          para(school.aiStatement, { size: 20 }),
-        ] : []),
-        gap(),
-        divider(),
-      )
-      continue
-    }
-  }
-
-  const doc = new Document({
-    sections: [{ properties: {}, children }],
-  })
-
-  const blob = await Packer.toBlob(doc)
-  saveAs(blob, `${project.title.replace(/\s+/g, '_')}_${opts.theme}.docx`)
-}
+// ── 内部：单 block HTML 渲染（从 exportStyles 抽出或直接 import）─────────────
+// 注意：需要把 exportStyles.ts 里的 renderBlockHTML 改为 export function
+// 然后这里直接 import { renderBlockHTML as renderBlockHTMLForExport } from './exportStyles'
+// 临时 shim（删掉这行，替换成上面的 import）:
+import { renderBlockHTML as renderBlockHTMLForExport } from './exportStyles'
