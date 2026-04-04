@@ -911,7 +911,7 @@ export function useExportPage() {
       const scale = Math.min(1, MAX_W / w)
       const imgW = Math.round(w * scale)
       const imgH = Math.round(h * scale)
-      const nodes: (Paragraph)[] = [
+      const nodes: InstanceType<typeof Paragraph>[] = [
         new Paragraph({
           children: [
             new ImageRun({
