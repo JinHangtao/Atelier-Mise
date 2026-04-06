@@ -829,8 +829,8 @@ export function useExportPage() {
       '  display: flex;',
       '  flex-direction: column;',
       '  align-items: center;',
-      '  gap: ' + gapValue + 'px;',
-      '  padding: ' + gapValue + 'px 0;',
+      '  gap: 0;',
+      '  padding: 0;',
       '  min-height: 100vh;',
       '}',
       'img {',
@@ -841,6 +841,9 @@ export function useExportPage() {
       '  max-width: 100%;',
       '  height: auto;',
       '  margin: 0 auto;',
+      '}',
+      'img + img {',
+      '  margin-top: ' + gapValue + 'px;',
       '}',
     ].join('\n')
     const html = [

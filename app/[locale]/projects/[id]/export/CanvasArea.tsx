@@ -1,5 +1,6 @@
 'use client'
 import React from 'react'
+import ReactDOM from 'react-dom'
 import { Rnd } from 'react-rnd'
 import { Block, School } from '../../../../../lib/exportStyles'
 import { aspectLabel, pageHeight, generateId } from './pageHelpers'
@@ -9,8 +10,629 @@ import { TableBlock, DEFAULT_TABLE_DATA } from './TableBlock'
 import { ExportPageState, TEXT_BLOCK_TYPES, FONT_OPTIONS, COLOR_PRESETS } from './useExportPage'
 import { Aspect, EmojiBlock as EmojiBlockType, ArrowDirection } from './types'
 import EmojiBlockComponent from './EmojiBlock'
-import { sharedDrawState, BRUSHES, universalRenderStroke, renderShape } from './DrawPanel'
-import { getDrawLayerManager, destroyDrawLayerManager } from './DrawLayerManager'
+import { sharedDrawState, BRUSHES, universalRenderStroke } from './DrawPanel'
+import { getDrawLayerManager, destroyDrawLayerManager, DrawnShape } from './DrawLayerManager'
+
+// ── Shape SVG helpers ──────────────────────────────────────────────────────
+// Builds the SVG path/element for a DrawnShape using its absolute coordinates.
+// `opacity` is layered on top of the shape's own alpha so previews can fade.
+function buildShapeElement(shape: DrawnShape, x0: number, y0: number, x1: number, y1: number, opacity: number): React.ReactElement | null {
+  const stroke = shape.color ?? '#333333'
+  const fill   = shape.shapeFill ? stroke : 'none'
+  const sw     = shape.shapeStroke ?? 2
+  const alpha  = (shape.alpha ?? 1) * opacity
+  const commonProps = { stroke, fill, strokeWidth: sw, opacity: alpha, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
+
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2
+  const rx = Math.abs(x1 - x0) / 2, ry = Math.abs(y1 - y0) / 2
+
+  switch (shape.shapeType) {
+    case 'rect':
+      return <rect x={Math.min(x0,x1)} y={Math.min(y0,y1)} width={Math.abs(x1-x0)} height={Math.abs(y1-y0)} {...commonProps} />
+    case 'ellipse':
+      return <ellipse cx={cx} cy={cy} rx={rx} ry={ry} {...commonProps} />
+    case 'line':
+      return <line x1={x0} y1={y0} x2={x1} y2={y1} {...commonProps} fill="none" />
+    case 'arrow': {
+      const angle = Math.atan2(y1 - y0, x1 - x0)
+      const hs = Math.max(sw * 3, 8)
+      const ax1 = x1 - Math.cos(angle - Math.PI / 6) * hs
+      const ay1 = y1 - Math.sin(angle - Math.PI / 6) * hs
+      const ax2 = x1 - Math.cos(angle + Math.PI / 6) * hs
+      const ay2 = y1 - Math.sin(angle + Math.PI / 6) * hs
+      return (
+        <g opacity={alpha}>
+          <line x1={x0} y1={y0} x2={x1} y2={y1} stroke={stroke} strokeWidth={sw} strokeLinecap="round" />
+          <polyline points={`${ax1},${ay1} ${x1},${y1} ${ax2},${ay2}`} stroke={stroke} strokeWidth={sw} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </g>
+      )
+    }
+    case 'triangle': {
+      const pts = `${cx},${Math.min(y0,y1)} ${Math.min(x0,x1)},${Math.max(y0,y1)} ${Math.max(x0,x1)},${Math.max(y0,y1)}`
+      return <polygon points={pts} {...commonProps} />
+    }
+    case 'polygon': {
+      const sides = Math.max(3, shape.shapeSides ?? 5)
+      const pts = Array.from({ length: sides }, (_, i) => {
+        const a = (i / sides) * Math.PI * 2 - Math.PI / 2
+        return `${cx + Math.cos(a) * rx},${cy + Math.sin(a) * ry}`
+      }).join(' ')
+      return <polygon points={pts} {...commonProps} />
+    }
+    case 'star': {
+      const pts2 = Array.from({ length: 10 }, (_, i) => {
+        const a = (i / 10) * Math.PI * 2 - Math.PI / 2
+        const r = i % 2 === 0 ? Math.max(rx, ry) : Math.max(rx, ry) * 0.4
+        return `${cx + Math.cos(a) * r},${cy + Math.sin(a) * r}`
+      }).join(' ')
+      return <polygon points={pts2} {...commonProps} />
+    }
+    case 'bezier': {
+      if (!shape.bezierPts || shape.bezierPts.length < 2) return null
+      const pts3 = shape.bezierPts
+      let d = `M ${pts3[0].x} ${pts3[0].y}`
+      for (let i = 1; i < pts3.length; i++) d += ` L ${pts3[i].x} ${pts3[i].y}`
+      return <path d={d} {...commonProps} fill="none" />
+    }
+    default:
+      return null
+  }
+}
+
+// Used inside the draw-mode SVG overlay (absolute page coordinates).
+function renderShapeSVG(shape: DrawnShape, opacity: number): React.ReactElement | null {
+  const el = buildShapeElement(shape, shape.x0, shape.y0, shape.x1, shape.y1, opacity)
+  if (!el) return null
+  const rot = (shape as any).rotation
+  if (!rot) return el
+  const cx = (shape.x0 + shape.x1) / 2, cy = (shape.y0 + shape.y1) / 2
+  return <g transform={`rotate(${rot},${cx},${cy})`}>{el}</g>
+}
+
+// Used inside the Rnd-wrapped per-shape SVG box (non-draw mode).
+// Coordinates are translated to be relative to the box origin (minX-PAD, minY-PAD).
+function renderShapeSVGInBox(shape: DrawnShape, PAD: number, w: number, h: number): React.ReactElement | null {
+  const minX = Math.min(shape.x0, shape.x1)
+  const minY = Math.min(shape.y0, shape.y1)
+  // Local coords: offset by (minX - PAD) so the shape sits centred in the padded box
+  const lx0 = shape.x0 - minX + PAD
+  const ly0 = shape.y0 - minY + PAD
+  const lx1 = shape.x1 - minX + PAD
+  const ly1 = shape.y1 - minY + PAD
+  // For bezier, remap each point
+  if (shape.shapeType === 'bezier' && shape.bezierPts) {
+    const remapped: DrawnShape = {
+      ...shape,
+      bezierPts: shape.bezierPts.map(p => ({ x: p.x - minX + PAD, y: p.y - minY + PAD })),
+      x0: lx0, y0: ly0, x1: lx1, y1: ly1,
+    }
+    return buildShapeElement(remapped, lx0, ly0, lx1, ly1, 1)
+  }
+  return buildShapeElement(shape, lx0, ly0, lx1, ly1, 1)
+}
+
+// Selection handles rendered around a shape in draw mode.
+// Unified with NonDrawShape style: indigo solid border + 8 Figma-style handles + delete button.
+function renderSelectionHandles(shape: DrawnShape, onDelete: () => void): React.ReactElement {
+  const minX = Math.min(shape.x0, shape.x1)
+  const minY = Math.min(shape.y0, shape.y1)
+  const maxX = Math.max(shape.x0, shape.x1)
+  const maxY = Math.max(shape.y0, shape.y1)
+  const PAD = 10
+  const handles = handleDefs(minX, minY, maxX, maxY, PAD)
+  return (
+    <g>
+      {/* 选中框 — indigo 实线，与非 draw 模式完全统一 */}
+      <rect
+        x={minX - PAD} y={minY - PAD}
+        width={maxX - minX + PAD * 2} height={maxY - minY + PAD * 2}
+        fill="rgba(99,102,241,0.04)" stroke="#6366f1" strokeWidth={1} rx={4}
+        pointerEvents="none"
+      />
+      {/* 8个 resize handles — Figma style（draw 模式仅视觉展示，与非 draw 模式外观统一）*/}
+      {handles.map(h => {
+        const isCorner = h.id === 'tl' || h.id === 'tr' || h.id === 'bl' || h.id === 'br'
+        return isCorner ? (
+          <rect
+            key={h.id}
+            x={h.cx - 4.5} y={h.cy - 4.5} width={9} height={9} rx={2.5}
+            fill="#fff" stroke="#6366f1" strokeWidth={1.5}
+            style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.18))' }}
+            pointerEvents="none"
+          />
+        ) : (
+          <rect
+            key={h.id}
+            x={h.id === 'tc' || h.id === 'bc' ? h.cx - 5 : h.cx - 3}
+            y={h.id === 'ml' || h.id === 'mr' ? h.cy - 5 : h.cy - 3}
+            width={h.id === 'tc' || h.id === 'bc' ? 10 : 6}
+            height={h.id === 'ml' || h.id === 'mr' ? 10 : 6}
+            rx={2}
+            fill="#6366f1" stroke="none"
+            style={{ opacity: 0.85 }}
+            pointerEvents="none"
+          />
+        )
+      })}
+      {/* 右上角删除按钮 */}
+      <g style={{ cursor: 'pointer' }} onClick={e => { e.stopPropagation(); onDelete() }}>
+        <circle cx={maxX + PAD} cy={minY - PAD} r={8} fill="rgba(220,60,50,0.9)" />
+        <text x={maxX + PAD} y={minY - PAD + 1} textAnchor="middle" dominantBaseline="middle" fill="#fff" fontSize={10} fontFamily="sans-serif">✕</text>
+      </g>
+    </g>
+  )
+}
+
+// ── DrawModeShapeWrapper ──────────────────────────────────────────────────────
+// draw 模式下的 shape 渲染 + 右键弹窗，与非 draw 模式的 ShapeContextMenu 完全统一
+function DrawModeShapeWrapper({ shape, isSel, pageId, onDelete }: {
+  shape: DrawnShape; isSel: boolean; pageId: string; onDelete: () => void
+}) {
+  const [ctxMenuPos, setCtxMenuPos] = React.useState<{ x: number; y: number } | null>(null)
+  return (
+    <>
+      <g
+        style={{ pointerEvents: 'all', cursor: 'default' }}
+        onContextMenu={e => {
+          e.preventDefault()
+          e.stopPropagation()
+          setCtxMenuPos({ x: e.clientX, y: e.clientY })
+        }}
+      >
+        {renderShapeSVG(shape, 1)}
+        {isSel && renderSelectionHandles(shape, onDelete)}
+      </g>
+      {ctxMenuPos && typeof document !== 'undefined' && ReactDOM.createPortal(
+        <ShapeContextMenu
+          shape={shape}
+          screenX={ctxMenuPos.x}
+          screenY={ctxMenuPos.y}
+          pageId={pageId}
+          onClose={() => setCtxMenuPos(null)}
+          onDelete={onDelete}
+        />,
+        document.body
+      )}
+    </>
+  )
+}
+
+// ── ShapeContextMenu ─────────────────────────────────────────────────────────
+// Design ref: shadcn/ui ContextMenu + tldraw StylePanel
+// White bg, razor-thin border, 28px row height, dot color swatches
+
+const SHAPE_COLORS = [
+  '#1a1a1a', '#e03131', '#f76707', '#f59f00',
+  '#2f9e44', '#1971c2', '#7048e8', '#c2255c', '#ffffff',
+]
+
+interface ShapeContextMenuProps {
+  shape: DrawnShape
+  screenX: number
+  screenY: number
+  pageId: string
+  onClose: () => void
+  onDelete: () => void
+}
+
+function ShapeContextMenu({ shape, screenX, screenY, pageId, onClose, onDelete }: ShapeContextMenuProps) {
+  const ref = React.useRef<HTMLDivElement>(null)
+  const [localRotation, setLocalRotation] = React.useState<number>((shape as any).rotation ?? 0)
+  const [pos, setPos] = React.useState({ x: screenX + 4, y: screenY + 4 })
+
+  React.useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler, true)
+    return () => document.removeEventListener('mousedown', handler, true)
+  }, [onClose])
+
+  React.useEffect(() => {
+    if (!ref.current) return
+    const { width, height } = ref.current.getBoundingClientRect()
+    setPos({
+      x: Math.min(screenX + 4, window.innerWidth - width - 8),
+      y: Math.min(screenY + 4, window.innerHeight - height - 8),
+    })
+  }, [screenX, screenY])
+
+  const patch = (fields: Partial<DrawnShape & { rotation: number }>) =>
+    getDrawLayerManager(pageId).patchShape(shape.id, fields as any)
+
+  const activeColor = shape.color ?? '#1a1a1a'
+  const hasFill = !!shape.shapeFill
+
+  // ── inline style atoms ──────────────────────────────────────────────────────
+  const ff = 'Inter, DM Sans, -apple-system, sans-serif'
+  const rowBase: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: 8,
+    height: 28, padding: '0 8px', borderRadius: 5,
+    fontSize: 13, fontFamily: ff,
+    background: 'none', border: 'none',
+    width: '100%', textAlign: 'left',
+    cursor: 'pointer', color: '#18181b',
+    transition: 'background 0.08s',
+    flexShrink: 0,
+  }
+  const sectionLabel: React.CSSProperties = {
+    fontSize: 11, fontFamily: ff, fontWeight: 500,
+    color: '#a1a1aa', letterSpacing: '0.04em',
+    padding: '0 8px', height: 24,
+    display: 'flex', alignItems: 'center',
+  }
+  const sep: React.CSSProperties = {
+    height: 1, background: '#f4f4f5', margin: '3px 0',
+  }
+
+  return (
+    <div
+      ref={ref}
+      onMouseDown={e => e.stopPropagation()}
+      style={{
+        position: 'fixed', left: pos.x, top: pos.y, zIndex: 9999,
+        // White surface — clean, professional, contrasts well against canvas
+        background: '#ffffff',
+        border: '1px solid #e4e4e7',
+        borderRadius: 8,
+        boxShadow: '0 4px 6px -1px rgba(0,0,0,0.08), 0 10px 24px -4px rgba(0,0,0,0.12)',
+        width: 208, fontFamily: ff,
+        padding: '4px 0',
+        userSelect: 'none',
+        overflow: 'hidden',
+      }}
+    >
+
+      {/* ── Color swatches (tldraw dot style) ── */}
+      <div style={sectionLabel}>Color</div>
+      <div style={{ display: 'flex', gap: 5, padding: '2px 8px 8px', flexWrap: 'wrap' }}>
+        {SHAPE_COLORS.map(hex => {
+          const isActive = activeColor === hex
+          const isWhite = hex === '#ffffff'
+          return (
+            <button
+              key={hex}
+              onClick={() => patch({ color: hex })}
+              style={{
+                width: 18, height: 18, borderRadius: '50%',
+                background: hex,
+                border: isActive
+                  ? `2.5px solid ${isWhite ? '#a1a1aa' : hex}`
+                  : isWhite ? '1.5px solid #d4d4d8' : '2px solid transparent',
+                outline: isActive ? `2px solid ${isWhite ? '#a1a1aa' : hex}` : 'none',
+                outlineOffset: 1.5,
+                cursor: 'pointer', padding: 0,
+                transform: isActive ? 'scale(1.1)' : 'scale(1)',
+                transition: 'transform 0.1s',
+                flexShrink: 0,
+              }}
+            />
+          )
+        })}
+      </div>
+
+      <div style={sep} />
+
+      {/* ── Fill ── */}
+      <button
+        onClick={() => patch({ shapeFill: !hasFill })}
+        style={{ ...rowBase, justifyContent: 'space-between' }}
+        onMouseEnter={e => (e.currentTarget.style.background = '#f4f4f5')}
+        onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          {/* preview swatch */}
+          <span style={{
+            width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+            background: hasFill ? activeColor : 'none',
+            border: hasFill ? `1.5px solid ${activeColor}` : '1.5px solid #d4d4d8',
+          }} />
+          Fill
+        </span>
+        <span style={{
+          fontSize: 11.5, color: hasFill ? '#18181b' : '#a1a1aa',
+          fontWeight: hasFill ? 500 : 400,
+        }}>{hasFill ? 'On' : 'Off'}</span>
+      </button>
+
+      <div style={sep} />
+
+      {/* ── Rotation ── */}
+      <div style={{ padding: '4px 8px 6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 28 }}>
+          <span style={{ fontSize: 13, color: '#18181b', fontFamily: ff, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <svg width={13} height={13} viewBox="0 0 16 16" fill="none">
+              <path d="M13.5 5A6 6 0 1 0 14 8" stroke="#71717a" strokeWidth={1.5} strokeLinecap="round"/>
+              <path d="M14 2v3.5H10.5" stroke="#71717a" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            Rotate
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{
+              fontSize: 12, color: '#71717a', fontVariantNumeric: 'tabular-nums',
+              minWidth: 32, textAlign: 'right', fontFamily: ff,
+            }}>{localRotation}°</span>
+            <button
+              onClick={() => { setLocalRotation(0); patch({ rotation: 0 } as any) }}
+              title="Reset rotation"
+              style={{
+                width: 22, height: 22, borderRadius: 5, display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
+                background: 'none', border: '1px solid #e4e4e7',
+                color: '#71717a', cursor: 'pointer', fontSize: 13, outline: 'none',
+                transition: 'border-color 0.1s, background 0.1s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#f4f4f5'; e.currentTarget.style.borderColor = '#d4d4d8' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.borderColor = '#e4e4e7' }}
+            >↺</button>
+          </div>
+        </div>
+        <input
+          type="range" min={-180} max={180} step={1}
+          value={localRotation}
+          onChange={e => {
+            const v = Number(e.target.value)
+            setLocalRotation(v)
+            patch({ rotation: v } as any)
+          }}
+          style={{ width: '100%', accentColor: '#18181b', cursor: 'pointer', display: 'block', marginTop: 4 }}
+        />
+      </div>
+
+      <div style={sep} />
+
+      {/* ── Delete ── */}
+      <button
+        onClick={() => { onDelete(); onClose() }}
+        style={{ ...rowBase, color: '#dc2626' }}
+        onMouseEnter={e => (e.currentTarget.style.background = '#fef2f2')}
+        onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+      >
+        <svg width={13} height={13} viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+          <path d="M3 4h10M6 4V2.5a.5.5 0 01.5-.5h3a.5.5 0 01.5.5V4M5 4l.5 9h5l.5-9"
+            stroke="#dc2626" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+        Delete
+      </button>
+    </div>
+  )
+}
+
+// ── NonDrawShape ─────────────────────────────────────────────────────────────
+// tldraw / Excalidraw スタイル。react-rnd 不使用。
+// drag: gRef に直接 translate を書いて re-render ゼロ。
+// resize: preview state で React に再描画させる（shape が軽いので問題なし）。
+// 両者はイベント伝播で完全に分離されており互いを壊さない。
+
+type HandleId = 'tl'|'tc'|'tr'|'ml'|'mr'|'bl'|'bc'|'br'
+
+interface NonDrawShapeProps {
+  shape: DrawnShape
+  isSel: boolean
+  PAD: number
+  minX: number; minY: number; maxX: number; maxY: number
+  canvasZoom: number
+  pageId: string
+  onSelect: () => void
+  onDeselect: () => void
+  onDelete: () => void
+}
+
+// handle の [cx, cy, cursor] を bbox から計算
+function handleDefs(x0: number, y0: number, x1: number, y1: number, p: number): Array<{ id: HandleId; cx: number; cy: number; cursor: string }> {
+  const mx = (x0 + x1) / 2, my = (y0 + y1) / 2
+  return [
+    { id: 'tl', cx: x0 - p, cy: y0 - p, cursor: 'nwse-resize' },
+    { id: 'tc', cx: mx,     cy: y0 - p, cursor: 'ns-resize'   },
+    { id: 'tr', cx: x1 + p, cy: y0 - p, cursor: 'nesw-resize' },
+    { id: 'ml', cx: x0 - p, cy: my,     cursor: 'ew-resize'   },
+    { id: 'mr', cx: x1 + p, cy: my,     cursor: 'ew-resize'   },
+    { id: 'bl', cx: x0 - p, cy: y1 + p, cursor: 'nesw-resize' },
+    { id: 'bc', cx: mx,     cy: y1 + p, cursor: 'ns-resize'   },
+    { id: 'br', cx: x1 + p, cy: y1 + p, cursor: 'nwse-resize' },
+  ]
+}
+
+function applyHandle(hid: HandleId, startCoords: { x0: number; y0: number; x1: number; y1: number }, dx: number, dy: number) {
+  let { x0, y0, x1, y1 } = startCoords
+  if (hid === 'tl' || hid === 'ml' || hid === 'bl') x0 += dx
+  if (hid === 'tr' || hid === 'mr' || hid === 'br') x1 += dx
+  if (hid === 'tl' || hid === 'tc' || hid === 'tr') y0 += dy
+  if (hid === 'bl' || hid === 'bc' || hid === 'br') y1 += dy
+  // 最小サイズ 8px を保つ
+  if (Math.abs(x1 - x0) < 8) { if (x0 !== startCoords.x0) x0 = x1 - 8 * Math.sign(x1 - startCoords.x0 || 1); else x1 = x0 + 8 * Math.sign(x1 - x0 || 1) }
+  if (Math.abs(y1 - y0) < 8) { if (y0 !== startCoords.y0) y0 = y1 - 8 * Math.sign(y1 - startCoords.y0 || 1); else y1 = y0 + 8 * Math.sign(y1 - y0 || 1) }
+  return { x0, y0, x1, y1 }
+}
+
+function NonDrawShape({ shape, isSel, PAD, minX, minY, maxX, maxY, canvasZoom, pageId, onSelect, onDelete }: NonDrawShapeProps) {
+  // ── drag state (zero re-render, direct DOM) ───────────────────────────────
+  const dragRef  = React.useRef<{ startX: number; startY: number; dx: number; dy: number } | null>(null)
+  const gRef     = React.useRef<SVGGElement>(null)
+  const dragging = React.useRef(false)
+
+  // ── resize state (React-driven, shape is light SVG) ──────────────────────
+  const [resizePreview, setResizePreview] = React.useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
+  const resizeRef = React.useRef<{ hid: HandleId; startX: number; startY: number; origCoords: { x0: number; y0: number; x1: number; y1: number } } | null>(null)
+
+  // ── context menu ──────────────────────────────────────────────────────────
+  const [ctxMenuPos, setCtxMenuPos] = React.useState<{ x: number; y: number } | null>(null)
+
+  const applyTranslate = (dx: number, dy: number) => {
+    if (gRef.current) gRef.current.style.transform = `translate(${dx}px,${dy}px)`
+  }
+
+  // ── 本体 drag ─────────────────────────────────────────────────────────────
+  const onBodyPointerDown = (e: React.PointerEvent<SVGGElement>) => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    e.preventDefault()
+    ;(e.nativeEvent as any).__shapeSelected = true
+    onSelect()
+    dragging.current = false
+    dragRef.current = { startX: e.clientX, startY: e.clientY, dx: 0, dy: 0 }
+    ;(e.currentTarget as SVGGElement).setPointerCapture(e.pointerId)
+  }
+
+  const onBodyPointerMove = (e: React.PointerEvent<SVGGElement>) => {
+    if (!dragRef.current) return
+    e.stopPropagation()
+    const rawDx = (e.clientX - dragRef.current.startX) / canvasZoom
+    const rawDy = (e.clientY - dragRef.current.startY) / canvasZoom
+    if (!dragging.current && Math.hypot(rawDx, rawDy) > 3) dragging.current = true
+    if (!dragging.current) return
+    dragRef.current.dx = rawDx
+    dragRef.current.dy = rawDy
+    applyTranslate(rawDx, rawDy)
+  }
+
+  const onBodyPointerUp = (e: React.PointerEvent<SVGGElement>) => {
+    if (!dragRef.current) return
+    e.stopPropagation()
+    const { dx, dy } = dragRef.current
+    dragRef.current = null
+    applyTranslate(0, 0)
+    if (dragging.current && (Math.abs(dx) > 1 || Math.abs(dy) > 1)) {
+      getDrawLayerManager(pageId).patchShape(shape.id, {
+        x0: shape.x0 + dx, y0: shape.y0 + dy,
+        x1: shape.x1 + dx, y1: shape.y1 + dy,
+      })
+    }
+    dragging.current = false
+  }
+
+  // ── right-click → context menu ────────────────────────────────────────────
+  const onBodyContextMenu = (e: React.MouseEvent<SVGGElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    onSelect()
+    setCtxMenuPos({ x: e.clientX, y: e.clientY })
+  }
+
+  // ── resize handle ─────────────────────────────────────────────────────────
+  const onHandlePointerDown = (e: React.PointerEvent<SVGRectElement>, hid: HandleId) => {
+    e.stopPropagation()
+    e.preventDefault()
+    ;(e.currentTarget as SVGRectElement).setPointerCapture(e.pointerId)
+    resizeRef.current = {
+      hid,
+      startX: e.clientX, startY: e.clientY,
+      origCoords: { x0: shape.x0, y0: shape.y0, x1: shape.x1, y1: shape.y1 },
+    }
+  }
+
+  const onHandlePointerMove = (e: React.PointerEvent<SVGRectElement>) => {
+    if (!resizeRef.current) return
+    e.stopPropagation()
+    const dx = (e.clientX - resizeRef.current.startX) / canvasZoom
+    const dy = (e.clientY - resizeRef.current.startY) / canvasZoom
+    const next = applyHandle(resizeRef.current.hid, resizeRef.current.origCoords, dx, dy)
+    setResizePreview(next)
+  }
+
+  const onHandlePointerUp = (e: React.PointerEvent<SVGRectElement>) => {
+    if (!resizeRef.current) return
+    e.stopPropagation()
+    const dx = (e.clientX - resizeRef.current.startX) / canvasZoom
+    const dy = (e.clientY - resizeRef.current.startY) / canvasZoom
+    const next = applyHandle(resizeRef.current.hid, resizeRef.current.origCoords, dx, dy)
+    resizeRef.current = null
+    setResizePreview(null)
+    getDrawLayerManager(pageId).patchShape(shape.id, next)
+  }
+
+  // resize preview があれば bbox をそちらから計算
+  const coords = resizePreview ?? { x0: shape.x0, y0: shape.y0, x1: shape.x1, y1: shape.y1 }
+  const rx0 = Math.min(coords.x0, coords.x1), ry0 = Math.min(coords.y0, coords.y1)
+  const rx1 = Math.max(coords.x0, coords.x1), ry1 = Math.max(coords.y0, coords.y1)
+
+  // resize 中は preview coords で shape を描き直す
+  const displayShape = resizePreview ? { ...shape, ...resizePreview } : shape
+
+  return (
+    <>
+      <g
+        ref={gRef}
+        data-shape-id={shape.id}
+        style={{ cursor: 'move', pointerEvents: 'all' }}
+        onPointerDown={onBodyPointerDown}
+        onPointerMove={onBodyPointerMove}
+        onPointerUp={onBodyPointerUp}
+        onPointerCancel={onBodyPointerUp}
+        onContextMenu={onBodyContextMenu}
+      >
+        {/* 透明 hit area */}
+        <rect
+          x={minX - PAD} y={minY - PAD}
+          width={maxX - minX + PAD * 2} height={maxY - minY + PAD * 2}
+          fill="transparent" stroke="none"
+        />
+        {/* shape 本体（resize 中は preview coords で描画）*/}
+        {renderShapeSVG(displayShape, 1)}
+
+        {/* 選択中 UI */}
+        {isSel && (() => {
+          return (
+          <>
+            {/* 選択枠 — subtle indigo, no dash */}
+            <rect
+              x={rx0 - PAD} y={ry0 - PAD}
+              width={rx1 - rx0 + PAD * 2} height={ry1 - ry0 + PAD * 2}
+              fill="rgba(99,102,241,0.04)" stroke="#6366f1" strokeWidth={1} rx={4}
+              pointerEvents="none"
+            />
+            {/* resize handles（8点）— Figma style, no delete button */}
+            {handleDefs(rx0, ry0, rx1, ry1, PAD).map(h => {
+              const isCorner = h.id === 'tl' || h.id === 'tr' || h.id === 'bl' || h.id === 'br'
+              return isCorner ? (
+                <rect
+                  key={h.id}
+                  x={h.cx - 4.5} y={h.cy - 4.5} width={9} height={9} rx={2.5}
+                  fill="#fff" stroke="#6366f1" strokeWidth={1.5}
+                  style={{ cursor: h.cursor, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.18))' }}
+                  pointerEvents="all"
+                  onPointerDown={e => onHandlePointerDown(e, h.id)}
+                  onPointerMove={onHandlePointerMove}
+                  onPointerUp={onHandlePointerUp}
+                  onPointerCancel={onHandlePointerUp}
+                />
+              ) : (
+                <rect
+                  key={h.id}
+                  x={h.id === 'tc' || h.id === 'bc' ? h.cx - 5 : h.cx - 3}
+                  y={h.id === 'ml' || h.id === 'mr' ? h.cy - 5 : h.cy - 3}
+                  width={h.id === 'tc' || h.id === 'bc' ? 10 : 6}
+                  height={h.id === 'ml' || h.id === 'mr' ? 10 : 6}
+                  rx={2}
+                  fill="#6366f1" stroke="none"
+                  style={{ cursor: h.cursor, opacity: 0.85 }}
+                  pointerEvents="all"
+                  onPointerDown={e => onHandlePointerDown(e, h.id)}
+                  onPointerMove={onHandlePointerMove}
+                  onPointerUp={onHandlePointerUp}
+                  onPointerCancel={onHandlePointerUp}
+                />
+              )
+            })}
+          </>
+          )
+        })()}
+      </g>
+      {/* Context menu portal — rendered outside SVG as HTML */}
+      {ctxMenuPos && typeof document !== 'undefined' && ReactDOM.createPortal(
+        <ShapeContextMenu
+          shape={shape}
+          screenX={ctxMenuPos.x}
+          screenY={ctxMenuPos.y}
+          pageId={pageId}
+          onClose={() => setCtxMenuPos(null)}
+          onDelete={onDelete}
+        />,
+        document.body
+      )}
+    </>
+  )
+}
 
 export function CanvasArea(s: ExportPageState) {
   const {
@@ -40,6 +662,8 @@ export function CanvasArea(s: ExportPageState) {
   // when rightTab === 'draw'. All drawing reads from sharedDrawState (set by
   // DrawPanel) so no prop-drilling or re-renders are needed.
   const drawCanvasRefs = React.useRef<Map<string, HTMLCanvasElement>>(new Map())
+  // 初始化过的页面 — re-render 触发 ref 回调时跳过，防止 ctx/transform 被覆盖
+  const mountedPages  = React.useRef<Set<string>>(new Set())
   const drawDrawing    = React.useRef(false)
   const drawPoints     = React.useRef<{ x: number; y: number; t: number; pressure: number }[]>([])
   const drawLastVel    = React.useRef(0)
@@ -50,27 +674,59 @@ export function CanvasArea(s: ExportPageState) {
   const drawHistory    = React.useRef<Map<string, ImageData[]>>(new Map())
   const [drawCanUndo, setDrawCanUndo] = React.useState(false)
 
-  // ── Shape drawing refs ────────────────────────────────────────────────────
-  // shapeOrigin: pointer-down position in canvas coords
-  const shapeOrigin    = React.useRef<{ x: number; y: number } | null>(null)
-  // bezierPts: accumulated click points for bezier mode
-  const bezierPts      = React.useRef<{ x: number; y: number }[]>([])
-  // snapshot before shape drag starts (for live preview overdraw)
-  const shapeBase      = React.useRef<ImageData | null>(null)
+  // ── 笔刷 rAF 节流（SVG overlay 统一处理，同一时刻只有一页在画）────────────
+  const brushRafId      = React.useRef(0)
+  const brushPendingPts = React.useRef<{ x: number; y: number; t: number; pressure: number }[]>([])
 
-  // 订阅当前活跃页 manager 的 undo 状态变更
+  // ── Shape gesture state（合并为单一 ref，避免 stale state）────────────────
+  const shapeGesture = React.useRef<{
+    mode: 'none' | 'drawing' | 'moving'
+    origin: { x: number; y: number } | null
+    dragStart: { x: number; y: number } | null
+    movingId: string | null
+    bezierPts: { x: number; y: number }[]
+  }>({ mode: 'none', origin: null, dragStart: null, movingId: null, bezierPts: [] })
+
+  // preview shape（draw 模式拖拽绘制中的实时预览）
+  const [previewShape, setPreviewShape] = React.useState<DrawnShape | null>(null)
+
+  // 每页的 shapes（单一来源，来自 manager emit）
+  const [pageShapesState, setPageShapesState] = React.useState<Map<string, DrawnShape[]>>(new Map())
+  const pageShapes = pageShapesState
+
+  // 订阅当前活跃页 manager 的事件
+  const activePageIdRef = React.useRef(activePageId)
+  activePageIdRef.current = activePageId
+
   React.useEffect(() => {
     const mgr = getDrawLayerManager(activePageId)
     const handler = (e: import('./DrawLayerManager').LayerManagerEvent) => {
       if (e.type === 'undo-state-changed') setDrawCanUndo(e.canUndo)
+      if (e.type === 'shapes-changed') {
+        setPageShapesState(prev => new Map(prev).set(activePageId, e.shapes))
+      }
     }
     mgr.on(handler)
+    // mount() は shapes-changed を emit しないので初期値をここで読む
+    setPageShapesState(prev => {
+  const next = new Map(prev)
+  pages.forEach(page => {
+    const initial = getDrawLayerManager(page.id).getShapes()
+    if (initial.length > 0) next.set(page.id, [...initial])
+  })
+  return next
+})
     return () => mgr.off(handler)
   }, [activePageId])
 
   // rightTab tells us whether draw mode is active
   const { rightTab } = s
   const isDrawMode = rightTab === 'draw'
+
+  // 非 draw モードで選択中の shape id（Delete キー用）
+  const [selectedNonDrawShapeId, setSelectedNonDrawShapeId] = React.useState<string | null>(null)
+  const selectedNonDrawShapeIdRef = React.useRef<string | null>(null)
+  selectedNonDrawShapeIdRef.current = selectedNonDrawShapeId
 
   // Track whether a real drag (>5px movement) happened, to distinguish click from drag
   const didDragRef = React.useRef(false)
@@ -335,229 +991,56 @@ export function CanvasArea(s: ExportPageState) {
     ? { top: toolbarDragPos.y, left: toolbarDragPos.x, transform: 'none', transition: 'none' }
     : { ...anchorStyles[toolbarAnchor as Anchor], transition: 'top 0.35s cubic-bezier(0.34,1.56,0.64,1), bottom 0.35s cubic-bezier(0.34,1.56,0.64,1), left 0.35s cubic-bezier(0.34,1.56,0.64,1), right 0.35s cubic-bezier(0.34,1.56,0.64,1), transform 0.35s cubic-bezier(0.34,1.56,0.64,1)' }
 
-  // ── Draw overlay: bind/unbind pointer events when pages or draw mode changes ─
-  React.useEffect(() => {
-    if (!isDrawMode) return
+  // ── Draw canvas: mount + 事件绑定 ──────────────────────────────────────────
+  const isDrawModeRef = React.useRef(isDrawMode)
+  React.useEffect(() => { isDrawModeRef.current = isDrawMode }, [isDrawMode])
 
-const getPos = (e: PointerEvent, canvas: HTMLCanvasElement) => {
-  const rect = canvas.getBoundingClientRect()
-  const dpr = window.devicePixelRatio || 1
-  // canvas 的逻辑尺寸 = 物理像素 / dpr
-  // getBoundingClientRect 返回的是 CSS transform(scale) 后的屏幕尺寸
-  // 所以要用「逻辑尺寸 / 屏幕尺寸」把鼠标偏移映射回 canvas 坐标系
-  const scaleX = (canvas.width / dpr) / rect.width
-  const scaleY = (canvas.height / dpr) / rect.height
-  return {
-    x: (e.clientX - rect.left) * scaleX,
-    y: (e.clientY - rect.top)  * scaleY,
-    pressure: e.pointerType === 'pen' ? Math.max(0.1, e.pressure) : 0.5,
-    t: Date.now(),
-  }
-}
-   
-    // Actual rendering is handled entirely by DrawLayerManager which calls
-    // universalRenderStroke from DrawPanel. That covers all new brush types
-    // (wetbrush, softblur, chalk, ink) and hardness (sharedDrawState.hardness).
+  // canvasZoom ref — event callbacks 闭包里用，不触发 re-mount
+  const canvasZoomRef = React.useRef(canvasZoom)
+  React.useEffect(() => { canvasZoomRef.current = canvasZoom }, [canvasZoom])
 
-    const cleanups: (() => void)[] = []
+  // ── 笔刷事件已迁移至 SVG overlay 的 onPointer 回调统一处理 ──────────────────
+  // canvas 只负责渲染（pointerEvents: none），不再绑定任何事件。
 
-    drawCanvasRefs.current.forEach((canvas, pageId) => {
-      // ── rAF 节流：pointermove 只累积点，渲染在帧边界统一执行 ──────────────
-      // 避免 120Hz 设备每帧触发多次 continueStroke + composite 导致掉帧
-      let rafId = 0
-      const pendingPts: { x: number; y: number; t: number; pressure: number }[] = []
-      // SAI-style input stabilizer: exponential moving average on raw pointer coords
-      let smoothX = 0, smoothY = 0, hasSmooth = false
-
-      const saveHistory = () => {
-        const ctx  = canvas.getContext('2d')!
-        const snap = ctx.getImageData(0, 0, canvas.width, canvas.height)
-        const hist = drawHistory.current.get(pageId) ?? []
-        drawHistory.current.set(pageId, [...hist.slice(-19), snap])
-        setDrawCanUndo(true)
-      }
-
-      const onDown = (e: PointerEvent) => {
-        if (e.pointerType === 'mouse' && e.button !== 0) return
-        if (e.pointerType === 'touch' && !e.isPrimary) return
-        e.preventDefault(); e.stopPropagation()
-        canvas.setPointerCapture(e.pointerId)
-        const pt = getPos(e, canvas)
-
-        // ── Shape mode ──────────────────────────────────────────────────────
-        console.log('[CanvasArea onDown] sharedDrawState.shapeType =', sharedDrawState.shapeType)
-        if (sharedDrawState.shapeType) {
-          const ctx = canvas.getContext('2d')!
-          if (sharedDrawState.shapeType === 'bezier') {
-            // double-click finishes bezier
-            if (e.detail === 2) {
-              if (bezierPts.current.length >= 2) {
-                saveHistory()
-                renderShape(ctx, sharedDrawState, 0, 0, 0, 0, bezierPts.current)
-                getDrawLayerManager(pageId).commitImageData(
-                  ctx.getImageData(0, 0, canvas.width, canvas.height)
-                )
-              }
-              bezierPts.current = []
-              shapeBase.current = null
-              return
-            }
-            // first click: capture base snapshot
-            if (bezierPts.current.length === 0) {
-              shapeBase.current = ctx.getImageData(0, 0, canvas.width, canvas.height)
-            }
-            bezierPts.current.push({ x: pt.x, y: pt.y })
-            // redraw preview with new point
-            if (shapeBase.current) ctx.putImageData(shapeBase.current, 0, 0)
-            renderShape(ctx, sharedDrawState, 0, 0, 0, 0, bezierPts.current)
-            return
-          }
-          // Drag shapes: capture start position + base snapshot
-          shapeOrigin.current = { x: pt.x, y: pt.y }
-          shapeBase.current   = ctx.getImageData(0, 0, canvas.width, canvas.height)
-          drawDrawing.current = true
-          return
-        }
-
-        // ── Freehand brush mode ──────────────────────────────────────────────
-        drawDrawing.current = true
-        drawLastVel.current = 0
-        drawPoints.current  = [pt, pt]
-        smoothX = pt.x; smoothY = pt.y; hasSmooth = true
-        const mgr = getDrawLayerManager(pageId)
-        mgr.startStroke(pt)
-        setDrawCanUndo(true)
-      }
-
-      const onMove = (e: PointerEvent) => {
-        if (!drawDrawing.current) return
-        if (e.pointerType === 'touch' && !e.isPrimary) return
-        e.preventDefault(); e.stopPropagation()
-
-        // ── Shape drag preview ───────────────────────────────────────────────
-        if (shapeOrigin.current && sharedDrawState.shapeType && sharedDrawState.shapeType !== 'bezier') {
-          if (!shapeBase.current) return
-          const ctx = canvas.getContext('2d')!
-          const cur = getPos(e, canvas)
-          let x0 = shapeOrigin.current.x, y0 = shapeOrigin.current.y
-          let x1 = cur.x, y1 = cur.y
-          // Shift-constrain: square / circle / 45° line
-          if (e.shiftKey) {
-            const dx = x1 - x0, dy = y1 - y0
-            const st = sharedDrawState.shapeType
-            if (st === 'line' || st === 'arrow') {
-              const angle = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4)
-              const len   = Math.sqrt(dx * dx + dy * dy)
-              x1 = x0 + Math.cos(angle) * len
-              y1 = y0 + Math.sin(angle) * len
-            } else {
-              const side = Math.min(Math.abs(dx), Math.abs(dy))
-              x1 = x0 + Math.sign(dx) * side
-              y1 = y0 + Math.sign(dy) * side
-            }
-          }
-          ctx.putImageData(shapeBase.current, 0, 0)
-          renderShape(ctx, sharedDrawState, x0, y0, x1, y1)
-          return
-        }
-
-        // ── Freehand brush ───────────────────────────────────────────────────
-        const evts: PointerEvent[] = typeof e.getCoalescedEvents === 'function'
-          ? e.getCoalescedEvents() : [e]
-        // SAI stabilizer: EMA on input coords — pen gets strong smoothing (0.18),
-        // other brushes get lighter touch (0.5 = barely filtered) for responsiveness.
-        // Lower factor = more smoothing but more lag; 0.18 matches SAI "S1" level.
-const newPts = evts.map(re => getPos(re, canvas))
-        for (const p of newPts) drawPoints.current.push(p)
-
-        // 累积到 pendingPts，等 rAF 统一 flush，避免每个 pointermove 都触发 composite
-        pendingPts.push(...newPts)
-        if (!rafId) {
-          rafId = requestAnimationFrame(() => {
-            rafId = 0
-            if (!pendingPts.length) return
-            getDrawLayerManager(pageId).continueStroke(pendingPts.splice(0))
-          })
-        }
-      }
-
-      const onUp = (e: PointerEvent) => {
-        if (e.pointerType === 'touch' && !e.isPrimary) return
-        e.preventDefault()
-
-        // ── Commit shape ─────────────────────────────────────────────────────
-        if (shapeOrigin.current && sharedDrawState.shapeType && sharedDrawState.shapeType !== 'bezier') {
-          if (!drawDrawing.current || !shapeOrigin.current) return
-          drawDrawing.current = false
-          const ctx = canvas.getContext('2d')!
-          const cur = getPos(e, canvas)
-          let x0 = shapeOrigin.current.x, y0 = shapeOrigin.current.y
-          let x1 = cur.x, y1 = cur.y
-          if (e.shiftKey) {
-            const dx = x1 - x0, dy = y1 - y0
-            const st = sharedDrawState.shapeType
-            if (st === 'line' || st === 'arrow') {
-              const angle = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4)
-              const len   = Math.sqrt(dx * dx + dy * dy)
-              x1 = x0 + Math.cos(angle) * len
-              y1 = y0 + Math.sin(angle) * len
-            } else {
-              const side = Math.min(Math.abs(dx), Math.abs(dy))
-              x1 = x0 + Math.sign(dx) * side
-              y1 = y0 + Math.sign(dy) * side
-            }
-          }
-          if (shapeBase.current) ctx.putImageData(shapeBase.current, 0, 0)
-          saveHistory()
-          renderShape(ctx, sharedDrawState, x0, y0, x1, y1)
-          getDrawLayerManager(pageId).commitImageData(
-            ctx.getImageData(0, 0, canvas.width, canvas.height)
-          )
-          shapeOrigin.current = null
-          shapeBase.current   = null
-          return
-        }
-
-        // ── End freehand brush ────────────────────────────────────────────────
-        if (!drawDrawing.current) return
-        // 取消挂起的 rAF，把剩余点同步 flush，保证抬笔时笔迹完整
-        cancelAnimationFrame(rafId); rafId = 0
-        if (pendingPts.length) getDrawLayerManager(pageId).continueStroke(pendingPts.splice(0))
-        drawDrawing.current = false
-        drawPoints.current  = []
-        drawLastVel.current = 0
-        hasSmooth = false
-        getDrawLayerManager(pageId).endStroke()
-      }
-
-      canvas.addEventListener('pointerdown',   onDown, { passive: false })
-      canvas.addEventListener('pointermove',   onMove, { passive: false })
-      canvas.addEventListener('pointerup',     onUp,   { passive: false })
-      canvas.addEventListener('pointercancel', onUp,   { passive: false })
-      cleanups.push(() => {
-        canvas.removeEventListener('pointerdown',   onDown)
-        canvas.removeEventListener('pointermove',   onMove)
-        canvas.removeEventListener('pointerup',     onUp)
-        canvas.removeEventListener('pointercancel', onUp)
-      })
-    })
-
-    return () => cleanups.forEach(fn => fn())
-  }, [isDrawMode, pages])
-
-  // ── Draw overlay undo Ctrl+Z / Cmd+Z ─────────────────────────────────────
+  // ── Draw overlay keyboard shortcuts ──────────────────────────────────────
   React.useEffect(() => {
     if (!isDrawMode) return
     const onKey = (e: KeyboardEvent) => {
+      const mgr = getDrawLayerManager(activePageId)
       if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
-        e.preventDefault()
-        const mgr = getDrawLayerManager(activePageId)
-        mgr.undo()
+        e.preventDefault(); mgr.undo(); return
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && mgr.getSelectedShapeId()) {
+        e.preventDefault(); mgr.deleteSelectedShape(); return
+      }
+      if (e.key === 'Escape') {
+        mgr.selectShape(null)
+        // 取消 bezier 绘制中
+        shapeGesture.current = { mode: 'none', origin: null, dragStart: null, movingId: null, bezierPts: [] }
+        setPreviewShape(null)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [isDrawMode, activePageId])
+
+  // 非 draw モードでも選択 shape を Delete キーで消せる
+  React.useEffect(() => {
+    if (isDrawMode) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Delete' && e.key !== 'Backspace') return
+      const id = selectedNonDrawShapeIdRef.current
+      if (!id) return
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable) return
+      e.preventDefault()
+      getDrawLayerManager(activePageId).deleteShape(id)
+      setSelectedNonDrawShapeId(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isDrawMode, activePageId])
+
 
   return (
     <div
@@ -593,6 +1076,8 @@ const newPts = evts.map(re => getPos(re, canvas))
         e.preventDefault()
       }}
       onMouseMove={e => {
+        // draw 模式下 canvas overlay 捕获了所有 pointer 事件，panning 不应响应
+        if (isDrawMode) return
         if (!isPanningRef.current) return
         const wrap = canvasWrapRef.current
         const W = wrap ? wrap.offsetWidth : 800
@@ -611,6 +1096,7 @@ const newPts = evts.map(re => getPos(re, canvas))
       {/* CSS for canvas/blocks */}
       <style>{`
         .rnd-canvas { background: transparent; }
+        /* Rnd 内部 wrapper 强制 overflow visible，让删除按钮不被裁剪 */
         .rnd-block {
           border-radius: 4px; overflow: visible !important; will-change: transform;
           transition: filter 0.24s cubic-bezier(0.34,1.2,0.64,1);
@@ -1092,8 +1578,10 @@ const newPts = evts.map(re => getPos(re, canvas))
                   onClick={(e) => {
                     const t = e.target as HTMLElement
                     if (t.closest?.('.rnd-block') || t.closest?.('[contenteditable="true"]') || t.closest?.('.inline-editing') || t.closest?.('.no-drag')) return
+                    if ((e.nativeEvent as any).__shapeSelected) { delete (e.nativeEvent as any).__shapeSelected; return }
                     setActivePageId(page.id); setEditingBlockId(null); setSelectedBlockId(null); setFontPickerOpen(false); setColorPickerOpen(false)
                     ;(s as any).setSelectedEmojiId?.(null)
+                    setSelectedNonDrawShapeId(null)
                   }}
                   onDragOver={e => {
                     const hasImage = Array.from(e.dataTransfer.items).some(item =>
@@ -1163,34 +1651,309 @@ const newPts = evts.map(re => getPos(re, canvas))
                     </div>
                   )}
 
+                  {/* ── Shapes SVG Layer（draw/非draw 模式统一渲染）────────────────────
+                      shapes 始终用 SVG 渲染，永远不在 canvas composite 里画。
+                      draw 模式下：此 SVG 接受 pointer 事件（绘制/移动/选中）
+                      非 draw 模式下：shapes 通过 Rnd 包裹，可自由拖动/缩放
+                  ── */}
+                  {isDrawMode ? (
+                    // ── Draw 模式：SVG overlay 统一接管笔刷 + 图形的全部 pointer 事件 ──
+                    // canvas 永远 pointerEvents:none，事件入口唯一，无争抢问题。
+                    <svg
+                      style={{
+                        position: 'absolute', inset: 0, width: '100%', height: '100%',
+                        zIndex: 960, overflow: 'visible',
+                        cursor: sharedDrawState.shapeType ? 'crosshair'
+                          : sharedDrawState.brushType === 'eraser' ? 'cell' : 'crosshair',
+                        touchAction: 'none',
+                      }}
+                      onPointerDown={e => {
+                        if (e.pointerType === 'mouse' && e.button !== 0) return
+                        if (e.pointerType === 'touch' && !e.isPrimary) return
+                        e.preventDefault(); e.stopPropagation()
+                        ;(e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId)
+
+                        const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect()
+                        const x = (e.clientX - rect.left) / canvasZoom
+                        const y = (e.clientY - rect.top)  / canvasZoom
+
+                        // ── 笔刷模式 ──────────────────────────────────────────
+                        if (!sharedDrawState.shapeType) {
+                          const mgr = getDrawLayerManager(page.id)
+                          const pt = { x, y, pressure: e.pointerType === 'pen' ? Math.max(0.1, e.pressure) : 0.5, t: Date.now() }
+                          drawDrawing.current = true
+                          brushPendingPts.current = []
+                          mgr.startStroke(pt)
+                          setDrawCanUndo(true)
+                          return
+                        }
+
+                        // ── 图形模式 ──────────────────────────────────────────
+                        const mgr = getDrawLayerManager(page.id)
+                        const g   = shapeGesture.current
+
+                        const hit = mgr.hitTestShape(x, y)
+                        if (hit) {
+                          if (hit.id === mgr.getSelectedShapeId()) {
+                            g.mode = 'moving'; g.dragStart = { x, y }; g.movingId = hit.id
+                          } else {
+                            mgr.selectShape(hit.id)
+                          }
+                          return
+                        }
+                        mgr.selectShape(null)
+
+                        if (sharedDrawState.shapeType === 'bezier') {
+                          if (e.detail === 2) {
+                            if (g.bezierPts.length >= 2) {
+                              const { color, alpha, shapeFill, shapeStroke, shapeSides } = sharedDrawState
+                              mgr.addShape({ id: crypto.randomUUID(), shapeType: 'bezier', x0: 0, y0: 0, x1: 0, y1: 0, bezierPts: [...g.bezierPts], color, alpha, shapeFill, shapeStroke, shapeSides })
+                            }
+                            g.bezierPts = []; setPreviewShape(null); return
+                          }
+                          g.bezierPts.push({ x, y })
+                          const { color, alpha, shapeFill, shapeStroke, shapeSides } = sharedDrawState
+                          setPreviewShape({ id: '__preview__', shapeType: 'bezier', x0: 0, y0: 0, x1: 0, y1: 0, bezierPts: [...g.bezierPts], color, alpha, shapeFill, shapeStroke, shapeSides })
+                          return
+                        }
+                        g.mode = 'drawing'; g.origin = { x, y }
+                      }}
+                      onPointerMove={e => {
+                        if (e.pointerType === 'touch' && !e.isPrimary) return
+                        e.preventDefault(); e.stopPropagation()
+
+                        const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect()
+                        const x = (e.clientX - rect.left) / canvasZoom
+                        const y = (e.clientY - rect.top)  / canvasZoom
+
+                        // ── 笔刷模式 ──────────────────────────────────────────
+                        if (!sharedDrawState.shapeType) {
+                          if (!drawDrawing.current) return
+                          const evts: PointerEvent[] = typeof (e.nativeEvent as any).getCoalescedEvents === 'function'
+                            ? (e.nativeEvent as any).getCoalescedEvents() : [e.nativeEvent]
+                          const newPts = evts.map((re: PointerEvent) => {
+                            const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect()
+                            return {
+                              x: (re.clientX - r.left) / canvasZoom,
+                              y: (re.clientY - r.top)  / canvasZoom,
+                              pressure: re.pointerType === 'pen' ? Math.max(0.1, re.pressure) : 0.5,
+                              t: Date.now(),
+                            }
+                          })
+                          brushPendingPts.current.push(...newPts)
+                          if (!brushRafId.current) {
+                            brushRafId.current = requestAnimationFrame(() => {
+                              brushRafId.current = 0
+                              const pts = brushPendingPts.current.splice(0)
+                              if (pts.length) getDrawLayerManager(page.id).continueStroke(pts)
+                            })
+                          }
+                          return
+                        }
+
+                        // ── 图形模式 ──────────────────────────────────────────
+                        const g = shapeGesture.current
+                        if (g.mode === 'moving' && g.dragStart && g.movingId) {
+                          const dx = x - g.dragStart.x, dy = y - g.dragStart.y
+                          const mgr = getDrawLayerManager(page.id)
+                          const s = mgr.getShapes().find(sh => sh.id === g.movingId)
+                          if (s) setPreviewShape({ ...s, x0: s.x0 + dx, y0: s.y0 + dy, x1: s.x1 + dx, y1: s.y1 + dy })
+                          return
+                        }
+                        if (g.mode === 'drawing' && g.origin) {
+                          let x0 = g.origin.x, y0 = g.origin.y, x1 = x, y1 = y
+                          if (e.shiftKey) {
+                            const dx = x1-x0, dy = y1-y0, st = sharedDrawState.shapeType
+                            if (st === 'line' || st === 'arrow') {
+                              const angle = Math.round(Math.atan2(dy,dx)/(Math.PI/4))*(Math.PI/4)
+                              const len = Math.sqrt(dx*dx+dy*dy)
+                              x1 = x0+Math.cos(angle)*len; y1 = y0+Math.sin(angle)*len
+                            } else {
+                              const side = Math.min(Math.abs(dx),Math.abs(dy))
+                              x1 = x0+Math.sign(dx)*side; y1 = y0+Math.sign(dy)*side
+                            }
+                          }
+                          const { color, alpha, shapeFill, shapeStroke, shapeSides, shapeType } = sharedDrawState
+                          setPreviewShape({ id: '__preview__', shapeType: shapeType!, x0, y0, x1, y1, color, alpha, shapeFill, shapeStroke, shapeSides })
+                        }
+                      }}
+                      onPointerUp={e => {
+                        if (e.pointerType === 'touch' && !e.isPrimary) return
+                        e.preventDefault()
+
+                        const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect()
+                        const x = (e.clientX - rect.left) / canvasZoom
+                        const y = (e.clientY - rect.top)  / canvasZoom
+
+                        // ── 笔刷模式 ──────────────────────────────────────────
+                        if (!sharedDrawState.shapeType) {
+                          if (!drawDrawing.current) return
+                          cancelAnimationFrame(brushRafId.current); brushRafId.current = 0
+                          const pts = brushPendingPts.current.splice(0)
+                          const mgr = getDrawLayerManager(page.id)
+                          if (pts.length) mgr.continueStroke(pts)
+                          drawDrawing.current = false
+                          mgr.endStroke()
+                          return
+                        }
+
+                        // ── 图形模式 ──────────────────────────────────────────
+                        const g   = shapeGesture.current
+                        const mgr = getDrawLayerManager(page.id)
+
+                        if (g.mode === 'moving' && g.dragStart && g.movingId) {
+                          const dx = x - g.dragStart.x, dy = y - g.dragStart.y
+                          if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+                            const s = mgr.getShapes().find(sh => sh.id === g.movingId)
+                            if (s) mgr.patchShape(g.movingId, { x0: s.x0 + dx, y0: s.y0 + dy, x1: s.x1 + dx, y1: s.y1 + dy })
+                          }
+                          g.mode = 'none'; g.dragStart = null; g.movingId = null
+                          setPreviewShape(null); return
+                        }
+
+                        if (g.mode === 'drawing' && g.origin) {
+                          let x0 = g.origin.x, y0 = g.origin.y, x1 = x, y1 = y
+                          g.mode = 'none'; g.origin = null
+                          if (e.shiftKey) {
+                            const dx = x1-x0, dy = y1-y0, st = sharedDrawState.shapeType
+                            if (st === 'line' || st === 'arrow') {
+                              const angle = Math.round(Math.atan2(dy,dx)/(Math.PI/4))*(Math.PI/4)
+                              const len = Math.sqrt(dx*dx+dy*dy)
+                              x1 = x0+Math.cos(angle)*len; y1 = y0+Math.sin(angle)*len
+                            } else {
+                              const side = Math.min(Math.abs(dx),Math.abs(dy))
+                              x1 = x0+Math.sign(dx)*side; y1 = y0+Math.sign(dy)*side
+                            }
+                          }
+                          setPreviewShape(null)
+                          if (Math.abs(x1-x0) > 4 || Math.abs(y1-y0) > 4) {
+                            const { color, alpha, shapeFill, shapeStroke, shapeSides, shapeType } = sharedDrawState
+                            mgr.addShape({ id: crypto.randomUUID(), shapeType: shapeType!, x0, y0, x1, y1, color, alpha, shapeFill, shapeStroke, shapeSides })
+                          }
+                        }
+                      }}
+                      onPointerCancel={() => {
+                        cancelAnimationFrame(brushRafId.current); brushRafId.current = 0
+                        brushPendingPts.current = []
+                        if (drawDrawing.current) {
+                          drawDrawing.current = false
+                          getDrawLayerManager(page.id).endStroke()
+                        }
+                        shapeGesture.current = { mode: 'none', origin: null, dragStart: null, movingId: null, bezierPts: [] }
+                        setPreviewShape(null)
+                      }}
+                    >
+                      {/* 已保存的 shapes */}
+                      {(pageShapes.get(page.id) ?? []).map(shape => {
+                        const isSel = shape.id === getDrawLayerManager(page.id).getSelectedShapeId()
+                        // moving 中：用 previewShape 替代显示
+                        const displayShape = (isSel && previewShape && shapeGesture.current.mode === 'moving')
+                          ? previewShape : shape
+                        return (
+                          <DrawModeShapeWrapper
+                            key={shape.id}
+                            shape={displayShape}
+                            isSel={isSel}
+                            pageId={page.id}
+                            onDelete={() => getDrawLayerManager(page.id).deleteShape(shape.id)}
+                          />
+                        )
+                      })}
+                      {/* 绘制中预览（drawing mode）*/}
+                      {previewShape && shapeGesture.current.mode === 'drawing' && renderShapeSVG(previewShape, 0.6)}
+                      {/* bezier 预览 */}
+                      {previewShape && shapeGesture.current.mode === 'none' && previewShape.shapeType === 'bezier' && renderShapeSVG(previewShape, 0.6)}
+                    </svg>
+                  ) : (
+                    // ── 非 draw 模式：tldraw/Excalidraw 风格 SVG 原生 drag ──
+                    // 完全不用 react-rnd，pointer 事件在 SVG 内部手写，零坐标系冲突。
+                    // 架构：一个全页 SVG overlay，shapes 是其中的 <g> 元素。
+                    // drag 中用 React state 驱动 translate，drop 时一次 patchShape 持久化。
+                    (() => {
+                      const shapes = pageShapes.get(page.id) ?? []
+                      if (shapes.length === 0) return null
+                      return (
+                        <svg
+                          key={`shape-overlay-${page.id}`}
+                          style={{
+                            position: 'absolute', inset: 0,
+                            width: '100%', height: '100%',
+                            zIndex: 920, overflow: 'visible',
+                            pointerEvents: 'none',  // 子要素が個別に制御
+                          }}
+                          onPointerDown={e => {
+                            // SVG 背景クリック → 選択解除
+                            if ((e.target as SVGElement).dataset.shapeId === undefined &&
+                                !(e.target as SVGElement).closest('[data-shape-id]')) {
+                              setSelectedNonDrawShapeId(null)
+                            }
+                          }}
+                        >
+                          {shapes.map(shape => {
+                            const isSel = selectedNonDrawShapeId === shape.id
+                            const PAD   = 10
+                            const minX  = Math.min(shape.x0, shape.x1)
+                            const minY  = Math.min(shape.y0, shape.y1)
+                            const maxX  = Math.max(shape.x0, shape.x1)
+                            const maxY  = Math.max(shape.y0, shape.y1)
+
+                            // ── drag state (per-shape ref, no re-render during drag) ──
+                            // We use a single module-level ref map keyed by shape id so
+                            // pointer callbacks always see current values without stale closure.
+                            return (
+                              <NonDrawShape
+                                key={shape.id}
+                                shape={shape}
+                                isSel={isSel}
+                                PAD={PAD}
+                                minX={minX} minY={minY} maxX={maxX} maxY={maxY}
+                                canvasZoom={canvasZoom}
+                                pageId={page.id}
+                                onSelect={() => { setSelectedNonDrawShapeId(shape.id); setSelectedBlockId(null) }}
+                                onDeselect={() => setSelectedNonDrawShapeId(null)}
+                                onDelete={() => { getDrawLayerManager(page.id).deleteShape(shape.id); setSelectedNonDrawShapeId(null) }}
+                              />
+                            )
+                          })}
+                        </svg>
+                      )
+                    })()
+                  )}
+
                   {/* ── Draw overlay canvas ── */}
                   {/* Always in DOM so ref is stable; pointer-events toggled by draw mode */}
                   <canvas
-ref={el => {
-  if (el) {
-    const dpr = window.devicePixelRatio || 1
-    const targetW = contentWidth * dpr
-    const targetH = (pgHeight ?? 600) * dpr
-    // 只在尺寸真正变化时才赋值 —— 赋值会立刻清空 canvas 所有像素
-    if (el.width !== targetW || el.height !== targetH) {
-      el.width  = targetW
-      el.height = targetH
-      el.getContext('2d')!.scale(dpr, dpr)
+  ref={el => {
+    if (el) {
+      drawCanvasRefs.current.set(page.id, el)
+      const _dpr = window.devicePixelRatio || 1
+      const _pgH = pageHeight(page.aspect, contentWidth)
+      const _w   = Math.round(contentWidth * _dpr)
+      const _h   = Math.round((_pgH ?? 600) * _dpr)
+      const sizeChanged = el.width !== _w || el.height !== _h
+      const firstMount  = !mountedPages.current.has(page.id)
+      if (firstMount || sizeChanged) {
+        // 真正初始化：设置尺寸 + transform + mount
+        mountedPages.current.add(page.id)
+        if (sizeChanged) { el.width = _w; el.height = _h }
+        const _ctx = el.getContext('2d')!
+        _ctx.setTransform(1, 0, 0, 1, 0, 0)
+        _ctx.scale(_dpr, _dpr)
+        getDrawLayerManager(page.id).mount(el, _ctx)
+      }
+      // re-render 触发（尺寸未变、已初始化）：什么都不做，保护已有 ctx/transform
+    } else {
+      drawCanvasRefs.current.delete(page.id)
+      mountedPages.current.delete(page.id)
     }
-    drawCanvasRefs.current.set(page.id, el)
-    getDrawLayerManager(page.id).mount(el)
-  } else {
-    drawCanvasRefs.current.delete(page.id)
-    destroyDrawLayerManager(page.id)
-  }
-}}
+  }}
   style={{
     position: 'absolute',
     inset: 0,
     width: '100%',
     height: '100%',
     zIndex: 950,
-    pointerEvents: isDrawMode ? 'all' : 'none',
+    pointerEvents: 'none',
     touchAction: 'none',
     cursor: isDrawMode
       ? (sharedDrawState.brushType === 'eraser' ? 'cell' : 'crosshair')

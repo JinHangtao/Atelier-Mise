@@ -1,5 +1,6 @@
 'use client'
 import React, { useRef, useState, useEffect, useCallback } from 'react'
+import { getDrawLayerManager } from './DrawLayerManager'
 
 // ── Perfect-freehand outline engine (full port, MIT) ─────────────────────────
 // Source: github.com/steveruizok/perfect-freehand
@@ -1050,11 +1051,10 @@ interface DrawPanelProps {
   isZh: boolean
   addImageBlock: (dataUrl: string) => void
   canvasWidth?: number
+  activePageId: string   // 用于获取对应页面的 DrawLayerManager 单例
 }
 
-export function DrawPanel({ isZh, addImageBlock, canvasWidth = 600 }: DrawPanelProps) {
-  const canvasRef    = useRef<HTMLCanvasElement>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
+export function DrawPanel({ isZh, addImageBlock, canvasWidth = 600, activePageId }: DrawPanelProps) {
 
   const [brushType,    setBrushTypeState]   = useState<BrushType>('pen')
   const [color,        setColorState]       = useState('#1a1a1a')
@@ -1063,7 +1063,6 @@ export function DrawPanel({ isZh, addImageBlock, canvasWidth = 600 }: DrawPanelP
   const [hardness,     setHardnessState]    = useState(100)
   const [mixRate,      setMixRateState]     = useState(0)
   const [bgColor,      setBgColor]          = useState<string>('transparent')
-  const [ch]                                = useState(360)
   const [canUndo,      setCanUndo]          = useState(false)
   const [userPresets,  setUserPresets]      = useState<BrushPreset[]>(() => loadPresets())
   const [savingPreset, setSavingPreset]     = useState(false)
@@ -1079,8 +1078,6 @@ export function DrawPanel({ isZh, addImageBlock, canvasWidth = 600 }: DrawPanelP
   const alphaRef       = useRef(1)
   const hardnessRef    = useRef(100)
   const mixRateRef     = useRef(0)
-  const cwRef          = useRef(560)
-  const chRef          = useRef(360)
   const shapeTypeRef   = useRef<ShapeType | null>(null)
   const shapeFillRef   = useRef(false)
   const shapeStrokeRef = useRef(2)
@@ -1092,302 +1089,38 @@ export function DrawPanel({ isZh, addImageBlock, canvasWidth = 600 }: DrawPanelP
   const setAlpha       = (v: number)    => { alphaRef.current = v;     sharedDrawState.alpha = v;     setAlphaState(v) }
   const setHardness    = (v: number)    => { hardnessRef.current = v;  sharedDrawState.hardness = v;  setHardnessState(v) }
   const setMixRate     = (v: number)    => { mixRateRef.current = v;   sharedDrawState.mixRate = v;   setMixRateState(v) }
-  const setShapeType   = (v: ShapeType | null) => { shapeTypeRef.current = v; sharedDrawState.shapeType = v; setShapeTypeState(v); if (v === null) { shapeStartRef.current = null; shapeSnapRef.current = null } }
+  const setShapeType   = (v: ShapeType | null) => { shapeTypeRef.current = v; sharedDrawState.shapeType = v; setShapeTypeState(v) }
   const setShapeFill   = (v: boolean) => { shapeFillRef.current = v;   sharedDrawState.shapeFill = v;   setShapeFillState(v) }
   const setShapeStroke = (v: number)  => { shapeStrokeRef.current = v; sharedDrawState.shapeStroke = v; setShapeStrokeState(v) }
   const setShapeSides  = (v: number)  => { shapeSidesRef.current = v;  sharedDrawState.shapeSides = v;  setShapeSidesState(v) }
 
-  const drawing        = useRef(false)
-  const points         = useRef<{ x: number; y: number; t: number; pressure: number }[]>([])
-  const renderedUpTo   = useRef(0)
-  const lastVel        = useRef(0)
-  const distAcc        = useRef(0)
-  const history        = useRef<ImageData[]>([])
-  const ctxRef         = useRef<CanvasRenderingContext2D | null>(null)
-  const rafRef         = useRef<number>(0)
-  const smearSnapRef   = useRef<HTMLCanvasElement | null>(null)
-  const shapeStartRef  = useRef<{ x: number; y: number } | null>(null)
-  const shapeSnapRef   = useRef<ImageData | null>(null)
-
   const allPresets = [...BUILTIN_PRESETS, ...userPresets]
 
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const ro = new ResizeObserver(entries => {
-      const w = Math.floor(entries[0].contentRect.width)
-      if (w > 0) cwRef.current = w
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    const ctx = ctxRef.current ?? canvas?.getContext('2d') ?? null
-    if (!ctx || !canvas) return
-    if (bgColor !== 'transparent') {
-      const dpr = window.devicePixelRatio || 1
-      ctx.save()
-      ctx.globalCompositeOperation = 'destination-over'
-      ctx.fillStyle = bgColor
-      ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr)
-      ctx.restore()
-    }
-  }, [bgColor])
-
-  const getPos = (e: PointerEvent) => {
-    const canvas = canvasRef.current!
-    const rect = canvas.getBoundingClientRect()
-    // CSS 坐标 → canvas 逻辑坐标（修复放大后笔触偏移问题）
-    // canvas.width/height 是物理像素，除以 dpr 还原逻辑尺寸，再除以 CSS 渲染尺寸得到缩放比
-    const dpr = window.devicePixelRatio || 1
-    const scaleX = (canvas.width / dpr) / rect.width
-    const scaleY = (canvas.height / dpr) / rect.height
-    const x = (e.clientX - rect.left) * scaleX
-    const y = (e.clientY - rect.top)  * scaleY
-    return {
-      x, y,
-      pressure: e.pointerType === 'pen' ? Math.max(0.1, e.pressure) : 0.5,
-      t: Date.now(),
-    }
-  }
-
-  const saveHistory = () => {
-    const canvas = canvasRef.current
-    const ctx = ctxRef.current ?? canvas?.getContext('2d') ?? null
-    if (!ctx || !canvas) return
-    // getImageData 必须用物理像素尺寸
-    const snap = ctx.getImageData(0, 0, canvas.width, canvas.height)
-    history.current = [...history.current.slice(-19), snap]
-    setCanUndo(true)
-  }
-
+  // ── undo / clear: 全部委托给 DrawLayerManager ─────────────────────────────
   const undo = useCallback(() => {
-    const canvas = canvasRef.current
-    const ctx = ctxRef.current ?? canvas?.getContext('2d') ?? null
-    if (!ctx || !canvas || history.current.length === 0) return
-    const prev = history.current[history.current.length - 2]
-    if (prev) {
-      ctx.putImageData(prev, 0, 0)
-      history.current = history.current.slice(0, -1)
-    } else {
-      // clearRect 在 scale(dpr,dpr) 的 ctx 里用逻辑尺寸
-      const dpr = window.devicePixelRatio || 1
-      ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr)
-      history.current = []
-      setCanUndo(false)
-    }
-  }, [])
+    const mgr = getDrawLayerManager(activePageId)
+    mgr.undo()
+    setCanUndo(
+      mgr.getLayers().some(() => true) // undo 후 canUndo 상태 갱신은 manager 이벤트로 처리
+    )
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePageId])
 
   const clearCanvas = useCallback(() => {
-    const canvas = canvasRef.current
-    const ctx = ctxRef.current ?? canvas?.getContext('2d') ?? null
-    if (!ctx || !canvas) return
-    saveHistory()
-    const dpr = window.devicePixelRatio || 1
-    ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr)
-  }, [])
+    getDrawLayerManager(activePageId).clearActiveLayer()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePageId])
 
-  const renderStroke = (pts: { x: number; y: number; t: number; pressure: number }[]) => {
-    const ctx = ctxRef.current
-    if (!ctx || pts.length < 2) return
-    const brush = BRUSHES.find(b => b.type === brushTypeRef.current)!
-    const state: DrawState = {
-      brushType: brushTypeRef.current, color: colorRef.current,
-      size: sizeRef.current, alpha: alphaRef.current,
-      hardness: hardnessRef.current, mixRate: mixRateRef.current,
-      shapeType: shapeTypeRef.current, shapeFill: shapeFillRef.current,
-      shapeStroke: shapeStrokeRef.current, shapeSides: shapeSidesRef.current,
-    }
-    universalRenderStroke(ctx, pts, state, brush, lastVel, distAcc, smearSnapRef.current ?? undefined)
-  }
-
-  const penSnapRef     = useRef<ImageData | null>(null)
-
+  // ── undo 상태 동기화 ────────────────────────────────────────────────────────
   useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    // ── HiDPI 修复：按 devicePixelRatio 缩放 canvas 物理像素 ──────────────────
-    // canvas 的 CSS 尺寸保持不变（width:100%），物理像素乘以 DPR，避免 Retina 模糊毛边
-    const dpr = window.devicePixelRatio || 1
-    const logicalW = 560
-    const logicalH = 360
-    canvas.width  = logicalW * dpr
-    canvas.height = logicalH * dpr
-    cwRef.current  = logicalW * dpr
-    chRef.current  = logicalH * dpr
-
-    const ctx = canvas.getContext('2d', { desynchronized: true }) as CanvasRenderingContext2D
-    ctx.scale(dpr, dpr)
-    ctxRef.current = ctx
-
-    let pendingFlush = false
-
-    const flushStroke = () => {
-      rafRef.current = 0; pendingFlush = false
-      if (!drawing.current || points.current.length < 2) return
-
-      // pen：快照还原 + 整体重绘，消除增量 fill 路径叠加毛边
-      if (brushTypeRef.current === 'pen') {
-        if (penSnapRef.current) ctx.putImageData(penSnapRef.current, 0, 0)
-        renderStroke(points.current)
-        renderedUpTo.current = points.current.length
-        return
-      }
-
-      const from = Math.max(0, renderedUpTo.current - 3)
-      renderStroke(points.current.slice(from))
-      renderedUpTo.current = points.current.length
+    const mgr = getDrawLayerManager(activePageId)
+    const onEvent = (e: { type: string; canUndo?: boolean }) => {
+      if (e.type === 'undo-state-changed') setCanUndo(e.canUndo ?? false)
     }
-
-    const scheduleFlush = () => {
-      if (pendingFlush) return
-      pendingFlush = true
-      rafRef.current = requestAnimationFrame(flushStroke)
-    }
-
-    const getState = (): DrawState => ({
-      brushType: brushTypeRef.current, color: colorRef.current,
-      size: sizeRef.current, alpha: alphaRef.current,
-      hardness: hardnessRef.current, mixRate: mixRateRef.current,
-      shapeType: shapeTypeRef.current, shapeFill: shapeFillRef.current,
-      shapeStroke: shapeStrokeRef.current, shapeSides: shapeSidesRef.current,
-    })
-
-    const onDown = (e: PointerEvent) => {
-      if (e.pointerType === 'mouse' && e.button !== 0) return
-      if (e.pointerType === 'touch' && !e.isPrimary) return
-      e.preventDefault(); e.stopPropagation()
-      canvas.setPointerCapture(e.pointerId)
-      saveHistory()
-      drawing.current = true
-      lastVel.current = 0; distAcc.current = 0; renderedUpTo.current = 0
-
-      const pt = getPos(e)
-
-      console.log('[DrawPanel] onDown shapeTypeRef=', shapeTypeRef.current, 'brushType=', brushTypeRef.current)
-
-      if (shapeTypeRef.current !== null) {
-        console.log('[DrawPanel] → 走形状分支')
-        shapeStartRef.current = { x: pt.x, y: pt.y }
-        shapeSnapRef.current  = ctx.getImageData(0, 0, canvas.width, canvas.height)
-        return
-      }
-
-      console.log('[DrawPanel] → 走笔刷分支')
-
-      // pen：保存笔画开始前快照
-      if (brushTypeRef.current === 'pen') {
-        penSnapRef.current = ctx.getImageData(0, 0, canvas.width, canvas.height)
-      } else {
-        penSnapRef.current = null
-      }
-
-      if (brushTypeRef.current === 'smear') {
-        if (!smearSnapRef.current) smearSnapRef.current = document.createElement('canvas')
-        smearSnapRef.current.width  = canvas.width
-        smearSnapRef.current.height = canvas.height
-        syncSmearCanvas(ctx, smearSnapRef.current)
-      }
-
-      points.current = [pt, pt]
-      renderStroke([pt, pt])
-      renderedUpTo.current = 2
-    }
-
-    const onMove = (e: PointerEvent) => {
-      if (!drawing.current) return
-      if (e.pointerType === 'touch' && !e.isPrimary) return
-      e.preventDefault(); e.stopPropagation()
-
-      if (shapeTypeRef.current && shapeStartRef.current && shapeSnapRef.current) {
-        const pt = getPos(e)
-        ctx.putImageData(shapeSnapRef.current, 0, 0)
-        renderShape(ctx, getState(), shapeStartRef.current.x, shapeStartRef.current.y, pt.x, pt.y)
-        return
-      }
-
-      const evts: PointerEvent[] = typeof e.getCoalescedEvents === 'function'
-        ? e.getCoalescedEvents() : [e]
-      for (const re of evts) points.current.push(getPos(re))
-      scheduleFlush()
-      if (typeof e.getPredictedEvents === 'function') {
-        const predicted = e.getPredictedEvents()
-        if (predicted.length > 0) renderStroke([...points.current.slice(-4), getPos(predicted[0])])
-      }
-    }
-
-    const onUp = (e: PointerEvent) => {
-      if (!drawing.current) return
-      e.preventDefault()
-      if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = 0 }
-
-      if (shapeTypeRef.current && shapeStartRef.current && shapeSnapRef.current) {
-        const pt = getPos(e)
-        ctx.putImageData(shapeSnapRef.current, 0, 0)
-        renderShape(ctx, getState(), shapeStartRef.current.x, shapeStartRef.current.y, pt.x, pt.y)
-        shapeStartRef.current = null; shapeSnapRef.current = null
-        drawing.current = false
-        return
-      }
-
-      // pen: final redraw with isComplete=true → applies end taper for SAI feel
-      if (brushTypeRef.current === 'pen' && penSnapRef.current) {
-        const finalPts = [...points.current]
-        const snap = penSnapRef.current
-        drawing.current = false; points.current = []
-        renderedUpTo.current = 0; lastVel.current = 0; distAcc.current = 0
-        penSnapRef.current = null
-        if (finalPts.length >= 2) {
-          ctx.putImageData(snap, 0, 0)
-          const st = getState()
-          const brush = BRUSHES.find(b => b.type === 'pen')!
-          const [fr, fg, fb] = hexToRgb(st.color)
-          const outline = pfGetStroke(
-            finalPts.map(p => ({ x: p.x, y: p.y, pressure: p.pressure })),
-            {
-              size: st.size,
-              thinning: 0.45,
-              smoothing: 0.5,
-              streamline: 0.38,
-              simulatePressure: !finalPts.some(p => p.pressure !== 0.5),
-              last: true,
-              start: { taper: Math.max(st.size * 1.5, 12), easing: (t:number) => t * t, cap: true },
-              end:   { taper: Math.max(st.size * 2, 20),   easing: (t:number) => t * t * t, cap: true },
-            }
-          )
-          const pathStr = pfSvgPath(outline)
-          if (pathStr) {
-            ctx.save()
-            ctx.globalCompositeOperation = 'source-over'
-            ctx.globalAlpha = st.alpha
-            ctx.fillStyle = `rgb(${fr},${fg},${fb})`
-            ctx.fill(new Path2D(pathStr))
-            ctx.restore()
-          }
-        }
-        return
-      }
-
-      drawing.current = false; points.current = []
-      renderedUpTo.current = 0; lastVel.current = 0; distAcc.current = 0
-      penSnapRef.current = null
-    }
-
-    canvas.addEventListener('pointerdown',   onDown, { passive: false })
-    canvas.addEventListener('pointermove',   onMove, { passive: false })
-    canvas.addEventListener('pointerup',     onUp,   { passive: false })
-    canvas.addEventListener('pointercancel', onUp,   { passive: false })
-    return () => {
-      canvas.removeEventListener('pointerdown',   onDown)
-      canvas.removeEventListener('pointermove',   onMove)
-      canvas.removeEventListener('pointerup',     onUp)
-      canvas.removeEventListener('pointercancel', onUp)
-      if (rafRef.current) cancelAnimationFrame(rafRef.current)
-    }
-  }, [])
+    mgr.on(onEvent as any)
+    return () => mgr.off(onEvent as any)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePageId])
 
   const applyPreset = useCallback((p: BrushPreset) => {
     setBrushType(p.brushType)
@@ -1414,15 +1147,19 @@ export function DrawPanel({ isZh, addImageBlock, canvasWidth = 600 }: DrawPanelP
   }, [userPresets])
 
   const exportToBlock = useCallback(() => {
-    const canvas = canvasRef.current
+    const mgr = getDrawLayerManager(activePageId)
+    const canvas = mgr.getDisplayCanvas()
     if (!canvas) return
     const ec = document.createElement('canvas')
     ec.width = canvas.width; ec.height = canvas.height
     const ectx = ec.getContext('2d')!
-    if (bgColor !== 'transparent') { ectx.fillStyle = bgColor; ectx.fillRect(0,0,ec.width,ec.height) }
+    if (bgColor !== 'transparent') {
+      ectx.fillStyle = bgColor
+      ectx.fillRect(0, 0, ec.width, ec.height)
+    }
     ectx.drawImage(canvas, 0, 0)
     addImageBlock(ec.toDataURL('image/png'))
-  }, [bgColor, addImageBlock])
+  }, [bgColor, addImageBlock, activePageId])
 
   const t = (en: string, zh: string) => isZh ? zh : en
   const currentBrush = BRUSHES.find(b => b.type === brushType)!
@@ -1629,7 +1366,7 @@ export function DrawPanel({ isZh, addImageBlock, canvasWidth = 600 }: DrawPanelP
         </div>
       </div>
 
-      {/* ── Canvas ─────────────────────────────────────────────────────────── */}
+      {/* ── Canvas controls ────────────────────────────────────────────────── */}
       <div style={{ marginBottom: '16px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
           <span style={labelStyle}>{t('Canvas','画布')}</span>
@@ -1650,19 +1387,8 @@ export function DrawPanel({ isZh, addImageBlock, canvasWidth = 600 }: DrawPanelP
             </button>
           ))}
         </div>
-        <div ref={containerRef} style={{ width: '100%', borderRadius: '10px', overflow: 'hidden', border: `1px solid ${shapeType ? 'rgba(74,144,217,0.4)' : 'rgba(26,26,26,0.1)'}`, background: bgColor==='transparent'?'repeating-conic-gradient(rgba(0,0,0,0.05) 0% 25%, transparent 0% 50%) 0 0 / 12px 12px':bgColor, cursor: 'crosshair', touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none', position: 'relative' }}
-          onContextMenu={e => e.preventDefault()}
-          onDragOver={e => e.stopPropagation()}
-          onDrop={e => e.stopPropagation()}
-          onWheel={e => { const panel=(e.currentTarget as HTMLElement).closest('[data-rp-scroll]') as HTMLElement|null; if(panel) panel.scrollTop+=e.deltaY }}>
-          {shapeType && (
-            <div style={{ position: 'absolute', top: 6, left: '50%', transform: 'translateX(-50%)', zIndex: 10, background: 'rgba(74,144,217,0.92)', color: '#fff', borderRadius: '20px', padding: '3px 12px', fontSize: '0.6rem', fontFamily: 'Inter, DM Sans, sans-serif', letterSpacing: '0.08em', pointerEvents: 'none', whiteSpace: 'nowrap' }}>
-              {isZh ? `图形模式：${SHAPES.find(s=>s.type===shapeType)?.labelZh ?? shapeType}` : `Shape mode: ${shapeType}`}
-            </div>
-          )}
-          <canvas ref={canvasRef} width={560} height={ch} style={{ display: 'block', width: '100%', height: 'auto', touchAction: 'none', userSelect: 'none' }} />
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', padding: '0 2px' }}>
+        {/* 笔刷状态指示条（替代原来的小 canvas 预览）*/}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', borderRadius: '8px', border: '1px solid rgba(26,26,26,0.07)', background: 'rgba(26,26,26,0.02)' }}>
           <div style={{ position: 'relative', width: `${Math.min(size,32)}px`, height: `${Math.min(size,32)}px`, flexShrink: 0 }}>
             {brushType === 'eraser' ? (
               <div style={{ width: '100%', height: '100%', borderRadius: '50%', border: '1.5px dashed #bbb' }} />

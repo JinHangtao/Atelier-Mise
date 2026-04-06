@@ -1,5 +1,5 @@
 'use client'
-import React, { useEffect, useState, useCallback, useRef } from 'react'
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { getDrawLayerManager } from './DrawLayerManager'
 import type { Layer } from './DrawLayerManager'
 
@@ -9,18 +9,45 @@ interface DrawLayerPanelProps {
 }
 
 export default function DrawLayerPanel({ isZh, activePageId }: DrawLayerPanelProps) {
-  const [layers, setLayers]   = useState<readonly Layer[]>([])
+  const [layers, setLayers]     = useState<readonly Layer[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
-  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingId, setEditingId]     = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [expandedId, setExpandedId]   = useState<string | null>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
+  const layersRef    = useRef<readonly Layer[]>([])
+  const activeIdRef  = useRef<string | null>(null)
 
-  const mgr = getDrawLayerManager(activePageId)
+  const mgr = useMemo(() => getDrawLayerManager(activePageId), [activePageId])
 
   const sync = useCallback(() => {
-    setLayers(mgr.getLayers())
-    setActiveId(mgr.getActiveLayerId())
+    const raw  = mgr.getLayers()
+    const seen = new Set<string>()
+    const deduped = [...raw].reverse().filter(l => {
+      if (seen.has(l.id)) return false
+      seen.add(l.id)
+      return true
+    }).reverse()
+
+    const newActiveId = mgr.getActiveLayerId()
+
+    // 只有内容真正变化时才 setState，彻底切断循环
+    const layersChanged =
+      deduped.length !== layersRef.current.length ||
+      deduped.some((l, i) => {
+        const p = layersRef.current[i]
+        return l.id !== p.id || l.name !== p.name ||
+          l.visible !== p.visible || l.locked !== p.locked || l.opacity !== p.opacity
+      })
+
+    if (layersChanged) {
+      layersRef.current = deduped
+      setLayers(deduped)
+    }
+    if (newActiveId !== activeIdRef.current) {
+      activeIdRef.current = newActiveId
+      setActiveId(newActiveId)
+    }
   }, [mgr])
 
   useEffect(() => {
@@ -49,52 +76,30 @@ export default function DrawLayerPanel({ isZh, activePageId }: DrawLayerPanelPro
     setEditingName(layer.name)
   }
 
-  // 展示顺序：顶层在上，所以 reverse
-  const displayLayers = [...layers].reverse()
-
-  const canMergeDown = (id: string) => {
-    const idx = layers.findIndex(l => l.id === id)
-    return idx > 0
-  }
+  const displayLayers  = [...layers].reverse()
+  const canMergeDown   = (id: string) => layers.findIndex(l => l.id === id) > 0
 
   return (
     <div
       onPointerDown={e => e.preventDefault()}
-      style={{
-      borderBottom: '1px solid rgba(26,26,26,0.08)',
-      fontFamily: 'Inter, DM Sans, sans-serif',
-      userSelect: 'none',
-    }}>
-      {/* ── Header ── */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '9px 12px 7px',
-        borderBottom: '1px solid rgba(26,26,26,0.06)',
-      }}>
-        <span style={{
-          fontSize: '0.6rem', letterSpacing: '0.14em', textTransform: 'uppercase',
-          color: '#a0a09c', fontFamily: 'Space Mono, monospace', fontWeight: 600,
-        }}>
+      style={{ borderBottom: '1px solid rgba(26,26,26,0.08)', fontFamily: 'Inter, DM Sans, sans-serif', userSelect: 'none' }}
+    >
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '9px 12px 7px', borderBottom: '1px solid rgba(26,26,26,0.06)' }}>
+        <span style={{ fontSize: '0.6rem', letterSpacing: '0.14em', textTransform: 'uppercase', color: '#a0a09c', fontFamily: 'Space Mono, monospace', fontWeight: 600 }}>
           {isZh ? '图层' : 'Layers'}
         </span>
         <button
           onPointerDown={e => { e.stopPropagation(); e.preventDefault() }}
           onClick={() => mgr.addLayer()}
           title={isZh ? '新建图层' : 'New layer'}
-          style={{
-            width: 22, height: 22, borderRadius: 6,
-            border: '1px solid rgba(26,26,26,0.14)',
-            background: 'transparent', cursor: 'pointer',
-            color: '#666', fontSize: '1rem', lineHeight: 1,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            transition: 'all 0.12s',
-          }}
+          style={{ width: 22, height: 22, borderRadius: 6, border: '1px solid rgba(26,26,26,0.14)', background: 'transparent', cursor: 'pointer', color: '#666', fontSize: '1rem', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.12s' }}
           onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.06)'; e.currentTarget.style.color = '#1a1a1a' }}
           onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#666' }}
         >+</button>
       </div>
 
-      {/* ── Layer list ── */}
+      {/* Layer list */}
       <div style={{ display: 'flex', flexDirection: 'column', padding: '4px 6px' }}>
         {displayLayers.map(layer => {
           const isActive   = layer.id === activeId
@@ -103,25 +108,15 @@ export default function DrawLayerPanel({ isZh, activePageId }: DrawLayerPanelPro
 
           return (
             <div key={layer.id}>
-              {/* ── Main row ── */}
               <div
                 onPointerDown={e => {
-                  e.preventDefault() // 防止面板抢走 focus，保证画布 pointer 事件不中断
+                  e.preventDefault()
                   if ((e.target as HTMLElement).closest('button,input')) return
                   e.stopPropagation()
                   mgr.setActiveLayer(layer.id)
                   setExpandedId(isActive && isExpanded ? null : layer.id)
                 }}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '5px 6px', borderRadius: 7, cursor: 'pointer',
-                  background: isActive
-                    ? 'rgba(26,26,26,0.08)'
-                    : 'transparent',
-                  border: `1px solid ${isActive ? 'rgba(26,26,26,0.14)' : 'transparent'}`,
-                  transition: 'background 0.1s, border-color 0.1s',
-                  opacity: layer.visible ? 1 : 0.45,
-                }}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 6px', borderRadius: 7, cursor: 'pointer', background: isActive ? 'rgba(26,26,26,0.08)' : 'transparent', border: `1px solid ${isActive ? 'rgba(26,26,26,0.14)' : 'transparent'}`, transition: 'background 0.1s, border-color 0.1s', opacity: layer.visible ? 1 : 0.45 }}
                 onMouseEnter={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'rgba(26,26,26,0.04)' }}
                 onMouseLeave={e => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
               >
@@ -130,29 +125,13 @@ export default function DrawLayerPanel({ isZh, activePageId }: DrawLayerPanelPro
                   onClick={e => { e.stopPropagation(); mgr.patchLayer(layer.id, { visible: !layer.visible }) }}
                   onPointerDown={e => e.preventDefault()}
                   title={isZh ? '显示/隐藏' : 'Toggle visibility'}
-                  style={{
-                    width: 24, height: 24, flexShrink: 0,
-                    border: layer.visible ? 'none' : '1px solid rgba(26,26,26,0.15)',
-                    background: layer.visible ? 'transparent' : 'rgba(26,26,26,0.06)',
-                    cursor: 'pointer', padding: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '0.78rem',
-                    color: layer.visible ? '#1a1a1a' : '#bbb',
-                    borderRadius: 5, transition: 'all 0.12s',
-                    position: 'relative',
-                  }}
+                  style={{ width: 24, height: 24, flexShrink: 0, border: layer.visible ? 'none' : '1px solid rgba(26,26,26,0.15)', background: layer.visible ? 'transparent' : 'rgba(26,26,26,0.06)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.78rem', color: layer.visible ? '#1a1a1a' : '#bbb', borderRadius: 5, transition: 'all 0.12s', position: 'relative' }}
                   onMouseEnter={e => (e.currentTarget.style.background = layer.visible ? 'rgba(26,26,26,0.07)' : 'rgba(26,26,26,0.1)')}
                   onMouseLeave={e => (e.currentTarget.style.background = layer.visible ? 'transparent' : 'rgba(26,26,26,0.06)')}
                 >
                   {layer.visible ? '◉' : '◎'}
-                  {/* 隐藏时加一条斜线 */}
                   {!layer.visible && (
-                    <span style={{
-                      position: 'absolute', inset: 0, display: 'flex',
-                      alignItems: 'center', justifyContent: 'center',
-                      fontSize: '1rem', color: '#aaa', pointerEvents: 'none',
-                      lineHeight: 1,
-                    }}>
+                    <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', color: '#aaa', pointerEvents: 'none', lineHeight: 1 }}>
                       <svg width="14" height="14" viewBox="0 0 14 14" style={{ position: 'absolute' }}>
                         <line x1="2" y1="2" x2="12" y2="12" stroke="#aaa" strokeWidth="1.5" strokeLinecap="round"/>
                       </svg>
@@ -165,20 +144,14 @@ export default function DrawLayerPanel({ isZh, activePageId }: DrawLayerPanelPro
                   onClick={e => { e.stopPropagation(); mgr.patchLayer(layer.id, { locked: !layer.locked }) }}
                   onPointerDown={e => e.preventDefault()}
                   title={isZh ? '锁定/解锁' : 'Toggle lock'}
-                  style={{
-                    width: 24, height: 24, flexShrink: 0,
-                    border: 'none', background: 'transparent', cursor: 'pointer', padding: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '0.72rem', color: layer.locked ? '#c4a044' : '#ccc',
-                    borderRadius: 4, transition: 'color 0.1s, background 0.1s',
-                  }}
+                  style={{ width: 24, height: 24, flexShrink: 0, border: 'none', background: 'transparent', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem', color: layer.locked ? '#c4a044' : '#ccc', borderRadius: 4, transition: 'color 0.1s, background 0.1s' }}
                   onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.07)')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 >
                   {layer.locked ? '⚿' : '⚷'}
                 </button>
 
-                {/* 图层名 —— 双击改名 */}
+                {/* 图层名 */}
                 {isEditing ? (
                   <input
                     ref={nameInputRef}
@@ -187,32 +160,20 @@ export default function DrawLayerPanel({ isZh, activePageId }: DrawLayerPanelPro
                     onBlur={commitName}
                     onKeyDown={e => { if (e.key === 'Enter') commitName(); if (e.key === 'Escape') setEditingId(null) }}
                     onPointerDown={e => e.stopPropagation()}
-                    style={{
-                      flex: 1, fontSize: '0.72rem', fontFamily: 'Inter, DM Sans, sans-serif',
-                      background: 'rgba(255,255,255,0.9)', border: '1px solid rgba(26,26,26,0.2)',
-                      borderRadius: 4, padding: '1px 5px', outline: 'none', color: '#1a1a1a',
-                    }}
+                    style={{ flex: 1, fontSize: '0.72rem', fontFamily: 'Inter, DM Sans, sans-serif', background: 'rgba(255,255,255,0.9)', border: '1px solid rgba(26,26,26,0.2)', borderRadius: 4, padding: '1px 5px', outline: 'none', color: '#1a1a1a' }}
                   />
                 ) : (
                   <span
                     onDoubleClick={e => startEdit(layer, e)}
                     title={isZh ? '双击改名' : 'Double-click to rename'}
-                    style={{
-                      flex: 1, fontSize: '0.72rem',
-                      color: isActive ? '#1a1a1a' : '#555',
-                      fontWeight: isActive ? 500 : 400,
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}
+                    style={{ flex: 1, fontSize: '0.72rem', color: isActive ? '#1a1a1a' : '#555', fontWeight: isActive ? 500 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                   >
                     {layer.name}
                   </span>
                 )}
 
-                {/* 不透明度数值 */}
-                <span style={{
-                  fontSize: '0.58rem', color: '#a0a09c',
-                  fontFamily: 'Space Mono, monospace', flexShrink: 0, minWidth: 26, textAlign: 'right',
-                }}>
+                {/* 不透明度 */}
+                <span style={{ fontSize: '0.58rem', color: '#a0a09c', fontFamily: 'Space Mono, monospace', flexShrink: 0, minWidth: 26, textAlign: 'right' }}>
                   {Math.round(layer.opacity * 100)}%
                 </span>
 
@@ -222,31 +183,15 @@ export default function DrawLayerPanel({ isZh, activePageId }: DrawLayerPanelPro
                   onPointerDown={e => e.preventDefault()}
                   title={isZh ? '删除图层' : 'Delete layer'}
                   disabled={layers.length <= 1}
-                  style={{
-                    width: 20, height: 20, flexShrink: 0,
-                    border: 'none', background: 'transparent',
-                    cursor: layers.length <= 1 ? 'not-allowed' : 'pointer', padding: 0,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '0.6rem', color: '#ccc', borderRadius: 4,
-                    transition: 'color 0.1s, background 0.1s',
-                    opacity: layers.length <= 1 ? 0.3 : 1,
-                  }}
+                  style={{ width: 20, height: 20, flexShrink: 0, border: 'none', background: 'transparent', cursor: layers.length <= 1 ? 'not-allowed' : 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', color: '#ccc', borderRadius: 4, transition: 'color 0.1s, background 0.1s', opacity: layers.length <= 1 ? 0.3 : 1 }}
                   onMouseEnter={e => { if (layers.length > 1) { e.currentTarget.style.color = '#e05c5c'; e.currentTarget.style.background = 'rgba(224,92,92,0.08)' } }}
                   onMouseLeave={e => { e.currentTarget.style.color = '#ccc'; e.currentTarget.style.background = 'transparent' }}
                 >✕</button>
               </div>
 
-              {/* ── Expanded controls（选中时展开）── */}
+              {/* Expanded controls */}
               {isActive && isExpanded && (
-                <div style={{
-                  margin: '2px 6px 4px',
-                  padding: '8px 10px',
-                  background: 'rgba(26,26,26,0.03)',
-                  borderRadius: 7,
-                  border: '1px solid rgba(26,26,26,0.07)',
-                  display: 'flex', flexDirection: 'column', gap: 8,
-                }}>
-                  {/* 不透明度滑块 */}
+                <div style={{ margin: '2px 6px 4px', padding: '8px 10px', background: 'rgba(26,26,26,0.03)', borderRadius: 7, border: '1px solid rgba(26,26,26,0.07)', display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontSize: '0.6rem', color: '#a0a09c', letterSpacing: '0.08em', minWidth: 44 }}>
                       {isZh ? '不透明' : 'Opacity'}
@@ -262,28 +207,11 @@ export default function DrawLayerPanel({ isZh, activePageId }: DrawLayerPanelPro
                       {Math.round(layer.opacity * 100)}%
                     </span>
                   </div>
-
-                  {/* 操作按钮行 */}
                   <div style={{ display: 'flex', gap: 5 }}>
-                    <ActionBtn
-                      label={isZh ? '↑ 上移' : '↑ Up'}
-                      onClick={() => mgr.moveLayer(layer.id, 'up')}
-                    />
-                    <ActionBtn
-                      label={isZh ? '↓ 下移' : '↓ Down'}
-                      onClick={() => mgr.moveLayer(layer.id, 'down')}
-                    />
-                    <ActionBtn
-                      label={isZh ? '⤓ 合并' : '⤓ Merge'}
-                      onClick={() => mgr.mergeDown(layer.id)}
-                      disabled={!canMergeDown(layer.id)}
-                      title={isZh ? '向下合并图层' : 'Merge down'}
-                    />
-                    <ActionBtn
-                      label={isZh ? '清空' : 'Clear'}
-                      onClick={() => mgr.clearActiveLayer()}
-                      danger
-                    />
+                    <ActionBtn label={isZh ? '↑ 上移' : '↑ Up'}     onClick={() => mgr.moveLayer(layer.id, 'up')} />
+                    <ActionBtn label={isZh ? '↓ 下移' : '↓ Down'}   onClick={() => mgr.moveLayer(layer.id, 'down')} />
+                    <ActionBtn label={isZh ? '⤓ 合并' : '⤓ Merge'} onClick={() => mgr.mergeDown(layer.id)} disabled={!canMergeDown(layer.id)} title={isZh ? '向下合并图层' : 'Merge down'} />
+                    <ActionBtn label={isZh ? '清空' : 'Clear'}       onClick={() => mgr.clearActiveLayer()} danger />
                   </div>
                 </div>
               )}
@@ -295,13 +223,8 @@ export default function DrawLayerPanel({ isZh, activePageId }: DrawLayerPanelPro
   )
 }
 
-// ── 小操作按钮 ────────────────────────────────────────────────────────────────
 function ActionBtn({ label, onClick, disabled, title, danger }: {
-  label: string
-  onClick: () => void
-  disabled?: boolean
-  title?: string
-  danger?: boolean
+  label: string; onClick: () => void; disabled?: boolean; title?: string; danger?: boolean
 }) {
   return (
     <button
@@ -309,23 +232,9 @@ function ActionBtn({ label, onClick, disabled, title, danger }: {
       onClick={() => { if (!disabled) onClick() }}
       title={title}
       disabled={disabled}
-      style={{
-        flex: 1, padding: '4px 0', borderRadius: 6,
-        border: `1px solid ${danger ? 'rgba(224,92,92,0.25)' : 'rgba(26,26,26,0.12)'}`,
-        background: 'transparent', cursor: disabled ? 'not-allowed' : 'pointer',
-        fontSize: '0.6rem', fontFamily: 'Inter, DM Sans, sans-serif',
-        color: disabled ? '#ccc' : danger ? 'rgba(224,92,92,0.7)' : '#666',
-        transition: 'all 0.1s', letterSpacing: '0.04em',
-      }}
-      onMouseEnter={e => {
-        if (disabled) return
-        e.currentTarget.style.background = danger ? 'rgba(224,92,92,0.07)' : 'rgba(26,26,26,0.05)'
-        e.currentTarget.style.color = danger ? '#e05c5c' : '#1a1a1a'
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.background = 'transparent'
-        e.currentTarget.style.color = disabled ? '#ccc' : danger ? 'rgba(224,92,92,0.7)' : '#666'
-      }}
+      style={{ flex: 1, padding: '4px 0', borderRadius: 6, border: `1px solid ${danger ? 'rgba(224,92,92,0.25)' : 'rgba(26,26,26,0.12)'}`, background: 'transparent', cursor: disabled ? 'not-allowed' : 'pointer', fontSize: '0.6rem', fontFamily: 'Inter, DM Sans, sans-serif', color: disabled ? '#ccc' : danger ? 'rgba(224,92,92,0.7)' : '#666', transition: 'all 0.1s', letterSpacing: '0.04em' }}
+      onMouseEnter={e => { if (disabled) return; e.currentTarget.style.background = danger ? 'rgba(224,92,92,0.07)' : 'rgba(26,26,26,0.05)'; e.currentTarget.style.color = danger ? '#e05c5c' : '#1a1a1a' }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = disabled ? '#ccc' : danger ? 'rgba(224,92,92,0.7)' : '#666' }}
     >
       {label}
     </button>

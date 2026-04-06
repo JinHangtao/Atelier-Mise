@@ -56,3 +56,22 @@ export type SelectedEmojiId = string | null
 export type EmojiPickerTrigger =
   | { type: 'toolbar' }
   | { type: 'arrow'; fromId: string; direction: ArrowDirection }
+// ─────────────────────────────────────────────────────────────────────────────
+// DrawnShape — 矢量图形对象（画笔系统之外，可移动/缩放/编辑）
+// ─────────────────────────────────────────────────────────────────────────────
+import type { ShapeType } from './DrawPanel'
+
+export type { ShapeType }
+
+export interface DrawnShape {
+  id: string
+  x0: number; y0: number
+  x1: number; y1: number
+  bezierPts?: { x: number; y: number }[]
+  shapeType: ShapeType
+  color: string
+  alpha: number
+  shapeFill: boolean
+  shapeStroke: number
+  shapeSides: number
+}

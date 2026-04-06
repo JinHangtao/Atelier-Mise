@@ -901,6 +901,7 @@ export function RightPanel(s: ExportPageState) {
           isZh={isZh}
           addImageBlock={addImageBlock}
           canvasWidth={contentWidth}
+          activePageId={activePageId}
         />
       </div>
 

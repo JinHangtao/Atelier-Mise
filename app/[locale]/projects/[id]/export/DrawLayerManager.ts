@@ -1,408 +1,467 @@
 // DrawLayerManager.ts
 // 纯 class，无 React 依赖。管理单页的多图层绘图系统。
+//
+// ── 架构说明 ────────────────────────────────────────────────────────────────
+//
+//  【坐标系 — 职责分离】
+//
+//  StrokeManager（画笔层）
+//    canvas = 纯物理像素，永远没有 transform。
+//    getImageData / putImageData / clearRect / drawImage 全部在同一物理坐标系。
+//    外部传逻辑坐标（CSS px），内部 × dpr 后写入。undo 不可能出错。
+//
+//  DrawLayerManager（图形层 + composite 协调）
+//    _displayCtx 有 scale(dpr,dpr)，矢量图形用逻辑坐标绘制。
+//    composite() 先 setTransform identity，把 StrokeManager 的层
+//    drawImage 进来（物理→物理，1:1），再 restore 回逻辑坐标画 shapes。
+//
+//  两套系统数据完全独立，composite 顺序固定（先画笔后图形）。
+//
+// ────────────────────────────────────────────────────────────────────────────
 
-import { BRUSHES, catmullRom, DrawState, sharedDrawState, universalRenderStroke, BrushConfig } from './DrawPanel'
+import { DrawState, ShapeType, sharedDrawState, renderShape } from './DrawPanel'
+import { StrokeManager, StrokeLayer, LogicalPoint, StrokeManagerEvent } from './StrokeManager'
 
-export interface Layer {
+export type Layer = StrokeLayer
+export type { LogicalPoint }
+
+// ── DrawnShape ────────────────────────────────────────────────────────────────
+export interface DrawnShape {
   id: string
-  name: string
-  visible: boolean
-  locked: boolean
-  opacity: number
-  canvas: HTMLCanvasElement
+  x0: number; y0: number
+  x1: number; y1: number
+  bezierPts?: { x: number; y: number }[]
+  shapeType: ShapeType
+  color: string
+  alpha: number
+  shapeFill: boolean
+  shapeStroke: number
+  shapeSides: number
 }
+
+type ShapeHistoryEntry =
+  | { op: 'add';    shape: DrawnShape }
+  | { op: 'remove'; shape: DrawnShape }
+  | { op: 'move';   id: string; prev: { x0: number; y0: number; x1: number; y1: number }; next: { x0: number; y0: number; x1: number; y1: number } }
 
 export type LayerManagerEvent =
   | { type: 'layers-changed' }
   | { type: 'undo-state-changed'; canUndo: boolean }
+  | { type: 'shapes-changed'; shapes: DrawnShape[] }
 
 type Listener = (e: LayerManagerEvent) => void
 
+// ─────────────────────────────────────────────────────────────────────────────
+
 export class DrawLayerManager {
-  private layers: Layer[] = []
-  private activeLayerId: string | null = null
-  private history: Map<string, ImageData[]> = new Map()
+
+  // 画笔系统：完全委托给 StrokeManager
+  readonly stroke: StrokeManager
+
   private displayCanvas: HTMLCanvasElement | null = null
+  private _displayCtx: CanvasRenderingContext2D | null = null
   private listeners: Listener[] = []
+  private _pageId: string
+  private _mounting = false
+  private _mounted  = false   // 真正的"已初始化"标志，mount() 后永不重置
 
-  mount(canvas: HTMLCanvasElement) {
-    const isRemount = this.displayCanvas === canvas
-    this.displayCanvas = canvas
-    if (this.layers.length === 0) {
-      this.addLayer()
-    } else if (!isRemount) {
-      this.composite()
-    }
+  // 公开访问 displayCanvas（供 exportToBlock 等使用）
+  getDisplayCanvas(): HTMLCanvasElement | null { return this.displayCanvas }
+
+  constructor(pageId: string) {
+    this._pageId = pageId
+    this.stroke  = new StrokeManager(pageId)
+
+    this.stroke.on((e: StrokeManagerEvent) => {
+      if (e.type === 'layers-changed') {
+        this.composite()
+        this.emit({ type: 'layers-changed' })
+      }
+      if (e.type === 'undo-state-changed') this.emit({ type: 'undo-state-changed', canUndo: e.canUndo })
+    })
   }
 
-  unmount() {
-    this.displayCanvas = null
-  }
+  // ── 矢量图形状态 ──────────────────────────────────────────────────────────
+  private _shapes: DrawnShape[]              = []
+  private _shapeHistory: ShapeHistoryEntry[][] = []
+  private _selectedShapeId: string | null    = null
+  private _dragOffset: { dx: number; dy: number } | null = null
+  private _resizePreview: { x0: number; y0: number; x1: number; y1: number } | null = null
+  private _previewShape: DrawnShape | null   = null
+  drawModeActive = false
 
-  on(fn: Listener)  { this.listeners.push(fn) }
+  // ── 事件总线 ──────────────────────────────────────────────────────────────
+  on(fn: Listener)  { if (!this.listeners.includes(fn)) this.listeners.push(fn) }
   off(fn: Listener) { this.listeners = this.listeners.filter(l => l !== fn) }
   private emit(e: LayerManagerEvent) { this.listeners.forEach(l => l(e)) }
 
-  getLayers(): Readonly<Layer[]> { return this.layers }
-  getActiveLayerId() { return this.activeLayerId }
+  // ── mount / unmount ───────────────────────────────────────────────────────
 
-addLayer(name?: string): Layer {
-  // layer canvas 始终用物理像素（= displayCanvas 的实际 width/height）
-  // universalRenderStroke 接收的坐标已经是逻辑像素，
-  // 所以这里什么都不 scale —— 和改之前保持一致
-  const w = this.displayCanvas?.width  ?? 800
-  const h = this.displayCanvas?.height ?? 600
-  const offscreen = document.createElement('canvas')
-  offscreen.width  = w
-  offscreen.height = h
+  mount(canvas: HTMLCanvasElement, ctx?: CanvasRenderingContext2D) {
+    this.displayCanvas = canvas
+    if (ctx !== undefined) this._displayCtx = ctx
+    if (this._mounting) return
+    this._mounting = true
 
-  const layer: Layer = {
-    id: crypto.randomUUID(),
-    name: name ?? `Layer ${this.layers.length + 1}`,
-    visible: true,
-    locked: false,
-    opacity: 1,
-    canvas: offscreen,
-  }
-  this.layers.push(layer)
-  this.activeLayerId = layer.id
-  this.emit({ type: 'layers-changed' })
-  return layer
-}
+    const dpr   = window.devicePixelRatio || 1
+    const physW = canvas.width
+    const physH = canvas.height
 
-  // 把当前图层合并到它下面那层（绘制顺序上的下方）
-  mergeDown(id: string) {
-    const idx = this.layers.findIndex(l => l.id === id)
-    if (idx <= 0) return                          // 已经是最底层，无法合并
-    const top    = this.layers[idx]
-    const bottom = this.layers[idx - 1]
-    this.saveHistory()
-    const ctx = bottom.canvas.getContext('2d')!
-    ctx.save()
-    ctx.globalAlpha = top.opacity
-    ctx.drawImage(top.canvas, 0, 0)
-    ctx.restore()
-    // 删掉上层
-    this.layers.splice(idx, 1)
-    this.history.delete(top.id)
-    if (this.activeLayerId === top.id) this.activeLayerId = bottom.id
-    this.composite()
-    this.emit({ type: 'layers-changed' })
-  }
+    this._restoreSnapshot()
+    this.stroke.init(physW, physH, dpr)
 
-  deleteLayer(id: string) {
-    if (this.layers.length <= 1) return
-    this.layers = this.layers.filter(l => l.id !== id)
-    if (this.activeLayerId === id) {
-      this.activeLayerId = this.layers[this.layers.length - 1].id
+    // _restoreShapes 只执行一次：_mounting 在 mount() 结束时被重置为 false，
+    // 无法防止 React re-render 触发的重复 mount，必须用 _mounted 独立保护。
+    if (!this._mounted) {
+      this._restoreShapes()
+      this._mounted = true
     }
-    this.history.delete(id)
+
+    this._mounting = false
     this.composite()
     this.emit({ type: 'layers-changed' })
   }
 
-  setActiveLayer(id: string) {
-    this.activeLayerId = id
-    this.emit({ type: 'layers-changed' })
+  unmount() {
+    this.stroke.destroy()
+    this._persistShapes()
+    this.displayCanvas = null
+    this._displayCtx   = null
   }
+
+  // ── resize ────────────────────────────────────────────────────────────────
+
+  resizeDisplay(newW: number, newH: number, dpr: number) {
+    this.stroke.resize(newW, newH, dpr)
+    if (this._displayCtx) {
+      this._displayCtx.setTransform(1, 0, 0, 1, 0, 0)
+      this._displayCtx.scale(dpr, dpr)
+    }
+    this.composite()
+  }
+
+  // ── Layer 管理（委托）────────────────────────────────────────────────────
+
+  getLayers()          { return this.stroke.getLayers() }
+  getActiveLayerId()   { return this.stroke.getActiveLayerId() }
+  getShapes()          { return this._shapes as Readonly<DrawnShape[]> }
+  getSelectedShapeId() { return this._selectedShapeId }
+
+  addLayer(name?: string)    { return this.stroke.addLayer(name) }
+  setActiveLayer(id: string) { this.stroke.setActiveLayer(id) }
 
   patchLayer(id: string, patch: Partial<Pick<Layer, 'name' | 'visible' | 'locked' | 'opacity'>>) {
-    const l = this.layers.find(l => l.id === id)
-    if (!l) return
-    Object.assign(l, patch)
-    this.composite()
-    this.emit({ type: 'layers-changed' })
+    this.stroke.patchLayer(id, patch); this.composite()
   }
+  moveLayer(id: string, dir: 'up' | 'down') {
+    this.stroke.moveLayer(id, dir); this.composite()
+  }
+  deleteLayer(id: string) { this.stroke.deleteLayer(id); this.composite() }
+  mergeDown(id: string)   { this.stroke.mergeDown(id);   this.composite() }
 
-  moveLayer(id: string, direction: 'up' | 'down') {
-    const i = this.layers.findIndex(l => l.id === id)
-    if (direction === 'up'   && i < this.layers.length - 1) [this.layers[i], this.layers[i+1]] = [this.layers[i+1], this.layers[i]]
-    if (direction === 'down' && i > 0)                       [this.layers[i], this.layers[i-1]] = [this.layers[i-1], this.layers[i]]
-    this.composite()
-    this.emit({ type: 'layers-changed' })
-  }
+  // ── 画笔 API（委托，外部传逻辑坐标）────────────────────────────────────
 
-composite() {
-  const dc = this.displayCanvas
-  if (!dc) return
-  const ctx = dc.getContext('2d')!
-  ctx.clearRect(0, 0, dc.width, dc.height)
-  for (const layer of this.layers) {
-    if (!layer.visible) continue
-    ctx.save()
-    ctx.globalAlpha = layer.opacity
-    ctx.drawImage(layer.canvas, 0, 0, dc.width, dc.height)
-    ctx.restore()
-  }
-}
-
-  saveHistory() {
-    const layer = this._activeLayer()
-    if (!layer) return
-    const ctx  = layer.canvas.getContext('2d')!
-    const snap = ctx.getImageData(0, 0, layer.canvas.width, layer.canvas.height)
-    const stack = this.history.get(layer.id) ?? []
-    this.history.set(layer.id, [...stack.slice(-19), snap])
-    this.emit({ type: 'undo-state-changed', canUndo: true })
-  }
+  saveHistory() { this.stroke.saveHistory() }
 
   undo() {
-    const layer = this._activeLayer()
-    if (!layer) return
-    const stack = this.history.get(layer.id) ?? []
-    const ctx   = layer.canvas.getContext('2d')!
-    if (stack.length > 1) {
-      ctx.putImageData(stack[stack.length - 2], 0, 0)
-      this.history.set(layer.id, stack.slice(0, -1))
-    } else {
-      ctx.clearRect(0, 0, layer.canvas.width, layer.canvas.height)
-      this.history.set(layer.id, [])
-      this.emit({ type: 'undo-state-changed', canUndo: false })
-    }
+    if (this._shapeHistory.length > 0) { this.undoShape(); return }
+    this.stroke.undo()
     this.composite()
   }
 
-  clearActiveLayer() {
-    const layer = this._activeLayer()
-    if (!layer) return
-    this.saveHistory()
-    layer.canvas.getContext('2d')!.clearRect(0, 0, layer.canvas.width, layer.canvas.height)
+  clearActiveLayer() { this.stroke.clearActiveLayer(); this.composite() }
+
+  startStroke(pt: LogicalPoint) {
+    if (this._selectedShapeId) { this._selectedShapeId = null }
+    this.stroke.startStroke(pt)
     this.composite()
   }
 
-  // ── Stroke state ────────────────────────────────────────────────────────────
-  private _points: { x: number; y: number; t: number; pressure: number }[] = []
-  private _renderedUpTo = 0
-  private _lastVel = 0
-  private _drawing = false
-
-  // ── EMA 平滑器状态 ───────────────────────────────────────────────────────────
-  // 速度自适应指数移动平均：
-  //   慢速落笔 → alpha 小（0.22）→ 强平滑，线条圆润不抖
-  //   快速划线 → alpha 大（0.75）→ 弱平滑，跟手不滞后
-  // 每条笔画开始时通过 _emaReset() 重置，保证笔画间不互相影响。
-  private _emaPrevX  = 0
-  private _emaPrevY  = 0
-  private _emaPrevT  = 0
-  private _emaVel    = 0    // 平滑后的速度值（px/ms）
-  private _emaReady  = false
-  private _distAcc   = 0    // stamp 累计距离，跨帧保持，endStroke 时清零
-
-  private _emaReset() {
-    this._emaReady = false
-    this._emaVel   = 0
-  }
-
-  private _emaFilter(raw: { x: number; y: number; t: number; pressure: number }) {
-    // 第一个点直接透传，作为 EMA 起点
-    if (!this._emaReady) {
-      this._emaPrevX = raw.x
-      this._emaPrevY = raw.y
-      this._emaPrevT = raw.t
-      this._emaReady = true
-      return raw
-    }
-
-    const dt  = Math.max(1, raw.t - this._emaPrevT)
-    const dx  = raw.x - this._emaPrevX
-    const dy  = raw.y - this._emaPrevY
-    const vel = Math.sqrt(dx * dx + dy * dy) / dt   // px/ms
-
-    // 速度本身也做 EMA，避免 alpha 跳变
-    this._emaVel = this._emaVel * 0.6 + vel * 0.4
-
-    // 速度映射到 alpha：[0, 2.5 px/ms] → [0.22, 0.75]
-    const t     = Math.max(0, Math.min(1, this._emaVel / 2.5))
-    const alpha = 0.22 + (0.75 - 0.22) * t
-
-    const sx = this._emaPrevX + (raw.x - this._emaPrevX) * alpha
-    const sy = this._emaPrevY + (raw.y - this._emaPrevY) * alpha
-
-    this._emaPrevX = sx
-    this._emaPrevY = sy
-    this._emaPrevT = raw.t
-
-    return { x: sx, y: sy, t: raw.t, pressure: raw.pressure }
-  }
-
-  // 涂抹笔画期间的逐帧快照，供 applySmearStamp 使用
-  private _smearCanvas: HTMLCanvasElement | null = null  // 涂抹工具用的离屏 canvas
-
-  // pen 笔刷：笔画开始前的快照，每帧还原后整体重绘，消除增量叠加毛边
-  private _penSnapData: ImageData | null = null
-
-  startStroke(pt: { x: number; y: number; t: number; pressure: number }) {
-    const layer = this._activeLayer()
-    if (!layer || layer.locked) return
-    this.saveHistory()
-    if (sharedDrawState.brushType === 'softblur') {
-      // 涂抹：创建离屏 canvas，把 active layer 当前内容拷过去作为初始像素来源
-      const src = layer.canvas
-      if (!this._smearCanvas || this._smearCanvas.width !== src.width || this._smearCanvas.height !== src.height) {
-        this._smearCanvas = document.createElement('canvas')
-        this._smearCanvas.width  = src.width
-        this._smearCanvas.height = src.height
-      }
-      const sctx = this._smearCanvas.getContext('2d')!
-      sctx.clearRect(0, 0, src.width, src.height)
-      sctx.drawImage(src, 0, 0)
-    } else {
-      this._smearCanvas = null
-    }
-    this._emaReset()
-    const smoothed     = this._emaFilter(pt)
-    this._points       = [smoothed, smoothed]
-    this._renderedUpTo = 0
-    this._lastVel      = 0
-    this._distAcc      = 0
-    this._drawing      = true
-
-    // pen：保存笔画开始前的快照，后续每帧基于此还原再整体重绘，避免增量叠加毛边
-    if (sharedDrawState.brushType === 'pen') {
-      const ctx = layer.canvas.getContext('2d')!
-      this._penSnapData = ctx.getImageData(0, 0, layer.canvas.width, layer.canvas.height)
-    } else {
-      this._penSnapData = null
-    }
-
-    this._renderSegment(0, this._points.length)
+  continueStroke(pts: LogicalPoint[]) {
+    this.stroke.continueStroke(pts)
     this.composite()
-  }
-
-  continueStroke(pts: { x: number; y: number; t: number; pressure: number }[]) {
-    if (!this._drawing) return
-    const prevLen  = this._points.length
-    const smoothed = pts.map(p => this._emaFilter(p))
-    this._points.push(...smoothed)
-    const contextStart = Math.max(0, prevLen - 3)
-    this._renderSegment(contextStart, this._points.length)
-    // blur 直接写 display canvas，composite 会覆盖模糊结果，所以不调
-    if (sharedDrawState.brushType !== 'softblur') this.composite()
   }
 
   endStroke() {
-    // blur 已经在 startStroke/continueStroke 期间直接写入 active layer
-    // 不需要任何额外的像素搬运，直接清理状态然后 composite 即可
-    this._smearCanvas = null
-    this._penSnapData  = null
-    this._drawing      = false
-    this._points       = []
-    this._renderedUpTo = 0
-    this._lastVel      = 0
-    this._distAcc      = 0
-    this._emaReset()
+    this.stroke.endStroke()
     this.composite()
   }
 
-  // Called by CanvasArea after shape drawing completes — writes the display
-  // canvas pixels back into the active layer and triggers composite().
-  commitImageData(imageData: ImageData) {
-    const layer = this._activeLayer()
-    if (!layer || layer.locked) return
-    layer.canvas.getContext('2d')!.putImageData(imageData, 0, 0)
-    this.composite()
+  exportLayersAsDataUrls() { return this.stroke.exportAsDataUrls() }
+
+  // ── Composite ─────────────────────────────────────────────────────────────
+  //
+  //  1. identity transform → clearRect（物理像素清空）
+  //  2. StrokeManager.compositeInto → drawImage 物理层（物理→物理，1:1）
+  //  3. restore → scale(dpr,dpr) 逻辑坐标系
+  //  4. 逻辑坐标画矢量 shapes
+  //
+  composite() {
+    const dc  = this.displayCanvas
+    const ctx = this._displayCtx
+    if (!dc || !ctx) return
+
+    ctx.save()
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.clearRect(0, 0, dc.width, dc.height)
+    this.stroke.compositeInto(ctx)
+    ctx.restore()
+
+    // shapes 由 CanvasArea SVG 层渲染，canvas 不再重复绘制
   }
 
-  // Render pts[fromIdx..toIdx] onto the active layer canvas.
-  // Uses the global _points array for Catmull-Rom context lookups, but only
-  // iterates the segments in [fromIdx, toIdx-1] so we never double-paint.
-  private _renderSegment(fromIdx: number, toIdx: number) {
-    const layer = this._activeLayer()
-    if (!layer) return
-    const pts = this._points
-    if (pts.length < 2 || toIdx - fromIdx < 1) return
+  // ── 矢量图形 CRUD ─────────────────────────────────────────────────────────
 
-    const state  = sharedDrawState
-    const brush  = BRUSHES.find(b => b.type === state.brushType)
-    if (!brush) return
-
-    const canvas = layer.canvas
-    const ctx    = canvas.getContext('2d')!
-
-    // ── PEN 特殊路径：快照还原 + 整体重绘 ─────────────────────────────────────
-    // pen 使用 pfGetStrokePath 生成闭合填充轮廓路径。
-    // 增量 fill 会在已有像素上二次叠加，产生可见毛边/锯齿。
-    // 解决方案：每帧先把笔画开始前的快照 putImageData 还原，再对完整点集整体 fill 一次。
-    if (state.brushType === 'pen') {
-      if (this._penSnapData) {
-        ctx.putImageData(this._penSnapData, 0, 0)
-      }
-      if (pts.length >= 2) {
-        const velRef  = { current: 0 }
-        const distRef = { current: 0 }
-        universalRenderStroke(ctx, pts, state, brush, velRef, distRef)
-      }
-      return
+  private _shapeState(s: DrawnShape) {
+    return {
+      ...sharedDrawState,
+      shapeType: s.shapeType, color: s.color, alpha: s.alpha,
+      shapeFill: s.shapeFill, shapeStroke: s.shapeStroke, shapeSides: s.shapeSides,
     }
-
-    // ── 其他笔刷：保持原有增量渲染 ───────────────────────────────────────────
-    const sliceStart = Math.max(0, fromIdx)
-    const window = pts.slice(sliceStart, toIdx)
-    if (window.length < 2) return
-
-    const lastVelRef = { current: this._lastVel }
-    const distAccRef = { current: this._distAcc }
-    // smear: 传入离屏 canvas
-    universalRenderStroke(ctx, window, state, brush, lastVelRef, distAccRef, this._smearCanvas ?? undefined)
-    this._lastVel = lastVelRef.current
-    this._distAcc = distAccRef.current
-
-    // smear canvas 的同步在 universalRenderStroke 内部的 syncSmearCanvas 完成
-    // 所以这里什么都不用做
   }
 
-  exportLayersAsDataUrls(): { id: string; name: string; visible: boolean; opacity: number; dataUrl: string }[] {
-    return this.layers.map(l => ({
-      id: l.id, name: l.name, visible: l.visible, opacity: l.opacity,
-      dataUrl: l.canvas.toDataURL('image/png'),
-    }))
-  }
-
-  async importLayers(saved: { id: string; name: string; visible: boolean; opacity: number; dataUrl: string }[]) {
-    this.layers = []
-    for (const s of saved) {
-      const layer = this.addLayer(s.name)
-      layer.visible = s.visible
-      layer.opacity = s.opacity
-      await drawImageToCanvas(layer.canvas, s.dataUrl)
+  private _drawSelectionBox(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number) {
+    const minX = Math.min(x0, x1), maxX = Math.max(x0, x1)
+    const minY = Math.min(y0, y1), maxY = Math.max(y0, y1)
+    const PAD  = 6
+    ctx.save()
+    ctx.strokeStyle = 'rgba(74,144,217,0.9)'
+    ctx.lineWidth   = 1.5
+    ctx.setLineDash([5, 3])
+    ctx.strokeRect(minX - PAD, minY - PAD, maxX - minX + PAD * 2, maxY - minY + PAD * 2)
+    ctx.setLineDash([])
+    ctx.fillStyle   = '#fff'
+    ctx.strokeStyle = 'rgba(74,144,217,1)'
+    ctx.lineWidth   = 1.5
+    for (const [hx, hy] of this._handlePositions(minX, maxX, minY, maxY, PAD)) {
+      ctx.beginPath(); ctx.arc(hx, hy, 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke()
     }
+    ctx.restore()
+  }
+
+  private _handlePositions(minX: number, maxX: number, minY: number, maxY: number, PAD: number): [number, number][] {
+    const mx = (minX + maxX) / 2, my = (minY + maxY) / 2
+    return [
+      [minX - PAD, minY - PAD], [mx, minY - PAD], [maxX + PAD, minY - PAD],
+      [minX - PAD, my],                             [maxX + PAD, my],
+      [minX - PAD, maxY + PAD], [mx, maxY + PAD], [maxX + PAD, maxY + PAD],
+    ]
+  }
+
+  setPreviewShape(s: DrawnShape | null) { this._previewShape = s; this.composite() }
+
+  addShape(shape: DrawnShape) {
+    this._shapes.push(shape)
+    this._selectedShapeId = shape.id
+    this._pushShapeHistory([{ op: 'add', shape }])
+    this.composite()
+    this.emit({ type: 'shapes-changed', shapes: [...this._shapes] })
+    this._emitUndoState()
+    this._persistShapes()
+  }
+
+  selectShape(id: string | null) {
+    this._selectedShapeId = id; this._dragOffset = null; this._resizePreview = null
     this.composite()
   }
 
-  private _activeLayer(): Layer | null {
-    return this.layers.find(l => l.id === this.activeLayerId) ?? null
+  hitTestShape(x: number, y: number): DrawnShape | null {
+    const PAD = 8
+    for (let i = this._shapes.length - 1; i >= 0; i--) {
+      const s = this._shapes[i]
+      if (x >= Math.min(s.x0, s.x1) - PAD && x <= Math.max(s.x0, s.x1) + PAD &&
+          y >= Math.min(s.y0, s.y1) - PAD && y <= Math.max(s.y0, s.y1) + PAD) return s
+    }
+    return null
+  }
+
+  hitTestHandle(x: number, y: number): number {
+    const s = this._shapes.find(sh => sh.id === this._selectedShapeId)
+    if (!s) return -1
+    let { x0, y0, x1, y1 } = s
+    if (this._dragOffset) { x0 += this._dragOffset.dx; y0 += this._dragOffset.dy; x1 += this._dragOffset.dx; y1 += this._dragOffset.dy }
+    const PAD  = 6
+    const minX = Math.min(x0, x1), maxX = Math.max(x0, x1)
+    const minY = Math.min(y0, y1), maxY = Math.max(y0, y1)
+    const handles = this._handlePositions(minX, maxX, minY, maxY, PAD)
+    for (let i = 0; i < handles.length; i++) {
+      if (Math.hypot(x - handles[i][0], y - handles[i][1]) <= 8) return i
+    }
+    return -1
+  }
+
+  startDrag(id: string) { this._selectedShapeId = id; this._dragOffset = { dx: 0, dy: 0 } }
+
+  updateDrag(dx: number, dy: number) {
+    if (!this._dragOffset) return
+    this._dragOffset = { dx, dy }; this.composite()
+  }
+
+  commitDrag() {
+    const s = this._shapes.find(sh => sh.id === this._selectedShapeId)
+    if (!s || !this._dragOffset) return
+    const { dx, dy } = this._dragOffset
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) { this._dragOffset = null; return }
+    const prev = { x0: s.x0, y0: s.y0, x1: s.x1, y1: s.y1 }
+    s.x0 += dx; s.y0 += dy; s.x1 += dx; s.y1 += dy
+    this._pushShapeHistory([{ op: 'move', id: s.id, prev, next: { x0: s.x0, y0: s.y0, x1: s.x1, y1: s.y1 } }])
+    this._dragOffset = null
+    this.composite()
+    this.emit({ type: 'shapes-changed', shapes: [...this._shapes] })
+    this._emitUndoState()
+    this._persistShapes()
+  }
+
+  cancelDrag() { this._dragOffset = null; this.composite() }
+
+  startResize(id: string) {
+    this._selectedShapeId = id
+    const s = this._shapes.find(sh => sh.id === id)
+    if (s) this._resizePreview = { x0: s.x0, y0: s.y0, x1: s.x1, y1: s.y1 }
+  }
+
+  updateResize(handleIdx: number, x: number, y: number) {
+    if (!this._resizePreview) return
+    let { x0, y0, x1, y1 } = this._resizePreview
+    if ([0, 3, 5].includes(handleIdx)) x0 = x
+    if ([2, 4, 7].includes(handleIdx)) x1 = x
+    if ([0, 1, 2].includes(handleIdx)) y0 = y
+    if ([5, 6, 7].includes(handleIdx)) y1 = y
+    this._resizePreview = { x0, y0, x1, y1 }
+    this.composite()
+  }
+
+  commitResize() {
+    const s = this._shapes.find(sh => sh.id === this._selectedShapeId)
+    if (!s || !this._resizePreview) return
+    const prev = { x0: s.x0, y0: s.y0, x1: s.x1, y1: s.y1 }
+    const next  = { ...this._resizePreview }
+    Object.assign(s, next)
+    this._pushShapeHistory([{ op: 'move', id: s.id, prev, next }])
+    this._resizePreview = null
+    this.composite()
+    this.emit({ type: 'shapes-changed', shapes: [...this._shapes] })
+    this._emitUndoState()
+    this._persistShapes()
+  }
+
+  cancelResize() { this._resizePreview = null; this.composite() }
+
+  patchShape(id: string, patch: { x0: number; y0: number; x1: number; y1: number }) {
+    const s = this._shapes.find(sh => sh.id === id)
+    if (!s) return
+    const prev = { x0: s.x0, y0: s.y0, x1: s.x1, y1: s.y1 }
+    Object.assign(s, patch)
+    this._pushShapeHistory([{ op: 'move', id, prev, next: patch }])
+    this.composite()
+    this.emit({ type: 'shapes-changed', shapes: [...this._shapes] })
+    this._emitUndoState()
+    this._persistShapes()
+  }
+
+  deleteShape(id: string) {
+    const s = this._shapes.find(sh => sh.id === id)
+    if (!s) return
+    this._shapes = this._shapes.filter(sh => sh.id !== s.id)
+    this._pushShapeHistory([{ op: 'remove', shape: s }])
+    if (this._selectedShapeId === id) this._selectedShapeId = null
+    this.composite()
+    this.emit({ type: 'shapes-changed', shapes: [...this._shapes] })
+    this._emitUndoState()
+    this._persistShapes()
+  }
+
+  deleteSelectedShape() {
+    const s = this._shapes.find(sh => sh.id === this._selectedShapeId)
+    if (!s) return
+    this._shapes = this._shapes.filter(sh => sh.id !== s.id)
+    this._pushShapeHistory([{ op: 'remove', shape: s }])
+    this._selectedShapeId = null
+    this.composite()
+    this.emit({ type: 'shapes-changed', shapes: [...this._shapes] })
+    this._emitUndoState()
+    this._persistShapes()
+  }
+
+  undoShape(): boolean {
+    const group = this._shapeHistory.pop()
+    if (!group) return false
+    for (let i = group.length - 1; i >= 0; i--) {
+      const e = group[i]
+      if (e.op === 'add') {
+        this._shapes = this._shapes.filter(s => s.id !== e.shape.id)
+        if (this._selectedShapeId === e.shape.id) this._selectedShapeId = null
+      } else if (e.op === 'remove') {
+        this._shapes.push(e.shape)
+      } else if (e.op === 'move') {
+        const s = this._shapes.find(sh => sh.id === e.id)
+        if (s) Object.assign(s, e.prev)
+      }
+    }
+    this.composite()
+    this.emit({ type: 'shapes-changed', shapes: [...this._shapes] })
+    this._emitUndoState()
+    return true
+  }
+
+  exportShapes(): DrawnShape[] { return JSON.parse(JSON.stringify(this._shapes)) }
+
+  importShapes(shapes: DrawnShape[]) {
+    this._shapes = shapes; this.composite()
+    this.emit({ type: 'shapes-changed', shapes: [...this._shapes] })
+  }
+
+  // ── 私有工具 ──────────────────────────────────────────────────────────────
+
+  private _pushShapeHistory(group: ShapeHistoryEntry[]) {
+    this._shapeHistory.push(group)
+    if (this._shapeHistory.length > 20) this._shapeHistory.shift()
+  }
+
+  private _emitUndoState() {
+    const canUndo = this.stroke.canUndo() || this._shapeHistory.length > 0
+    this.emit({ type: 'undo-state-changed', canUndo })
+  }
+
+  // ── 快照（防白屏）────────────────────────────────────────────────────────
+  private get _snapshotKey() { return `dlm-snap-${this._pageId}` }
+
+  private _restoreSnapshot() {
+    try {
+      const raw = localStorage.getItem(this._snapshotKey)
+      if (!raw || !this._displayCtx || !this.displayCanvas) return
+      const img = new Image()
+      const dc = this.displayCanvas, ctx = this._displayCtx
+      img.onload = () => { ctx.setTransform(1,0,0,1,0,0); ctx.drawImage(img, 0, 0, dc.width, dc.height) }
+      img.src = raw
+    } catch {}
+  }
+
+  // ── shapes 持久化 ─────────────────────────────────────────────────────────
+  private get _shapesKey() { return `dlm-shapes-${this._pageId}` }
+
+  private _persistShapes() {
+    try {
+      localStorage.setItem(this._shapesKey, JSON.stringify(this._shapes))
+      if (this.displayCanvas) {
+        try { localStorage.setItem(this._snapshotKey, this.displayCanvas.toDataURL('image/png')) } catch {}
+      }
+    } catch {}
+  }
+
+  private _restoreShapes() {
+    try {
+      const raw = localStorage.getItem(this._shapesKey)
+      if (raw) this._shapes = JSON.parse(raw) as DrawnShape[]
+    } catch {}
   }
 }
 
-// ── Legacy export kept for any callers that still use renderStrokeOnCtx ──────
-// Wraps universalRenderStroke so existing call sites don't break.
-export function renderStrokeOnCtx(
-  ctx: CanvasRenderingContext2D,
-  pts: { x: number; y: number; t: number; pressure: number }[],
-  state: DrawState,
-  brush: { type: string; pressureSim: boolean; scatter: boolean; smoothing: number; defaultAlpha: number },
-  lastVelRef: { current: number } | number,
-) {
-  const fullBrush = BRUSHES.find(b => b.type === state.brushType)
-  if (!fullBrush) return
-  const velRef = typeof lastVelRef === 'number'
-    ? { current: lastVelRef }
-    : lastVelRef
-  universalRenderStroke(ctx, pts, state, fullBrush, velRef)
-}
-
-function drawImageToCanvas(canvas: HTMLCanvasElement, dataUrl: string): Promise<void> {
-  return new Promise(resolve => {
-    const img = new Image()
-    img.onload = () => { canvas.getContext('2d')!.drawImage(img, 0, 0); resolve() }
-    img.src = dataUrl
-  })
-}
-
+// ── 全局注册表 ────────────────────────────────────────────────────────────────
 const _registry = new Map<string, DrawLayerManager>()
 
 export function getDrawLayerManager(pageId: string): DrawLayerManager {
-  if (!_registry.has(pageId)) _registry.set(pageId, new DrawLayerManager())
+  if (!_registry.has(pageId)) _registry.set(pageId, new DrawLayerManager(pageId))
   return _registry.get(pageId)!
 }
 
