@@ -696,15 +696,23 @@ export function useExportPage() {
 
       // ── 把原始 canvas 像素复制到 clone 里对应的 canvas ──────────────────
       // cloneNode 不复制 canvas 内容，需要手动 drawImage
+      // scale: 3 导出时 html2canvas 把 DOM 放大 3x，canvas 内容也要同步放大
+      // 否则笔迹分辨率不变，放大后反而更糊
+      const EXPORT_SCALE = 3
       const srcCanvases = Array.from(el.querySelectorAll('canvas')) as HTMLCanvasElement[]
       const dstCanvases = Array.from(clone.querySelectorAll('canvas')) as HTMLCanvasElement[]
       srcCanvases.forEach((src, idx) => {
         const dst = dstCanvases[idx]
         if (!dst) return
-        dst.width  = src.width
-        dst.height = src.height
+        // 用 EXPORT_SCALE 倍物理尺寸，让笔迹在高分辨率下也锐利
+        dst.width  = src.width  * EXPORT_SCALE
+        dst.height = src.height * EXPORT_SCALE
         const ctx = dst.getContext('2d')
-        if (ctx) ctx.drawImage(src, 0, 0)
+        if (ctx) {
+          ctx.imageSmoothingEnabled = false
+          ctx.scale(EXPORT_SCALE, EXPORT_SCALE)
+          ctx.drawImage(src, 0, 0)
+        }
       })
 
       ;[
@@ -720,7 +728,7 @@ export function useExportPage() {
       document.body.appendChild(offscreenWrap)
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
       const canvas = await html2canvas(clone, {
-        useCORS: true, allowTaint: true, scale: 2,
+        useCORS: true, allowTaint: true, scale: EXPORT_SCALE,
         width: naturalW, height: naturalH,
         windowWidth: naturalW, windowHeight: naturalH,
         x: 0, y: 0, scrollX: 0, scrollY: 0,
@@ -738,7 +746,7 @@ export function useExportPage() {
       // html2canvas 不支持 filter:drop-shadow
       // 方案：在比截图更大的中间 canvas 上先画带阴影的矩形，再把截图贴上去，最后裁回原尺寸
       // 参考：https://zhuanlan.zhihu.com/p/43104164
-      const SCALE = 2
+      const SCALE = EXPORT_SCALE
       const currentPage = pages.find(p => p.id === exportablePageIds[i])
       const stickyBlocks = (currentPage?.blocks ?? []).filter(
         b => b.type === 'sticky' && ((b as any).stickyShadow ?? 12) > 0

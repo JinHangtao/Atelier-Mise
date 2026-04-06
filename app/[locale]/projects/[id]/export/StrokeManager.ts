@@ -23,7 +23,7 @@
 
 import {
   BRUSHES, DrawState, sharedDrawState,
-  universalRenderStroke,
+  universalRenderStroke, buildPenSvgPath,
 } from './DrawPanel'
 
 // ── 类型 ──────────────────────────────────────────────────────────────────────
@@ -259,7 +259,13 @@ export class StrokeManager {
   private _smearCanvas: HTMLCanvasElement | null = null
   private _penSnapData: ImageData | null = null
 
-  // EMA 平滑滤波（逻辑坐标下做，不影响坐标系）
+  // ── Pen SVG overlay（矢量实时预览）────────────────────────────────────────
+  // 绘制中：回调把 SVG path string + 样式传给外部（CanvasArea）渲染到 SVG overlay
+  // 笔抬起：光栅化进 Canvas，回调 null 清空 overlay
+  onPenSvgUpdate: ((pathStr: string | null, color: string, alpha: number, logicalSize: number) => void) | null = null
+
+  // pen 绘制中积累的逻辑坐标点（用于最终光栅化）
+  private _penLogicalPts: LogicalPoint[] = []
   private _emaReady = false
   private _emaPrevX = 0; private _emaPrevY = 0; private _emaPrevT = 0
   private _emaVel = 0
@@ -274,7 +280,7 @@ export class StrokeManager {
     const dt = Math.max(1, raw.t - this._emaPrevT)
     const vel = Math.sqrt((raw.x - this._emaPrevX) ** 2 + (raw.y - this._emaPrevY) ** 2) / dt
     this._emaVel = this._emaVel * 0.6 + vel * 0.4
-    const alpha = 0.22 + (0.75 - 0.22) * Math.max(0, Math.min(1, this._emaVel / 2.5))
+    const alpha = 0.35 + (0.82 - 0.35) * Math.max(0, Math.min(1, this._emaVel / 2.5))
     const sx = this._emaPrevX + (raw.x - this._emaPrevX) * alpha
     const sy = this._emaPrevY + (raw.y - this._emaPrevY) * alpha
     this._emaPrevX = sx; this._emaPrevY = sy; this._emaPrevT = raw.t
@@ -321,12 +327,16 @@ export class StrokeManager {
     this._points = [smoothed, smoothed]
     this._lastVel = 0; this._distAcc = 0; this._drawing = true
 
-    // pen 笔刷每帧从快照重画（物理像素 getImageData）
+    // pen 笔刷：走 SVG overlay，不需要 canvas 快照
     if (state.brushType === 'pen') {
-      this._penSnapData = layer.canvas.getContext('2d')!
-        .getImageData(0, 0, layer.canvas.width, layer.canvas.height)
+      this._penSnapData = null
+      this._penLogicalPts = [smoothed]
+      // 通知外部显示起始点
+      this._emitPenSvg(false)
+      return
     } else {
       this._penSnapData = null
+      this._penLogicalPts = []
     }
 
     this._renderSegment(0, this._points.length)
@@ -334,14 +344,28 @@ export class StrokeManager {
 
   continueStroke(pts: LogicalPoint[]) {
     if (!this._drawing) return
+    const filtered = pts.map(p => this._emaFilter(p))
+    if (sharedDrawState.brushType === 'pen') {
+      this._penLogicalPts.push(...filtered)
+      this._emitPenSvg(false)
+      return
+    }
     const prevLen = this._points.length
-    this._points.push(...pts.map(p => this._emaFilter(p)))
+    this._points.push(...filtered)
     this._renderSegment(Math.max(0, prevLen - 3), this._points.length)
   }
 
   endStroke() {
+    const wasPen = sharedDrawState.brushType === 'pen'
+    if (wasPen && this._penLogicalPts.length >= 2) {
+      this._rasterizePenStroke()
+    }
+    if (wasPen && this.onPenSvgUpdate) {
+      this.onPenSvgUpdate(null, '', 1, 0)  // clear overlay
+    }
     this._smearCanvas = null
     this._penSnapData = null
+    this._penLogicalPts = []
     this._drawing     = false
     this._points      = []
     this._lastVel     = 0
@@ -370,14 +394,7 @@ export class StrokeManager {
     const physState: DrawState = { ...state, size: state.size * dpr }
 
     if (state.brushType === 'pen') {
-      // pen 每帧从快照重绘整条笔迹（避免透明度叠加）
-      if (this._penSnapData) ctx.putImageData(this._penSnapData, 0, 0)
-      if (pts.length >= 2) {
-        universalRenderStroke(
-          ctx, pts.map(toPhys), physState, brush,
-          { current: 0 }, { current: 0 },
-        )
-      }
+      // pen 走 SVG overlay，不在这里渲染
       return
     }
 
@@ -467,6 +484,68 @@ export class StrokeManager {
       console.warn('[StrokeManager] restore failed:', e)
       return false
     }
+  }
+
+  // ── Pen SVG helpers ───────────────────────────────────────────────────────
+
+  private _emitPenSvg(isComplete: boolean) {
+    if (!this.onPenSvgUpdate) return
+    const state = sharedDrawState
+    const pts = this._penLogicalPts
+    if (pts.length < 2) return
+    const pathStr = buildPenSvgPath(
+      pts.map(p => ({ x: p.x, y: p.y, pressure: p.pressure })),
+      state.size,   // logical size — SVG 用逻辑坐标，不乘 dpr
+      0.38, 0.45,
+      isComplete,
+    )
+    this.onPenSvgUpdate(pathStr, state.color, state.alpha, state.size)
+  }
+
+  private _rasterizePenStroke() {
+    const layer = this._active()
+    if (!layer) return
+    const state = sharedDrawState
+    const pts = this._penLogicalPts
+    if (pts.length < 2) return
+
+    // 生成最终完整路径（isComplete=true，含末端收尖）
+    const pathStr = buildPenSvgPath(
+      pts.map(p => ({ x: p.x, y: p.y, pressure: p.pressure })),
+      state.size * this.dpr,  // 光栅化进物理像素 canvas，size 乘 dpr
+      0.38, 0.45,
+      true,
+    )
+    if (!pathStr) return
+
+    const ctx = layer.canvas.getContext('2d')!
+    const [r, g, b] = ((): [number, number, number] => {
+      // inline hexToRgb to avoid import cycle risk
+      const hex = state.color.replace('#', '')
+      if (hex.length === 3) return [
+        parseInt(hex[0]+hex[0], 16),
+        parseInt(hex[1]+hex[1], 16),
+        parseInt(hex[2]+hex[2], 16),
+      ]
+      return [parseInt(hex.slice(0,2),16), parseInt(hex.slice(2,4),16), parseInt(hex.slice(4,6),16)]
+    })()
+
+    // 物理坐标系：把逻辑坐标点 × dpr 体现在 path 里（size 已经乘了，但坐标也要乘）
+    // 重新生成一次用物理坐标的 path
+    const physPathStr = buildPenSvgPath(
+      pts.map(p => ({ x: p.x * this.dpr, y: p.y * this.dpr, pressure: p.pressure })),
+      state.size * this.dpr,
+      0.38, 0.45,
+      true,
+    )
+    if (!physPathStr) return
+
+    ctx.save()
+    ctx.globalCompositeOperation = 'source-over'
+    ctx.globalAlpha = state.alpha
+    ctx.fillStyle = `rgb(${r},${g},${b})`
+    ctx.fill(new Path2D(physPathStr))
+    ctx.restore()
   }
 
   // ── 私有工具 ─────────────────────────────────────────────────────────────────

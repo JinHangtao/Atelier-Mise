@@ -418,6 +418,33 @@ export const BRUSHES: BrushConfig[] = [
 //  smoothing  0.5  — smooth outline polygon edges (reduces jaggies on curves)
 //  tapers     20px — natural entry/exit taper like brush on paper
 //
+/**
+ * Build the SVG path string for a pen stroke — used for live SVG overlay rendering.
+ * Returns empty string if not enough points.
+ */
+export function buildPenSvgPath(
+  rawPts: { x: number; y: number; pressure: number }[],
+  size: number,
+  streamline: number = 0.38,
+  thinning: number  = 0.45,
+  isComplete: boolean = false,
+): string {
+  if (rawPts.length < 2) return ''
+  const hasPenPressure = rawPts.some(p => p.pressure !== 0.5)
+  const outline = pfGetStroke(rawPts, {
+    size,
+    thinning,
+    smoothing: 0.3,
+    streamline,
+    simulatePressure: !hasPenPressure,
+    last: isComplete,
+    start: { taper: Math.max(size * 1.5, 12), easing: t => t * t, cap: true },
+    end:   { taper: isComplete ? Math.max(size * 2, 20) : 0, easing: t => t * t * t, cap: true },
+  })
+  if (outline.length < 3) return ''
+  return pfSvgPath(outline)
+}
+
 export function renderPenStrokeCrisp(
   ctx: CanvasRenderingContext2D,
   rawPts: { x: number; y: number; pressure: number }[],
@@ -435,7 +462,7 @@ export function renderPenStrokeCrisp(
   const outline = pfGetStroke(rawPts, {
     size,
     thinning,
-    smoothing: 0.5,
+    smoothing: 0.3,
     streamline,
     simulatePressure: !hasPenPressure,
     last: isComplete,
@@ -716,24 +743,36 @@ export function drawStamp(
   composite: GlobalCompositeOperation = 'source-over',
 ) {
   const rad = Math.max(0.5, radius)
-  const innerStop = (hardness / 100) * 0.95
   ctx.save()
   ctx.globalCompositeOperation = composite
   ctx.globalAlpha = alpha
-  const grad = ctx.createRadialGradient(x, y, 0, x, y, rad)
-  if (composite === 'destination-out') {
-    grad.addColorStop(0,          'rgba(0,0,0,1)')
-    grad.addColorStop(innerStop,  'rgba(0,0,0,1)')
-    grad.addColorStop(1,          'rgba(0,0,0,0)')
+
+  // hardness >= 95: pure crisp circle — no gradient, pixel-sharp edge
+  if (hardness >= 95) {
+    ctx.fillStyle = composite === 'destination-out'
+      ? 'rgba(0,0,0,1)'
+      : `rgb(${r},${g},${b})`
+    ctx.beginPath()
+    ctx.arc(x, y, rad, 0, Math.PI * 2)
+    ctx.fill()
   } else {
-    grad.addColorStop(0,          `rgba(${r},${g},${b},1)`)
-    grad.addColorStop(innerStop,  `rgba(${r},${g},${b},1)`)
-    grad.addColorStop(1,          `rgba(${r},${g},${b},0)`)
+    // Soft edge: larger inner solid zone than before for better clarity
+    const innerStop = Math.max(0, (hardness / 100) * 0.98)
+    const grad = ctx.createRadialGradient(x, y, rad * innerStop * 0.5, x, y, rad)
+    if (composite === 'destination-out') {
+      grad.addColorStop(0,         'rgba(0,0,0,1)')
+      grad.addColorStop(innerStop, 'rgba(0,0,0,1)')
+      grad.addColorStop(1,         'rgba(0,0,0,0)')
+    } else {
+      grad.addColorStop(0,         `rgba(${r},${g},${b},1)`)
+      grad.addColorStop(innerStop, `rgba(${r},${g},${b},1)`)
+      grad.addColorStop(1,         `rgba(${r},${g},${b},0)`)
+    }
+    ctx.fillStyle = grad
+    ctx.beginPath()
+    ctx.arc(x, y, rad, 0, Math.PI * 2)
+    ctx.fill()
   }
-  ctx.fillStyle = grad
-  ctx.beginPath()
-  ctx.arc(x, y, rad, 0, Math.PI * 2)
-  ctx.fill()
   ctx.restore()
 }
 
@@ -927,8 +966,9 @@ export function universalRenderStroke(
     ctx.globalAlpha = state.alpha
     ctx.strokeStyle = state.color
   }
+  // Smooth quadratic bezier through midpoints — C1 continuous, no joint seams
+  ctx.lineWidth = state.size
   if (pts.length === 2) {
-    ctx.lineWidth = state.size
     ctx.beginPath()
     ctx.moveTo(pts[0].x, pts[0].y)
     ctx.lineTo(pts[1].x, pts[1].y)
@@ -936,35 +976,15 @@ export function universalRenderStroke(
     ctx.restore()
     return
   }
+  ctx.beginPath()
+  ctx.moveTo(pts[0].x, pts[0].y)
   for (let i = 1; i < pts.length - 1; i++) {
-    const p0 = pts[Math.max(0, i-1)]
-    const p1 = pts[i]
-    const p2 = pts[i+1]
-    const p3 = pts[Math.min(pts.length-1, i+2)]
-    if (brush.pressureSim) {
-      const hasPen = p1.pressure !== 0.5 && p2.pressure !== 0.5
-      let pres: number
-      if (hasPen) {
-        pres = Math.max(0.2, Math.min(1.8, (p1.pressure*0.4 + p2.pressure*0.6)*2))
-      } else {
-        const dt  = Math.max(1, p2.t - p1.t)
-        const vel = Math.sqrt(Math.pow(p2.x-p1.x,2)+Math.pow(p2.y-p1.y,2)) / dt
-        lastVelRef.current = lastVelRef.current*0.7 + vel*0.3
-        pres = Math.max(0.3, Math.min(1.5, 1 - lastVelRef.current * 0.8))
-      }
-      ctx.lineWidth = state.size * pres
-    } else {
-      ctx.lineWidth = state.size
-    }
-    ctx.beginPath()
-    for (let ss = 0; ss <= 8; ss++) {
-      const tt = ss / 8
-      const px = catmullRom(p0.x, p1.x, p2.x, p3.x, tt)
-      const py = catmullRom(p0.y, p1.y, p2.y, p3.y, tt)
-      if (ss === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py)
-    }
-    ctx.stroke(); ctx.beginPath()
+    const mx = (pts[i].x + pts[i + 1].x) / 2
+    const my = (pts[i].y + pts[i + 1].y) / 2
+    ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my)
   }
+  ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y)
+  ctx.stroke()
   ctx.restore()
 }
 

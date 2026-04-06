@@ -154,11 +154,7 @@ function renderSelectionHandles(shape: DrawnShape, onDelete: () => void): React.
           />
         )
       })}
-      {/* 右上角删除按钮 */}
-      <g style={{ cursor: 'pointer' }} onClick={e => { e.stopPropagation(); onDelete() }}>
-        <circle cx={maxX + PAD} cy={minY - PAD} r={8} fill="rgba(220,60,50,0.9)" />
-        <text x={maxX + PAD} y={minY - PAD + 1} textAnchor="middle" dominantBaseline="middle" fill="#fff" fontSize={10} fontFamily="sans-serif">✕</text>
-      </g>
+
     </g>
   )
 }
@@ -268,7 +264,9 @@ function ShapeContextMenu({ shape, screenX, screenY, pageId, onClose, onDelete }
   return (
     <div
       ref={ref}
-      onMouseDown={e => e.stopPropagation()}
+      data-shape-context-menu="true"
+      onMouseDown={e => { e.stopPropagation(); e.preventDefault() }}
+      onPointerDown={e => { e.stopPropagation(); e.preventDefault() }}
       style={{
         position: 'fixed', left: pos.x, top: pos.y, zIndex: 9999,
         // White surface — clean, professional, contrasts well against canvas
@@ -292,7 +290,7 @@ function ShapeContextMenu({ shape, screenX, screenY, pageId, onClose, onDelete }
           return (
             <button
               key={hex}
-              onClick={() => patch({ color: hex })}
+              onPointerDown={e => { e.stopPropagation(); e.preventDefault(); patch({ color: hex }) }}
               style={{
                 width: 18, height: 18, borderRadius: '50%',
                 background: hex,
@@ -315,7 +313,7 @@ function ShapeContextMenu({ shape, screenX, screenY, pageId, onClose, onDelete }
 
       {/* ── Fill ── */}
       <button
-        onClick={() => patch({ shapeFill: !hasFill })}
+        onPointerDown={e => { e.stopPropagation(); e.preventDefault(); patch({ shapeFill: !hasFill }) }}
         style={{ ...rowBase, justifyContent: 'space-between' }}
         onMouseEnter={e => (e.currentTarget.style.background = '#f4f4f5')}
         onMouseLeave={e => (e.currentTarget.style.background = 'none')}
@@ -353,7 +351,7 @@ function ShapeContextMenu({ shape, screenX, screenY, pageId, onClose, onDelete }
               minWidth: 32, textAlign: 'right', fontFamily: ff,
             }}>{localRotation}°</span>
             <button
-              onClick={() => { setLocalRotation(0); patch({ rotation: 0 } as any) }}
+              onPointerDown={e => { e.stopPropagation(); e.preventDefault(); setLocalRotation(0); patch({ rotation: 0 } as any) }}
               title="Reset rotation"
               style={{
                 width: 22, height: 22, borderRadius: 5, display: 'flex',
@@ -383,7 +381,7 @@ function ShapeContextMenu({ shape, screenX, screenY, pageId, onClose, onDelete }
 
       {/* ── Delete ── */}
       <button
-        onClick={() => { onDelete(); onClose() }}
+        onPointerDown={e => { e.stopPropagation(); e.preventDefault(); onDelete(); onClose() }}
         style={{ ...rowBase, color: '#dc2626' }}
         onMouseEnter={e => (e.currentTarget.style.background = '#fef2f2')}
         onMouseLeave={e => (e.currentTarget.style.background = 'none')}
@@ -694,6 +692,12 @@ export function CanvasArea(s: ExportPageState) {
   const [pageShapesState, setPageShapesState] = React.useState<Map<string, DrawnShape[]>>(new Map())
   const pageShapes = pageShapesState
 
+  // ── Pen SVG overlay state（矢量实时笔迹预览）────────────────────────────
+  // 绘制中只有 1 条 path，笔抬起后清空，永远不会堆积
+  const [penSvgOverlay, setPenSvgOverlay] = React.useState<{
+    pageId: string; pathStr: string; color: string; alpha: number; size: number
+  } | null>(null)
+
   // 订阅当前活跃页 manager 的事件
   const activePageIdRef = React.useRef(activePageId)
   activePageIdRef.current = activePageId
@@ -716,7 +720,20 @@ export function CanvasArea(s: ExportPageState) {
   })
   return next
 })
-    return () => mgr.off(handler)
+
+    // 挂载 pen SVG overlay 回调
+    mgr.stroke.onPenSvgUpdate = (pathStr, color, alpha, size) => {
+      if (!pathStr) {
+        setPenSvgOverlay(null)
+      } else {
+        setPenSvgOverlay({ pageId: activePageId, pathStr, color, alpha, size })
+      }
+    }
+
+    return () => {
+      mgr.off(handler)
+      mgr.stroke.onPenSvgUpdate = null
+    }
   }, [activePageId])
 
   // rightTab tells us whether draw mode is active
@@ -1670,6 +1687,8 @@ export function CanvasArea(s: ExportPageState) {
                       onPointerDown={e => {
                         if (e.pointerType === 'mouse' && e.button !== 0) return
                         if (e.pointerType === 'touch' && !e.isPrimary) return
+                        // If the click landed inside a context menu portal, don't intercept it
+                        if ((e.target as HTMLElement).closest?.('[data-shape-context-menu]')) return
                         e.preventDefault(); e.stopPropagation()
                         ;(e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId)
 
@@ -1694,11 +1713,8 @@ export function CanvasArea(s: ExportPageState) {
 
                         const hit = mgr.hitTestShape(x, y)
                         if (hit) {
-                          if (hit.id === mgr.getSelectedShapeId()) {
-                            g.mode = 'moving'; g.dragStart = { x, y }; g.movingId = hit.id
-                          } else {
-                            mgr.selectShape(hit.id)
-                          }
+                          mgr.selectShape(hit.id)
+                          g.mode = 'moving'; g.dragStart = { x, y }; g.movingId = hit.id
                           return
                         }
                         mgr.selectShape(null)
@@ -1961,6 +1977,27 @@ export function CanvasArea(s: ExportPageState) {
     borderRadius: '6px',
   }}
 />
+
+                  {/* ── Pen SVG overlay（矢量实时笔迹，仅绘制中显示）── */}
+                  {/* 使用逻辑坐标（CSS px），不乘 dpr，与页面布局完全对齐  */}
+                  {penSvgOverlay && penSvgOverlay.pageId === page.id && penSvgOverlay.pathStr && (
+                    <svg
+                      style={{
+                        position: 'absolute', inset: 0,
+                        width: '100%', height: '100%',
+                        zIndex: 955,   // 高于 canvas(950)，低于 shapes SVG(960)
+                        pointerEvents: 'none',
+                        overflow: 'visible',
+                      }}
+                    >
+                      <path
+                        d={penSvgOverlay.pathStr}
+                        fill={penSvgOverlay.color}
+                        fillOpacity={penSvgOverlay.alpha}
+                        stroke="none"
+                      />
+                    </svg>
+                  )}
 
                   {/* ── Smart Guides SVG overlay ── */}
                   {/* Always rendered when smartGuides is on so the ref is always available.
