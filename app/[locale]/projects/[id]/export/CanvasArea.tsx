@@ -368,6 +368,8 @@ function ShapeContextMenu({ shape, screenX, screenY, pageId, onClose, onDelete }
         <input
           type="range" min={-180} max={180} step={1}
           value={localRotation}
+          onPointerDown={e => e.stopPropagation()}
+          onMouseDown={e => e.stopPropagation()}
           onChange={e => {
             const v = Number(e.target.value)
             setLocalRotation(v)
@@ -570,7 +572,9 @@ function NonDrawShape({ shape, isSel, PAD, minX, minY, maxX, maxY, canvasZoom, p
 
         {/* 選択中 UI */}
         {isSel && (() => {
-          return (
+          const rot = (shape as any).rotation
+          const scx = (rx0 + rx1) / 2, scy = (ry0 + ry1) / 2
+          const selContent = (
           <>
             {/* 選択枠 — subtle indigo, no dash */}
             <rect
@@ -614,6 +618,9 @@ function NonDrawShape({ shape, isSel, PAD, minX, minY, maxX, maxY, canvasZoom, p
             })}
           </>
           )
+          return rot
+            ? <g transform={`rotate(${rot},${scx},${scy})`}>{selContent}</g>
+            : selContent
         })()}
       </g>
       {/* Context menu portal — rendered outside SVG as HTML */}

@@ -548,7 +548,7 @@ export class StrokeManager {
     ctx.restore()
   }
 
-  // ── 私有工具 ─────────────────────────────────────────────────────────────────
+  // ── 私有工具 (累了) ─────────────────────────────────────────────────────────────────
 
   private _active(): StrokeLayer | null {
     return this.layers.find(l => l.id === this.activeLayerId) ?? null
