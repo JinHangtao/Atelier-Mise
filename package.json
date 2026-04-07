@@ -14,7 +14,6 @@
     "@ai-sdk/react": "^3.0.118",
     "@emoji-mart/data": "^1.2.1",
     "@emoji-mart/react": "^1.1.1",
-    "@excalidraw/excalidraw": "^0.18.0",
     "@google/generative-ai": "^0.24.1",
     "@huggingface/transformers": "^4.0.1",
     "@imgly/background-removal": "^1.7.0",
