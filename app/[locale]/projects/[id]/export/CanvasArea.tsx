@@ -1961,7 +1961,7 @@ export function CanvasArea(s: ExportPageState) {
         if (sizeChanged) { el.width = _w; el.height = _h }
         const _ctx = el.getContext('2d')!
         _ctx.setTransform(1, 0, 0, 1, 0, 0)
-        _ctx.scale(_dpr, _dpr)
+        
         getDrawLayerManager(page.id).mount(el, _ctx)
       }
       // re-render 触发（尺寸未变、已初始化）：什么都不做，保护已有 ctx/transform

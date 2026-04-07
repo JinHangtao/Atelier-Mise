@@ -33,6 +33,35 @@ const handleOpen = () => { setCanvasFilename(project?.title ?? 'untitled'); setC
   const [selectedEmojiId, setSelectedEmojiId] = React.useState<string | null>(null)
   const emojiPicker = useEmojiPicker()
 
+  // ── Undo history panel ───────────────────────────────────────────────────
+  const [historyOpen, setHistoryOpen] = React.useState(false)
+  const historyRef = React.useRef<HTMLDivElement>(null)
+  const historyBtnRef = React.useRef<HTMLButtonElement>(null)
+  const [historyPos, setHistoryPos] = React.useState<{ top: number; left: number }>({ top: 0, left: 0 })
+
+  const openHistory = () => {
+    if (historyBtnRef.current) {
+      const r = historyBtnRef.current.getBoundingClientRect()
+      setHistoryPos({ top: r.bottom + 8, left: r.left })
+    }
+    setHistoryOpen(v => !v)
+  }
+
+  // 点击外部关闭
+  React.useEffect(() => {
+    if (!historyOpen) return
+    const handler = (e: MouseEvent) => {
+      if (
+        historyRef.current && !historyRef.current.contains(e.target as Node) &&
+        historyBtnRef.current && !historyBtnRef.current.contains(e.target as Node)
+      ) {
+        setHistoryOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [historyOpen])
+
   // ── Workspace settings ────────────────────────────────────────────────────
   const [settingsOpen, setSettingsOpen] = React.useState(false)
   const settingsRef = React.useRef<HTMLDivElement>(null)
@@ -265,6 +294,145 @@ const handleOpen = () => { setCanvasFilename(project?.title ?? 'untitled'); setC
           <button onClick={() => router.back()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '0.78rem', letterSpacing: '0.12em', fontFamily: 'Inter, DM Sans, sans-serif', flexShrink: 0, padding: '0', transition: 'color 0.12s' }} onMouseEnter={e => (e.currentTarget.style.color = '#1a1a1a')} onMouseLeave={e => (e.currentTarget.style.color = '#aaa')}>
             ← {isZh ? '返回' : 'Back'}
           </button>
+
+          {/* ── 撤销历史记录 ── */}
+          <div style={{ flexShrink: 0 }}>
+            <button
+              ref={historyBtnRef}
+              onClick={openHistory}
+              title={isZh ? '撤销历史' : 'Undo history'}
+              style={{
+                background: historyOpen ? 'rgba(26,26,26,0.06)' : 'transparent',
+                border: '1px solid rgba(26,26,26,0.1)',
+                padding: '5px 9px',
+                borderRadius: '8px',
+                fontSize: '0.78rem',
+                cursor: 'pointer',
+                color: historyOpen ? '#1a1a1a' : '#aaa',
+                transition: 'all 0.12s',
+                lineHeight: 1,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                fontFamily: 'Inter, DM Sans, sans-serif',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.04)'; e.currentTarget.style.color = '#1a1a1a' }}
+              onMouseLeave={e => { if (!historyOpen) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#aaa' } }}
+            >
+              <span style={{ fontSize: '0.82rem' }}>↺</span>
+              {undoStack.current.length > 0 && (
+                <span style={{ fontSize: '0.58rem', background: 'rgba(26,26,26,0.08)', padding: '1px 5px', borderRadius: 4, letterSpacing: '0.04em', color: '#888', fontWeight: 600 }}>
+                  {undoStack.current.length}
+                </span>
+              )}
+            </button>
+
+            {historyOpen && (
+              <div ref={historyRef} style={{
+                position: 'fixed',
+                top: historyPos.top,
+                left: historyPos.left,
+                width: 260,
+                background: '#fff',
+                borderRadius: 14,
+                boxShadow: '0 8px 32px rgba(0,0,0,0.13), 0 0 0 1px rgba(26,26,26,0.07)',
+                zIndex: 200,
+                overflow: 'hidden',
+                animation: 'fadeIn 0.18s ease',
+                fontFamily: 'Inter, DM Sans, sans-serif',
+              }}>
+                {/* 标题栏 */}
+                <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid rgba(26,26,26,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '0.6rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: '#bbb', fontWeight: 600 }}>
+                    {isZh ? '撤销历史' : 'Undo History'}
+                  </span>
+                  <span style={{ fontSize: '0.65rem', color: '#ccc' }}>
+                    {undoStack.current.length} {isZh ? '条' : 'steps'}
+                  </span>
+                </div>
+
+                {/* 列表 */}
+                <div style={{ maxHeight: 320, overflowY: 'auto', padding: '6px 0' }}>
+                  {undoStack.current.length === 0 ? (
+                    <div style={{ padding: '20px 16px', textAlign: 'center', color: '#ccc', fontSize: '0.75rem' }}>
+                      {isZh ? '暂无撤销记录' : 'No history yet'}
+                    </div>
+                  ) : (
+                    // 从最新到最旧排列，索引 0 = 最新
+                    [...undoStack.current].reverse().map((snapshot, revIdx) => {
+                      const realIdx = undoStack.current.length - 1 - revIdx
+                      // stepsToUndo：当前在栈顶，点这条要 undo 多少次
+                      const stepsToUndo = undoStack.current.length - realIdx
+                      const isLatest = revIdx === 0
+                      // 尝试读取 snapshot 的页面/块信息
+                      const pageCount = Array.isArray((snapshot as any)?.pages) ? (snapshot as any).pages.length : null
+                      const blockCount = Array.isArray((snapshot as any)?.pages)
+                        ? (snapshot as any).pages.reduce((acc: number, p: any) => acc + (Array.isArray(p.blocks) ? p.blocks.length : 0), 0)
+                        : null
+
+                      return (
+                        <button
+                          key={realIdx}
+                          onClick={() => {
+                            for (let i = 0; i < stepsToUndo; i++) undo()
+                            setHistoryOpen(false)
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 10,
+                            width: '100%',
+                            padding: '9px 16px',
+                            border: 'none',
+                            background: isLatest ? 'rgba(26,26,26,0.03)' : 'transparent',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            transition: 'background 0.1s',
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.05)' }}
+                          onMouseLeave={e => { e.currentTarget.style.background = isLatest ? 'rgba(26,26,26,0.03)' : 'transparent' }}
+                        >
+                          {/* 序号圆点 */}
+                          <span style={{
+                            width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                            background: isLatest ? '#1a1a1a' : 'rgba(26,26,26,0.07)',
+                            color: isLatest ? '#fff' : '#aaa',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '0.58rem', fontWeight: 700,
+                          }}>
+                            {undoStack.current.length - realIdx}
+                          </span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '0.75rem', color: '#1a1a1a', fontWeight: isLatest ? 600 : 400, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {isLatest
+                                ? (isZh ? '最新状态（当前）' : 'Latest (current)')
+                                : (isZh ? `回到第 ${stepsToUndo} 步前` : `Go back ${stepsToUndo} step${stepsToUndo > 1 ? 's' : ''}`)}
+                            </div>
+                            {(pageCount !== null || blockCount !== null) && (
+                              <div style={{ fontSize: '0.62rem', color: '#bbb', marginTop: 1 }}>
+                                {pageCount !== null && `${pageCount} ${isZh ? '页' : 'pages'}`}
+                                {pageCount !== null && blockCount !== null && ' · '}
+                                {blockCount !== null && `${blockCount} ${isZh ? '块' : 'blocks'}`}
+                              </div>
+                            )}
+                          </div>
+                          {!isLatest && (
+                            <span style={{ fontSize: '0.6rem', color: '#ccc', flexShrink: 0 }}>↺</span>
+                          )}
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+
+                {/* 底部提示 */}
+                <div style={{ padding: '8px 16px 10px', borderTop: '1px solid rgba(26,26,26,0.05)', fontSize: '0.6rem', color: '#ccc', textAlign: 'center' }}>
+                  {isZh ? '点击任意记录跳回该状态' : 'Click any step to restore that state'}
+                </div>
+              </div>
+            )}
+          </div>
+
           <span style={{ width: '1px', height: '18px', background: 'rgba(26,26,26,0.1)', flexShrink: 0 }} />
           <span style={{ fontSize: '0.8rem', letterSpacing: '0.06em', color: '#1a1a1a', fontFamily: 'Inter, DM Sans, sans-serif', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '220px' }}>
             {project.title}

@@ -437,7 +437,8 @@ export class StrokeManager {
     try {
       const layers = this.layers.map(l => ({
         id: l.id, name: l.name, visible: l.visible, locked: l.locked,
-        opacity: l.opacity, dataUrl: l.canvas.toDataURL('image/png'),
+        opacity: l.opacity,
+        dataUrl: l.canvas.toDataURL('image/png'),
       }))
       localStorage.setItem(this.storageKey, JSON.stringify({ layers, activeLayerId: this.activeLayerId }))
     } catch (e) {
@@ -450,7 +451,10 @@ export class StrokeManager {
       const raw = localStorage.getItem(this.storageKey)
       if (!raw) return false
       const payload = JSON.parse(raw) as {
-        layers: { id: string; name: string; visible: boolean; locked: boolean; opacity: number; dataUrl: string }[]
+        layers: {
+          id: string; name: string; visible: boolean; locked: boolean; opacity: number
+          dataUrl?: string
+        }[]
         activeLayerId: string | null
       }
       if (!payload.layers?.length) return false
@@ -460,18 +464,33 @@ export class StrokeManager {
         const canvas = document.createElement('canvas')
         canvas.width  = this.physW
         canvas.height = this.physH
-        // 还原时物理像素写入，不 scale
-        await new Promise<void>(resolve => {
-          const img = new Image()
-          img.onload = () => {
-            const ctx = canvas.getContext('2d')!
-            ctx.setTransform(1, 0, 0, 1, 0, 0)   // 确保 identity
-            ctx.drawImage(img, 0, 0, this.physW, this.physH)
-            resolve()
-          }
-          img.onerror = () => resolve()
-          img.src = s.dataUrl
-        })
+        const ctx = canvas.getContext('2d')!
+        ctx.setTransform(1, 0, 0, 1, 0, 0)
+
+        if (s.dataUrl) {
+          await new Promise<void>(resolve => {
+            const img = new Image()
+            img.onload = () => {
+              // offscreen 解码，再 putImageData 精确写入，避免 drawImage 二次插值
+              const off = document.createElement('canvas')
+              off.width  = img.naturalWidth
+              off.height = img.naturalHeight
+              const offCtx = off.getContext('2d')!
+              offCtx.drawImage(img, 0, 0)
+              if (img.naturalWidth === this.physW && img.naturalHeight === this.physH) {
+                // 尺寸一致：putImageData 零插值写入
+                ctx.putImageData(offCtx.getImageData(0, 0, img.naturalWidth, img.naturalHeight), 0, 0)
+              } else {
+                // 尺寸不一致（换窗口大小）：只能降级 drawImage
+                ctx.drawImage(off, 0, 0, this.physW, this.physH)
+              }
+              resolve()
+            }
+            img.onerror = () => resolve()
+            img.src = s.dataUrl!
+          })
+        }
+
         this.layers.push({
           id: s.id, name: s.name, visible: s.visible, locked: s.locked,
           opacity: s.opacity, canvas,

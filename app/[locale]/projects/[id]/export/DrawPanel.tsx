@@ -902,7 +902,6 @@ export function drawStamp(
   ctx.globalCompositeOperation = composite
   ctx.globalAlpha = alpha
 
-  // hardness >= 95: pure crisp circle — no gradient, pixel-sharp edge
   if (hardness >= 95) {
     ctx.fillStyle = composite === 'destination-out'
       ? 'rgba(0,0,0,1)'
@@ -911,18 +910,20 @@ export function drawStamp(
     ctx.arc(x, y, rad, 0, Math.PI * 2)
     ctx.fill()
   } else {
-    // Soft edge: larger inner solid zone than before for better clarity
-    const innerStop = Math.max(0, (hardness / 100) * 0.98)
-    const grad = ctx.createRadialGradient(x, y, rad * innerStop * 0.5, x, y, rad)
-    if (composite === 'destination-out') {
-      grad.addColorStop(0,         'rgba(0,0,0,1)')
-      grad.addColorStop(innerStop, 'rgba(0,0,0,1)')
-      grad.addColorStop(1,         'rgba(0,0,0,0)')
-    } else {
-      grad.addColorStop(0,         `rgba(${r},${g},${b},1)`)
-      grad.addColorStop(innerStop, `rgba(${r},${g},${b},1)`)
-      grad.addColorStop(1,         `rgba(${r},${g},${b},0)`)
-    }
+    // SAI 三段式曲线衰减：硬核 → 平方过渡 → 全透明
+    // 消除线性渐变在像素边界产生的硬切锯齿
+    const hardCore = (hardness / 100) * 0.92   // 硬核半径比例（留8%给过渡）
+    const midStop  = hardCore + (1 - hardCore) * 0.5  // 过渡中点
+    const col = composite === 'destination-out'
+      ? (a: number) => `rgba(0,0,0,${a})`
+      : (a: number) => `rgba(${r},${g},${b},${a})`
+
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, rad)
+    grad.addColorStop(0,        col(1))
+    grad.addColorStop(hardCore, col(1))      // 硬核边界：仍然完全不透明
+    grad.addColorStop(midStop,  col(0.35))   // 中间过渡：平方曲线感（0.35 ≈ √0.5 * 0.5）
+    grad.addColorStop(1,        col(0))      // 边缘：全透明
+
     ctx.fillStyle = grad
     ctx.beginPath()
     ctx.arc(x, y, rad, 0, Math.PI * 2)
