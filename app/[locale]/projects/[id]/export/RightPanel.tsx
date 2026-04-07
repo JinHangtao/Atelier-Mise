@@ -10,13 +10,14 @@ import { Aspect } from './types'
 import DrawLayerPanel from './DrawLayerPanel'
 
 const tabStyle = (active: boolean): React.CSSProperties => ({
-  flex: 1, padding: '13px 0', fontSize: '0.62rem', letterSpacing: '0.18em',
+  flex: 1, padding: '6px 0', fontSize: '0.62rem', letterSpacing: '0.14em',
   textTransform: 'uppercase', fontFamily: 'Inter, DM Sans, sans-serif', fontWeight: 600,
   border: 'none', cursor: 'pointer',
-  borderBottom: active ? '2px solid #1a1a1a' : '2px solid transparent',
-  background: 'transparent',
+  borderRadius: '7px',
+  background: active ? '#fff' : 'transparent',
   color: active ? '#1a1a1a' : '#aaa',
-  transition: 'all 0.12s',
+  boxShadow: active ? '0 1px 3px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(26,26,26,0.06)' : 'none',
+  transition: 'all 0.15s cubic-bezier(0.22,1,0.36,1)',
 })
 
 export function RightPanel(s: ExportPageState) {
@@ -47,9 +48,19 @@ export function RightPanel(s: ExportPageState) {
       data-rp-scroll=""
       onDragOver={e => e.stopPropagation()} onDrop={e => e.stopPropagation()}
     >
+      <style>{`
+        @keyframes _rp-tab-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes _rp-press  { 0%,100% { transform: scale(1); } 45% { transform: scale(0.96); } }
+        @keyframes _rp-flash  { 0% { background: rgba(26,26,26,0.07); } 100% { background: transparent; } }
+        ._rp-tab-panel { animation: _rp-tab-in 0.16s cubic-bezier(0.22,1,0.36,1) both; }
+        ._rp-addblock:active { animation: _rp-press 0.18s ease; }
+        ._rp-export-btn { transition: background 0.15s, transform 0.12s !important; }
+        ._rp-export-btn:hover { background: #333 !important; }
+        ._rp-export-btn:active { transform: scale(0.98) !important; }
+      `}</style>
       {/* Tab switcher */}
-      <div style={{ position: 'sticky', top: 0, background: '#fff', zIndex: 10, borderBottom: '1px solid rgba(26,26,26,0.08)' }}>
-        <div style={{ display: 'flex', alignItems: 'center' }}>
+      <div style={{ position: 'sticky', top: 0, background: '#fff', zIndex: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '6px', background: 'rgba(26,26,26,0.04)', margin: '8px 10px', borderRadius: '10px' }}>
           <div style={{ flex: 1, display: 'flex' }}>
             {(['pages', 'blocks', 'draw', 'style'] as const).map(tab => (
               <button key={tab} onClick={() => setRightTab(tab)} style={tabStyle(rightTab === tab)}>
@@ -63,7 +74,7 @@ export function RightPanel(s: ExportPageState) {
 
       {/* ── PAGES tab ── */}
       {rightTab === 'pages' && (
-        <>
+        <div className="_rp-tab-panel" style={{ display: 'contents' }}>
           {activePage?.isCover ? (
             <CoverEditor
               page={activePage}
@@ -84,12 +95,12 @@ export function RightPanel(s: ExportPageState) {
             onAspectChange={changePageAspect}
             isZh={isZh}
           />
-        </>
+        </div>
       )}
 
       {/* ── BLOCKS tab ── */}
       {rightTab === 'blocks' && (
-        <div style={{ padding: '24px 20px', flex: 1 }}>
+        <div className="_rp-tab-panel" style={{ padding: '24px 20px', flex: 1 }}>
 
 {/* Table style controls */}
 {(() => {
@@ -801,6 +812,7 @@ export function RightPanel(s: ExportPageState) {
           <div style={{ marginBottom: '20px' }}>
             <p style={{ fontSize: '0.65rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b0b0ac', marginBottom: '10px', fontFamily: 'Inter, DM Sans, sans-serif' }}>{isZh ? '添加块' : 'Add Block'}</p>
             <div onClick={() => addBlock('table', '')}
+              className="_rp-addblock"
               style={{ padding: '9px 13px', border: '1px solid rgba(26,26,26,0.08)', borderRadius: '8px', marginBottom: '6px', cursor: 'pointer', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.82rem', color: '#666', lineHeight: 1.55, transition: 'background 0.12s', display: 'flex', alignItems: 'center', gap: '8px' }}
               onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.03)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
@@ -809,6 +821,7 @@ export function RightPanel(s: ExportPageState) {
             </div>
             {/* Sticky note */}
             <div
+              className="_rp-addblock"
               onClick={() => addBlock('sticky' as any, '', { pixelPos: { x: 60, y: 60, w: 200, h: 200 }, stickyColor: '#fef08a' } as any)}
               style={{ padding: '9px 13px', border: '1px solid rgba(26,26,26,0.08)', borderRadius: '8px', marginBottom: '6px', cursor: 'pointer', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.82rem', color: '#666', lineHeight: 1.55, transition: 'background 0.12s', display: 'flex', alignItems: 'center', gap: '8px' }}
               onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.03)')}
@@ -819,6 +832,7 @@ export function RightPanel(s: ExportPageState) {
             </div>
             {/* Emoji block button */}
             <div
+              className="_rp-addblock"
               onClick={e => {
                 const openFn = (s as any).openEmojiFromToolbar
                 if (typeof openFn === 'function') {
@@ -870,7 +884,7 @@ export function RightPanel(s: ExportPageState) {
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   {visibleSchools.map(sc => (
-                    <div key={sc.id} className="school-item" onClick={() => addBlock('school-profile', sc.id)}
+                    <div key={sc.id} className="school-item _rp-addblock" onClick={() => addBlock('school-profile', sc.id)}
                       style={{ padding: '10px 13px', border: '1px solid rgba(26,26,26,0.09)', borderLeft: '2.5px solid rgba(196,160,68,0.45)', borderRadius: '8px', cursor: 'pointer', transition: 'background 0.12s', background: 'transparent' }}>
                       <p style={{ fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.8rem', color: '#1a1a1a', fontWeight: 600, marginBottom: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {isZh ? (sc.nameZh || sc.name) : sc.name}
@@ -907,7 +921,7 @@ export function RightPanel(s: ExportPageState) {
 
       {/* ── STYLE tab ── */}
       {rightTab === 'style' && (
-        <div style={{ padding: '24px 20px', flex: 1 }}>
+        <div className="_rp-tab-panel" style={{ padding: '24px 20px', flex: 1 }}>
           <ThemePickerPanel opts={exportOpts} setOpts={setExportOpts} isZh={isZh} />
 
           <div style={{ marginTop: '4px', marginBottom: '4px' }}>
@@ -931,6 +945,7 @@ export function RightPanel(s: ExportPageState) {
               {THEMES[exportOpts.theme]?.label} · {FONTS[exportOpts.font]?.label} · {exportOpts.width}px · R{exportOpts.radius} · {pages.length}p {pagedExport ? '· paged' : ''}
             </p>
             <button onClick={() => doExportHTML()}
+              className="_rp-export-btn"
               style={{ width: '100%', marginTop: '12px', padding: '11px', background: '#1a1a1a', color: '#f7f7f5', border: 'none', borderRadius: '9px', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.82rem', letterSpacing: '0.08em', cursor: 'pointer' }}>
               {isZh ? '导出 HTML' : 'Export HTML'}
             </button>

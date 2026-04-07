@@ -83,6 +83,21 @@ const handleOpen = () => { setCanvasFilename(project?.title ?? 'untitled'); setC
   const [dotColor, setDotColor] = React.useState<string>(() => {
     try { return localStorage.getItem('ws_dotColor') || '#c8c8c4' } catch { return '#c8c8c4' }
   })
+  const [pageRadius, setPageRadius] = React.useState<number>(() => {
+    try { return Number(localStorage.getItem('ws_pageRadius') ?? 6) } catch { return 6 }
+  })
+  const [selectionStroke, setSelectionStroke] = React.useState<{ width: number; color: string }>(() => {
+    try {
+      const saved = localStorage.getItem('ws_selectionStroke')
+      return saved ? JSON.parse(saved) : { width: 1.5, color: '#1a1a1a' }
+    } catch { return { width: 1.5, color: '#1a1a1a' } }
+  })
+  const [selectionShadow, setSelectionShadow] = React.useState<{ size: number; color: string }>(() => {
+    try {
+      const saved = localStorage.getItem('ws_selectionShadow')
+      return saved ? JSON.parse(saved) : { size: 32, color: 'rgba(0,0,0,0.12)' }
+    } catch { return { size: 32, color: 'rgba(0,0,0,0.12)' } }
+  })
 
   // ── Immersive panel ───────────────────────────────────────────────────────
   const [immPanelMode, setImmPanelMode] = React.useState<'peek'|'hidden'>(() => {
@@ -166,6 +181,9 @@ const handleOpen = () => { setCanvasFilename(project?.title ?? 'untitled'); setC
     canvasBg,
     dotGrid,
     dotColor,
+    pageRadius,
+    selectionStroke,
+    selectionShadow,
   }
 
   const enterImmersive = React.useCallback(() => {
@@ -830,6 +848,80 @@ const handleOpen = () => { setCanvasFilename(project?.title ?? 'untitled'); setC
                     </label>
                   </div>
                 )}
+              </div>
+
+              {/* 分隔线 */}
+              <div style={{ height: 1, background: 'rgba(0,0,0,0.06)' }} />
+
+              {/* 页面外观 */}
+              <div>
+                <p style={{ fontSize: '0.6rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b0b0ac', fontWeight: 600, marginBottom: 16 }}>{isZh ? '页面外观' : 'Page Appearance'}</p>
+
+                {/* 圆角 */}
+                <div style={{ marginBottom: 18 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ fontSize: '0.75rem', color: '#555', fontWeight: 500 }}>{isZh ? '页面圆角' : 'Corner Radius'}</span>
+                    <span style={{ fontSize: '0.68rem', color: '#aaa', fontFamily: 'Space Mono, monospace' }}>{pageRadius}px</span>
+                  </div>
+                  <input type="range" min={0} max={24} step={1} value={pageRadius}
+                    onChange={e => { const v = Number(e.target.value); setPageRadius(v); saveSetting('ws_pageRadius', String(v)) }}
+                    style={{ width: '100%', accentColor: '#1a1a1a', cursor: 'pointer' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 3 }}>
+                    <span style={{ fontSize: '0.58rem', color: '#ccc', fontFamily: 'Space Mono, monospace' }}>0</span>
+                    <span style={{ fontSize: '0.58rem', color: '#ccc', fontFamily: 'Space Mono, monospace' }}>24</span>
+                  </div>
+                </div>
+
+                {/* 选中线条 */}
+                <div style={{ marginBottom: 18 }}>
+                  <p style={{ fontSize: '0.72rem', color: '#555', fontWeight: 500, marginBottom: 8 }}>{isZh ? '选中线条' : 'Selection Stroke'}</p>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontSize: '0.68rem', color: '#aaa' }}>{isZh ? '粗细' : 'Width'}</span>
+                    <span style={{ fontSize: '0.68rem', color: '#aaa', fontFamily: 'Space Mono, monospace' }}>{selectionStroke.width}px</span>
+                  </div>
+                  <input type="range" min={0} max={6} step={0.25} value={selectionStroke.width}
+                    onChange={e => { const v = { ...selectionStroke, width: Number(e.target.value) }; setSelectionStroke(v); saveSetting('ws_selectionStroke', JSON.stringify(v)) }}
+                    style={{ width: '100%', accentColor: '#1a1a1a', cursor: 'pointer', marginBottom: 10 }} />
+                  <span style={{ fontSize: '0.68rem', color: '#aaa', display: 'block', marginBottom: 6 }}>{isZh ? '颜色' : 'Color'}</span>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {['#1a1a1a', '#c4a044', '#4aab6f', '#4a8abf', '#e05c5c', '#7048e8', '#ffffff'].map(hex => (
+                      <button key={hex} onClick={() => { const v = { ...selectionStroke, color: hex }; setSelectionStroke(v); saveSetting('ws_selectionStroke', JSON.stringify(v)) }}
+                        style={{ width: 22, height: 22, borderRadius: '50%', border: 'none', cursor: 'pointer', background: hex, padding: 0, flexShrink: 0, transition: 'transform 0.1s, box-shadow 0.1s', boxShadow: selectionStroke.color === hex ? '0 0 0 2px #1a1a1a, 0 0 0 3.5px #fff' : '0 0 0 1px rgba(26,26,26,0.14)', transform: selectionStroke.color === hex ? 'scale(1.18)' : 'scale(1)', outline: hex === '#ffffff' ? '1px solid rgba(26,26,26,0.1)' : 'none' }} />
+                    ))}
+                    <label style={{ width: 22, height: 22, borderRadius: '50%', overflow: 'hidden', cursor: 'pointer', position: 'relative', boxShadow: '0 0 0 1px rgba(26,26,26,0.14)', background: 'conic-gradient(red,yellow,lime,cyan,blue,magenta,red)', flexShrink: 0 }}>
+                      <input type="color" value={selectionStroke.color} onChange={e => { const v = { ...selectionStroke, color: e.target.value }; setSelectionStroke(v); saveSetting('ws_selectionStroke', JSON.stringify(v)) }} style={{ opacity: 0, position: 'absolute', inset: 0, width: '100%', height: '100%', cursor: 'pointer' }} />
+                    </label>
+                  </div>
+                </div>
+
+                {/* 选中阴影 */}
+                <div>
+                  <p style={{ fontSize: '0.72rem', color: '#555', fontWeight: 500, marginBottom: 8 }}>{isZh ? '选中阴影' : 'Selection Shadow'}</p>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontSize: '0.68rem', color: '#aaa' }}>{isZh ? '扩散范围' : 'Spread'}</span>
+                    <span style={{ fontSize: '0.68rem', color: '#aaa', fontFamily: 'Space Mono, monospace' }}>{selectionShadow.size}px</span>
+                  </div>
+                  <input type="range" min={0} max={64} step={2} value={selectionShadow.size}
+                    onChange={e => { const v = { ...selectionShadow, size: Number(e.target.value) }; setSelectionShadow(v); saveSetting('ws_selectionShadow', JSON.stringify(v)) }}
+                    style={{ width: '100%', accentColor: '#1a1a1a', cursor: 'pointer', marginBottom: 10 }} />
+                  <span style={{ fontSize: '0.68rem', color: '#aaa', display: 'block', marginBottom: 6 }}>{isZh ? '颜色' : 'Color'}</span>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {[
+                      { label: '黑', val: 'rgba(0,0,0,0.12)' },
+                      { label: '金', val: 'rgba(196,160,68,0.2)' },
+                      { label: '绿', val: 'rgba(74,171,111,0.2)' },
+                      { label: '蓝', val: 'rgba(74,138,191,0.2)' },
+                      { label: '红', val: 'rgba(224,92,92,0.2)' },
+                      { label: '紫', val: 'rgba(112,72,232,0.2)' },
+                    ].map(({ label, val }) => (
+                      <button key={val} title={label} onClick={() => { const v = { ...selectionShadow, color: val }; setSelectionShadow(v); saveSetting('ws_selectionShadow', JSON.stringify(v)) }}
+                        style={{ width: 22, height: 22, borderRadius: '50%', border: 'none', cursor: 'pointer', background: val.replace(/[\d.]+\)$/, '0.85)'), padding: 0, flexShrink: 0, transition: 'transform 0.1s, box-shadow 0.1s', boxShadow: selectionShadow.color === val ? '0 0 0 2px #1a1a1a, 0 0 0 3.5px #fff' : '0 0 0 1px rgba(26,26,26,0.14)', transform: selectionShadow.color === val ? 'scale(1.18)' : 'scale(1)' }} />
+                    ))}
+                    <label style={{ width: 22, height: 22, borderRadius: '50%', overflow: 'hidden', cursor: 'pointer', position: 'relative', boxShadow: '0 0 0 1px rgba(26,26,26,0.14)', background: 'conic-gradient(red,yellow,lime,cyan,blue,magenta,red)', flexShrink: 0 }}>
+                      <input type="color" onChange={e => { const v = { ...selectionShadow, color: e.target.value }; setSelectionShadow(v); saveSetting('ws_selectionShadow', JSON.stringify(v)) }} style={{ opacity: 0, position: 'absolute', inset: 0, width: '100%', height: '100%', cursor: 'pointer' }} />
+                    </label>
+                  </div>
+                </div>
               </div>
 
               {/* 分隔线 */}

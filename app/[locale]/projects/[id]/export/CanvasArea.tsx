@@ -1381,8 +1381,6 @@ export function CanvasArea(s: ExportPageState) {
         }}
         onClick={() => setCtxMenu(null)}
       >
-        {justRestored && <DraftBanner pageCount={pages.length} isZh={isZh} onClear={clearAll} />}
-
         {/* Right-click context menu */}
         {ctxMenu && (
           <div
@@ -1651,18 +1649,24 @@ export function CanvasArea(s: ExportPageState) {
                     ...(pgHeight ? { minHeight: pgHeight } : { minHeight: 400 }),
                     background: page.background || '#fff',
                     ...(page.backgroundImage ? { backgroundImage: `url(${page.backgroundImage})`, backgroundSize: page.bgSize || 'cover', backgroundPosition: page.bgPosition || 'center', backgroundRepeat: 'no-repeat' } : {}),
-                    borderRadius: '6px',
+                    borderRadius: `${(s as any).pageRadius ?? 6}px`,
                     boxShadow: dragOverPageId === page.id
                       ? '0 0 0 2.5px #4a8abf, 0 8px 32px rgba(74,138,191,0.18)'
                       : isActivePg
-                        ? page.isCover ? '0 0 0 2.5px #c4a044, 0 8px 32px rgba(196,160,68,0.15)' : '0 0 0 2.5px #1a1a1a, 0 8px 32px rgba(0,0,0,0.12)'
+                        ? (() => {
+                            const sw = (s as any).selectionStroke ?? { width: 1.5, color: '#1a1a1a' }
+                            const sh = (s as any).selectionShadow ?? { size: 32, color: 'rgba(0,0,0,0.12)' }
+                            const strokeColor = page.isCover ? '#c4a044' : sw.color
+                            const shadowColor = page.isCover ? 'rgba(196,160,68,0.15)' : sh.color
+                            return `0 0 0 ${sw.width}px ${strokeColor}, 0 8px ${sh.size}px ${shadowColor}`
+                          })()
                         : '0 2px 12px rgba(0,0,0,0.07)',
                     transition: 'box-shadow 0.18s',
                   }}
                 >
                   {/* Drop overlay */}
                   {dragOverPageId === page.id && (
-                    <div style={{ position: 'absolute', inset: 0, zIndex: 50, borderRadius: '6px', background: 'rgba(74,138,191,0.08)', border: '2px dashed rgba(74,138,191,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                    <div style={{ position: 'absolute', inset: 0, zIndex: 50, borderRadius: `${(s as any).pageRadius ?? 6}px`, background: 'rgba(74,138,191,0.08)', border: '2px dashed rgba(74,138,191,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
                       <span style={{ fontSize: '0.72rem', color: '#4a8abf', fontFamily: 'Inter, DM Sans, sans-serif', letterSpacing: '0.1em', fontWeight: 500 }}>{isZh ? '松开以插入图片' : 'DROP TO INSERT'}</span>
                     </div>
                   )}
