@@ -332,7 +332,13 @@ const handleOpen = () => { setCanvasFilename(project?.title ?? 'untitled'); setC
         <button
           onClick={async () => {
             setCanvasExportOpen(false)
-            await exportCanvasFile(project, pages, canvasFilename || project.title)
+            const PAGE_WIDTH = 860
+            const pagesWithDimensions = pages.map(p => ({
+              ...p,
+              width: PAGE_WIDTH,
+              height: pageHeight(p.aspect ?? 'free', PAGE_WIDTH) ?? PAGE_WIDTH,
+            }))
+            await exportCanvasFile(project, pagesWithDimensions, canvasFilename || project.title)
           }}
           style={{ flex: 2, padding: '11px 0', borderRadius: 10, border: 'none', background: '#1a1a1a', fontSize: '0.82rem', color: '#fff', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}>
           {isZh ? '下载 .sensei ↓' : 'Download .sensei ↓'}
