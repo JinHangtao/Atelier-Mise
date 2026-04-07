@@ -265,6 +265,7 @@ export type BrushType =
   | 'blur'         // true local gaussian blur
   | 'softblur'     // soft gaussian blur variant
   | 'smear'        // pixel-drag smear
+  | 'blend'        // SAI blender: finger-smudge, mixes adjacent colors without adding new color
   | 'oilpaint'     // thick oil paint with canvas color pickup
   | 'airbrush'     // pressure-sensitive spray
   | 'eraser'
@@ -305,6 +306,7 @@ export type RenderMode =
   | 'line'        // fast canvas lineTo path (pen-hard, marker)
   | 'pixel_blur'  // pixel-level local blur
   | 'pixel_smear' // pixel-level smear/drag
+  | 'pixel_blend' // SAI blender: neighbor-color averaging, no new color injected
   | 'erase'       // destination-out composite
 
 export interface BrushConfig {
@@ -323,6 +325,8 @@ export interface BrushConfig {
   smoothing: number
   wetMix?: boolean            // watercolor/oilpaint: sample + blend canvas pixels
   airSpray?: boolean          // airbrush spray dot mode
+  defaultDilution?: number     // SAI dilution 默认值 0–100
+  defaultPersistence?: number  // SAI persistence 默认值 0–100
 }
 
 export const BRUSHES: BrushConfig[] = [
@@ -356,24 +360,31 @@ export const BRUSHES: BrushConfig[] = [
     defaultSize: 10, defaultAlpha: 0.8, defaultHardness: 40, defaultMixRate: 0,
     pressureSim: false, scatter: true, smoothing: 0.15,
   },
+  // wetbrush: SAI marker-style，blending高但无稀释，拖尾中等
   {
     type: 'wetbrush', label: 'Wet Brush', labelZh: '湿笔晕染', icon: '◌',
     renderMode: 'stamp', composite: 'source-over',
-    defaultSize: 20, defaultAlpha: 0.5, defaultHardness: 0, defaultMixRate: 0,
+    defaultSize: 20, defaultAlpha: 0.5, defaultHardness: 0, defaultMixRate: 30,
+    defaultDilution: 0, defaultPersistence: 50,
     pressureSim: true, scatter: false, smoothing: 0.35,
+    wetMix: true,
   },
   // ── NEW ───────────────────────────────────────────────────────────────────
+  // SAI watercolor: blending=50, dilution=17, persistence=34 — 社区经典可用设置
   {
     type: 'watercolor', label: 'Watercolor', labelZh: '水彩', icon: '💧',
     renderMode: 'stamp', composite: 'source-over',
-    defaultSize: 24, defaultAlpha: 0.6, defaultHardness: 20, defaultMixRate: 60,
+    defaultSize: 24, defaultAlpha: 0.6, defaultHardness: 15, defaultMixRate: 50,
+    defaultDilution: 17, defaultPersistence: 34,
     pressureSim: true, scatter: false, smoothing: 0.45,
     wetMix: true,
   },
+  // SAI oilpaint: blending=40-60, persistence=100, dilution低 — 颜色厚重持久
   {
     type: 'oilpaint', label: 'Oil Paint', labelZh: '油画', icon: '🖌',
     renderMode: 'stamp', composite: 'source-over',
-    defaultSize: 18, defaultAlpha: 0.85, defaultHardness: 55, defaultMixRate: 40,
+    defaultSize: 18, defaultAlpha: 0.88, defaultHardness: 60, defaultMixRate: 45,
+    defaultDilution: 5, defaultPersistence: 80,
     pressureSim: true, scatter: false, smoothing: 0.3,
     wetMix: true,
   },
@@ -395,6 +406,14 @@ export const BRUSHES: BrushConfig[] = [
     renderMode: 'pixel_smear', composite: 'source-over',
     defaultSize: 22, defaultAlpha: 0.6, defaultHardness: 0, defaultMixRate: 0,
     pressureSim: false, scatter: false, smoothing: 0.3,
+  },
+  {
+    // SAI blender: 手指涂抹，只重新分配已有颜色，不注入前景色
+    // 算法：对笔刷圆内每像素，采样以该像素为中心的小邻域平均色，按 strength 插值写回
+    type: 'blend', label: 'Blend', labelZh: '手指涂抹', icon: '☁',
+    renderMode: 'pixel_blend', composite: 'source-over',
+    defaultSize: 26, defaultAlpha: 0.7, defaultHardness: 0, defaultMixRate: 0,
+    pressureSim: false, scatter: false, smoothing: 0.35,
   },
   {
     type: 'eraser', label: 'Eraser', labelZh: '橡皮', icon: '□',
@@ -496,6 +515,8 @@ export interface BrushPreset {
   alpha: number
   hardness: number
   mixRate: number
+  dilution: number
+  persistence: number
   createdAt: number
 }
 
@@ -514,16 +535,26 @@ function savePresets(presets: BrushPreset[]) {
 }
 
 const BUILTIN_PRESETS: BrushPreset[] = [
-  { id: 'b1',  name: '细线速写',  brushType: 'pen',        color: '#1a1a1a', size: 1,  alpha: 1,    hardness: 100, mixRate: 0,  createdAt: 0 },
-  { id: 'b2',  name: '黄色高光',  brushType: 'marker',     color: '#f2c94c', size: 20, alpha: 0.45, hardness: 90,  mixRate: 0,  createdAt: 0 },
-  { id: 'b3',  name: '铅笔素描',  brushType: 'pencil',     color: '#555555', size: 4,  alpha: 0.65, hardness: 70,  mixRate: 0,  createdAt: 0 },
-  { id: 'b4',  name: '书法墨笔',  brushType: 'ink',        color: '#0a0a0a', size: 8,  alpha: 0.9,  hardness: 85,  mixRate: 0,  createdAt: 0 },
-  { id: 'b5',  name: '蓝色水彩',  brushType: 'watercolor', color: '#4a90d9', size: 22, alpha: 0.55, hardness: 20,  mixRate: 60, createdAt: 0 },
-  { id: 'b6',  name: '油画厚涂',  brushType: 'oilpaint',   color: '#c4a044', size: 16, alpha: 0.85, hardness: 55,  mixRate: 40, createdAt: 0 },
-  { id: 'b7',  name: '软喷枪',    brushType: 'airbrush',   color: '#e05c5c', size: 35, alpha: 0.2,  hardness: 0,   mixRate: 0,  createdAt: 0 },
-  { id: 'b8',  name: 'SAI模糊',   brushType: 'blur',       color: '#ffffff', size: 30, alpha: 0.7,  hardness: 0,   mixRate: 0,  createdAt: 0 },
-  { id: 'b9',  name: '粉笔纹理',  brushType: 'chalk',      color: '#e8e0d0', size: 12, alpha: 0.8,  hardness: 40,  mixRate: 0,  createdAt: 0 },
-  { id: 'b10', name: '涂抹混色',  brushType: 'smear',      color: '#ffffff', size: 24, alpha: 0.65, hardness: 0,   mixRate: 0,  createdAt: 0 },
+  // ── 线稿类 ──────────────────────────────────────────────────────────────────
+  { id: 'b1',  name: '细线速写',    brushType: 'pen',        color: '#1a1a1a', size: 1,  alpha: 1,    hardness: 100, mixRate: 0,  dilution: 0,  persistence: 0,  createdAt: 0 },
+  { id: 'b2',  name: '书法墨笔',    brushType: 'ink',        color: '#0a0a0a', size: 8,  alpha: 0.92, hardness: 88,  mixRate: 0,  dilution: 0,  persistence: 0,  createdAt: 0 },
+  { id: 'b3',  name: '铅笔素描',    brushType: 'pencil',     color: '#555555', size: 4,  alpha: 0.65, hardness: 65,  mixRate: 0,  dilution: 0,  persistence: 0,  createdAt: 0 },
+  // ── 着色类 ──────────────────────────────────────────────────────────────────
+  // SAI blending 50, dilution 17, persistence 34 — 社区公认入门水彩参数
+  { id: 'b4',  name: 'SAI 水彩',    brushType: 'watercolor', color: '#4a90d9', size: 22, alpha: 0.6,  hardness: 15,  mixRate: 50, dilution: 17, persistence: 34, createdAt: 0 },
+  // SAI blending 50, dilution 50, persistence 80 — 柔滑混色水彩
+  { id: 'b5',  name: '柔滑晕染',    brushType: 'watercolor', color: '#c471ed', size: 26, alpha: 0.55, hardness: 10,  mixRate: 50, dilution: 50, persistence: 80, createdAt: 0 },
+  // SAI oilpaint: blending 40-60, persistence=100 厚涂感
+  { id: 'b6',  name: '油画厚涂',    brushType: 'oilpaint',   color: '#c4a044', size: 16, alpha: 0.9,  hardness: 60,  mixRate: 45, dilution: 5,  persistence: 80, createdAt: 0 },
+  // marker-style: blending 49, dilution 0, persistence 80
+  { id: 'b7',  name: '湿笔晕染',    brushType: 'wetbrush',   color: '#6fcf97', size: 20, alpha: 0.5,  hardness: 0,   mixRate: 49, dilution: 0,  persistence: 80, createdAt: 0 },
+  // ── 特效类 ──────────────────────────────────────────────────────────────────
+  { id: 'b8',  name: '黄色高光',    brushType: 'marker',     color: '#f2c94c', size: 20, alpha: 0.45, hardness: 90,  mixRate: 0,  dilution: 0,  persistence: 0,  createdAt: 0 },
+  { id: 'b9',  name: '软喷枪',      brushType: 'airbrush',   color: '#e05c5c', size: 35, alpha: 0.2,  hardness: 0,   mixRate: 0,  dilution: 0,  persistence: 0,  createdAt: 0 },
+  { id: 'b10', name: 'SAI 模糊',    brushType: 'blur',       color: '#ffffff', size: 30, alpha: 0.7,  hardness: 0,   mixRate: 0,  dilution: 0,  persistence: 0,  createdAt: 0 },
+  { id: 'b11', name: '粉笔纹理',    brushType: 'chalk',      color: '#e8e0d0', size: 12, alpha: 0.8,  hardness: 40,  mixRate: 0,  dilution: 0,  persistence: 0,  createdAt: 0 },
+  { id: 'b12', name: '涂抹混色',    brushType: 'smear',      color: '#ffffff', size: 24, alpha: 0.65, hardness: 0,   mixRate: 0,  dilution: 0,  persistence: 0,  createdAt: 0 },
+  { id: 'b13', name: '手指涂抹',    brushType: 'blend',      color: '#ffffff', size: 26, alpha: 0.7,  hardness: 0,   mixRate: 0,  dilution: 0,  persistence: 0,  createdAt: 0 },
 ]
 
 const COLOR_PALETTE = [
@@ -543,7 +574,9 @@ export interface DrawState {
   size: number
   alpha: number
   hardness: number
-  mixRate: number
+  mixRate: number      // blending: 0–100，画布颜色拾取量
+  dilution: number     // SAI dilution: 0–100，稀释度（透明区域画色能力，0=完全可画，100=透明区完全不上色）
+  persistence: number  // SAI persistence: 0–100，拖尾长度（颜色拖尾惯性）
   shapeType: ShapeType | null
   shapeFill: boolean
   shapeStroke: number
@@ -552,7 +585,7 @@ export interface DrawState {
 
 export const sharedDrawState: DrawState = {
   brushType: 'pen', color: '#1a1a1a', size: 2, alpha: 1,
-  hardness: 100, mixRate: 0,
+  hardness: 100, mixRate: 0, dilution: 0, persistence: 0,
   shapeType: null, shapeFill: false, shapeStroke: 2, shapeSides: 6,
 }
 
@@ -593,6 +626,13 @@ export function catmullRom(p0: number, p1: number, p2: number, p3: number, t: nu
  * LOCAL BLUR (SAI-style):
  * Reads pixels in a circle, box-blurs them, writes them back with feathered mask.
  * Repeated strokes accumulate blur naturally — no pre-snapshot needed.
+ *
+ * ── 颜色偏移修复 ──────────────────────────────────────────────────────────────
+ * getImageData 返回 straight alpha（RGB 与 alpha 独立）。
+ * 直接对 straight alpha 数据做 box blur，会把透明像素的 RGB=0 一起平均进去，
+ * 导致颜色越模糊越偏暗/偏灰（premultiplied alpha 问题）。
+ * 修复：blur 前先转 premultiplied（RGB *= alpha/255），
+ *       blur 后再转回 straight（RGB /= alpha/255），保持颜色正确。
  */
 export function applyLocalBlur(
   ctx: CanvasRenderingContext2D,
@@ -611,11 +651,24 @@ export function applyLocalBlur(
   if (rw <= 0 || rh <= 0) return
 
   const src  = ctx.getImageData(x0, y0, rw, rh)
-  const orig = new Uint8ClampedArray(src.data)
-  const buf  = new Uint8ClampedArray(src.data)
-  const tmp  = new Uint8ClampedArray(src.data.length)
+  const orig = new Uint8ClampedArray(src.data)   // 保留原始 straight alpha 数据
+
+  // ── straight → premultiplied ──
+  const pre = new Float32Array(src.data.length)
+  for (let i = 0; i < src.data.length; i += 4) {
+    const a = src.data[i + 3] / 255
+    pre[i]   = src.data[i]   * a
+    pre[i+1] = src.data[i+1] * a
+    pre[i+2] = src.data[i+2] * a
+    pre[i+3] = src.data[i+3]
+  }
+
+  // ── separable box blur（在 premultiplied 空间做，颜色不会偏移）──
+  const buf = new Float32Array(pre)
+  const tmp = new Float32Array(pre.length)
 
   for (let p = 0; p < passes; p++) {
+    // 水平 pass
     for (let y = 0; y < rh; y++) {
       for (let x = 0; x < rw; x++) {
         let rr = 0, g = 0, b = 0, a = 0, n = 0
@@ -629,6 +682,7 @@ export function applyLocalBlur(
         tmp[i] = rr/n; tmp[i+1] = g/n; tmp[i+2] = b/n; tmp[i+3] = a/n
       }
     }
+    // 垂直 pass
     for (let y = 0; y < rh; y++) {
       for (let x = 0; x < rw; x++) {
         let rr = 0, g = 0, b = 0, a = 0, n = 0
@@ -644,6 +698,19 @@ export function applyLocalBlur(
     }
   }
 
+  // ── premultiplied → straight alpha ──
+  const blurred = new Float32Array(buf.length)
+  for (let i = 0; i < buf.length; i += 4) {
+    const a = buf[i + 3]
+    if (a > 0) {
+      blurred[i]   = buf[i]   / (a / 255)
+      blurred[i+1] = buf[i+1] / (a / 255)
+      blurred[i+2] = buf[i+2] / (a / 255)
+    }
+    blurred[i+3] = a
+  }
+
+  // ── feathered blend：圆形羽化蒙版，只改变圆内像素 ──
   const rcx = r, rcy = r
   for (let y = 0; y < rh; y++) {
     for (let x = 0; x < rw; x++) {
@@ -653,17 +720,105 @@ export function applyLocalBlur(
       const t = Math.max(0, 1 - dist / r)
       const blend = strength * t * t
       const i = (y * rw + x) * 4
-      src.data[i]   = orig[i]   + (buf[i]   - orig[i])   * blend
-      src.data[i+1] = orig[i+1] + (buf[i+1] - orig[i+1]) * blend
-      src.data[i+2] = orig[i+2] + (buf[i+2] - orig[i+2]) * blend
-      src.data[i+3] = orig[i+3] + (buf[i+3] - orig[i+3]) * blend
+      src.data[i]   = orig[i]   + (blurred[i]   - orig[i])   * blend
+      src.data[i+1] = orig[i+1] + (blurred[i+1] - orig[i+1]) * blend
+      src.data[i+2] = orig[i+2] + (blurred[i+2] - orig[i+2]) * blend
+      src.data[i+3] = orig[i+3] + (blurred[i+3] - orig[i+3]) * blend
     }
   }
   ctx.putImageData(src, x0, y0)
 }
 
 /**
- * SMEAR: drags pixels from (srcX,srcY) toward (dstX,dstY) using a live snapshot.
+ * LOCAL BLEND (SAI blender / finger-smudge):
+ * 在笔刷圆内，对每个像素采样其小邻域（radius * neighborRatio）的平均色，
+ * 按 strength 与原色插值写回。不注入任何前景色——只重新分配已有颜色。
+ *
+ * 与 blur 的区别：
+ *   blur   → 每像素与自身周围 1px 3×3 box 平均（kernel 固定小）
+ *   blend  → 每像素与自身周围 neighborR px 圆形平均（kernel 随笔刷大小缩放），
+ *             且 neighborRatio 可调，产生更明显的颜色融合感
+ *
+ * premultiplied alpha 空间做运算，防止颜色偏暗。
+ */
+export function applyLocalBlend(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number,
+  radius: number,
+  strength: number,         // 0–1，涂抹强度（对应笔刷 alpha）
+  neighborRatio: number = 0.35, // 邻域采样半径 / 笔刷半径，0.2–0.5 为佳
+) {
+  const r  = Math.ceil(radius)
+  const W  = ctx.canvas.width, H = ctx.canvas.height
+  const x0 = Math.max(0, Math.round(cx - r))
+  const y0 = Math.max(0, Math.round(cy - r))
+  const x1 = Math.min(W, x0 + r * 2)
+  const y1 = Math.min(H, y0 + r * 2)
+  const rw = x1 - x0, rh = y1 - y0
+  if (rw <= 0 || rh <= 0) return
+
+  const imgData = ctx.getImageData(x0, y0, rw, rh)
+  const src = imgData.data
+  const orig = new Uint8ClampedArray(src)  // 原始像素（采样源，不随写入变化）
+
+  // straight → premultiplied，防止透明像素 RGB=0 污染邻域平均
+  const pre = new Float32Array(src.length)
+  for (let i = 0; i < src.length; i += 4) {
+    const a = src[i + 3] / 255
+    pre[i]   = src[i]   * a
+    pre[i+1] = src[i+1] * a
+    pre[i+2] = src[i+2] * a
+    pre[i+3] = src[i+3]
+  }
+
+  const nr = Math.max(1, Math.round(radius * neighborRatio)) // 邻域采样半径（px）
+  const rcx = r, rcy = r  // 笔刷圆心在 patch 内坐标
+
+  for (let py = 0; py < rh; py++) {
+    for (let px = 0; px < rw; px++) {
+      // 只处理笔刷圆内的像素
+      const bdx = px - rcx, bdy = py - rcy
+      const bdist = Math.sqrt(bdx * bdx + bdy * bdy)
+      if (bdist > r) continue
+
+      // 圆形羽化权重（中心强，边缘弱）
+      const brushT = Math.max(0, 1 - bdist / r)
+      const blendW = strength * brushT * brushT
+
+      // 采样邻域（以 px,py 为中心，nr 为半径）的 premultiplied 平均色
+      let ar = 0, ag = 0, ab = 0, aa = 0, n = 0
+      for (let dy = -nr; dy <= nr; dy++) {
+        for (let dx = -nr; dx <= nr; dx++) {
+          if (dx * dx + dy * dy > nr * nr) continue  // 圆形邻域
+          const nx = px + dx, ny = py + dy
+          if (nx < 0 || nx >= rw || ny < 0 || ny >= rh) continue
+          const ni = (ny * rw + nx) * 4
+          ar += pre[ni]; ag += pre[ni+1]; ab += pre[ni+2]; aa += pre[ni+3]; n++
+        }
+      }
+      if (n === 0) continue
+      ar /= n; ag /= n; ab /= n; aa /= n
+
+      // premultiplied → straight（邻域平均色）
+      let nr2 = ar, ng2 = ag, nb2 = ab
+      if (aa > 0) {
+        const invA = 255 / aa
+        nr2 = ar * invA; ng2 = ag * invA; nb2 = ab * invA
+      }
+
+      // 与原色按 blendW 插值写回
+      const i = (py * rw + px) * 4
+      src[i]   = orig[i]   + (nr2 - orig[i])   * blendW
+      src[i+1] = orig[i+1] + (ng2 - orig[i+1]) * blendW
+      src[i+2] = orig[i+2] + (nb2 - orig[i+2]) * blendW
+      // alpha 也轻微均匀化（让透明区稍微被拉入，产生晕开感）
+      src[i+3] = orig[i+3] + (aa  - orig[i+3]) * blendW * 0.4
+    }
+  }
+  ctx.putImageData(imgData, x0, y0)
+}
+
+/**
  */
 export function applySmearStamp(
   ctx: CanvasRenderingContext2D,
@@ -860,6 +1015,33 @@ export function universalRenderStroke(
     return
   }
 
+  // ── PIXEL_BLEND (SAI blender: 手指涂抹，不注入新颜色) ──────────────────────
+  if (brush.renderMode === 'pixel_blend') {
+    const radius  = state.size / 2
+    // 步距 = 邻域半径的 60%，保证相邻 stamp 有足够重叠产生平滑融合
+    const neighborR = radius * 0.35
+    const spacing   = Math.max(1, neighborR * 0.6)
+    const strength  = Math.max(0.1, state.alpha)
+
+    for (let i = 1; i < pts.length - 1; i++) {
+      const p0 = pts[Math.max(0, i - 1)]
+      const p1 = pts[i]
+      const p2 = pts[i + 1]
+      const p3 = pts[Math.min(pts.length - 1, i + 2)]
+
+      const segLen = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2))
+      const steps  = Math.max(2, Math.ceil(segLen / spacing))
+
+      for (let s = 0; s <= steps; s++) {
+        const tt = s / steps
+        const sx = catmullRom(p0.x, p1.x, p2.x, p3.x, tt)
+        const sy = catmullRom(p0.y, p1.y, p2.y, p3.y, tt)
+        applyLocalBlend(ctx, sx, sy, radius, strength, 0.35)
+      }
+    }
+    return
+  }
+
   // ── STAMP / ERASE ──────────────────────────────────────────────────────────
   if (brush.renderMode === 'stamp' || brush.renderMode === 'erase') {
     const spacing = Math.max(1, state.size * 0.18)
@@ -874,7 +1056,10 @@ export function universalRenderStroke(
       if (brush.pressureSim) {
         const hasPen = p1.pressure !== 0.5 && p2.pressure !== 0.5
         if (hasPen) {
-          pressure = Math.max(0.2, Math.min(1.8, (p1.pressure*0.4 + p2.pressure*0.6)*2))
+          // SAI 默认 pressure curve: ease-in³（轻压细，重压才粗——接近真实画笔手感）
+          const rawP = p1.pressure * 0.4 + p2.pressure * 0.6
+          const curved = rawP * rawP * rawP  // ease-in³
+          pressure = Math.max(0.15, Math.min(1.8, 0.3 + curved * 1.5))
         } else {
           const dt  = Math.max(1, p2.t - p1.t)
           const dx  = p2.x - p1.x, dy = p2.y - p1.y
@@ -909,12 +1094,39 @@ export function universalRenderStroke(
             ? radius * (0.7 + Math.random() * 0.6)
             : radius
 
-          // WET MIX: sample canvas and blend with foreground
+          // WET MIX: SAI-style blending + dilution + persistence
           let sr = fr, sg = fg, sb = fb
-          if (brush.wetMix && mixRate > 0) {
+          let stampAlphaScale = 1.0
+          if (brush.wetMix) {
+            const blendT   = mixRate / 100                  // SAI blending: 画布颜色拾取比
+            const dilutionT = (state.dilution ?? 0) / 100  // SAI dilution: 稀释透明度
+            const persistT  = (state.persistence ?? 0) / 100 // SAI persistence: 拖尾
+
             const [cr, cg, cb, ca] = sampleCanvasColor(ctx, jx, jy, stampRadius)
-            const mixT = (mixRate / 100) * Math.min(1, ca / 200 + 0.2)
-            ;[sr, sg, sb] = blendRGB(fr, fg, fb, cr, cg, cb, mixT)
+            const canvasPresence = ca / 255  // 0=透明区域，1=不透明区域
+
+            // blending: 按画布颜色存在量混合（透明区混的少）
+            if (blendT > 0) {
+              const effectiveMix = blendT * Math.min(1, canvasPresence + 0.15)
+              ;[sr, sg, sb] = blendRGB(fr, fg, fb, cr, cg, cb, effectiveMix)
+            }
+
+            // dilution: 透明区域上色能力衰减
+            // dilution=0: 无影响(完全可画); dilution=100: 透明区完全不上色
+            if (dilutionT > 0) {
+              // 透明区（canvasPresence低）时 alpha 按 dilution 衰减
+              stampAlphaScale *= (1 - dilutionT * (1 - canvasPresence))
+              stampAlphaScale = Math.max(0.02, stampAlphaScale)
+            }
+
+            // persistence: SAI 拖尾——把拾取到的颜色持续带向前方
+            // 简单实现：高 persistence 时，混色后的颜色向前方的 stamp 传递（用 sr/sg/sb 持久化）
+            // 这里用 persistence 增强 blendT 下一步的"已有色"权重
+            if (persistT > 0 && canvasPresence > 0.1) {
+              // persistence 让已拾取的混色颜色比前景更"粘"，产生拖尾感
+              const pBlend = persistT * canvasPresence * 0.6
+              ;[sr, sg, sb] = blendRGB(sr, sg, sb, cr, cg, cb, pBlend)
+            }
           }
 
           // AIRBRUSH: spray dot mode
@@ -923,9 +1135,9 @@ export function universalRenderStroke(
             continue
           }
 
-          const stampAlpha   = brush.type === 'chalk' ? state.alpha * (0.5 + Math.random() * 0.5)
+          const stampAlpha   = (brush.type === 'chalk' ? state.alpha * (0.5 + Math.random() * 0.5)
                              : brush.type === 'marker' ? brush.defaultAlpha
-                             : state.alpha
+                             : state.alpha) * stampAlphaScale
           const stampHardness = brush.renderMode === 'erase' ? 100 : hardness
 
           drawStamp(ctx, jx, jy, stampRadius, sr, sg, sb, stampAlpha, stampHardness, brush.composite)
@@ -1082,6 +1294,8 @@ export function DrawPanel({ isZh, addImageBlock, canvasWidth = 600, activePageId
   const [alpha,        setAlphaState]       = useState(1)
   const [hardness,     setHardnessState]    = useState(100)
   const [mixRate,      setMixRateState]     = useState(0)
+  const [dilution,     setDilutionState]    = useState(0)
+  const [persistence,  setPersistenceState] = useState(0)
   const [bgColor,      setBgColor]          = useState<string>('transparent')
   const [canUndo,      setCanUndo]          = useState(false)
   const [userPresets,  setUserPresets]      = useState<BrushPreset[]>(() => loadPresets())
@@ -1098,6 +1312,8 @@ export function DrawPanel({ isZh, addImageBlock, canvasWidth = 600, activePageId
   const alphaRef       = useRef(1)
   const hardnessRef    = useRef(100)
   const mixRateRef     = useRef(0)
+  const dilutionRef    = useRef(0)
+  const persistenceRef = useRef(0)
   const shapeTypeRef   = useRef<ShapeType | null>(null)
   const shapeFillRef   = useRef(false)
   const shapeStrokeRef = useRef(2)
@@ -1108,7 +1324,9 @@ export function DrawPanel({ isZh, addImageBlock, canvasWidth = 600, activePageId
   const setSize        = (v: number)    => { sizeRef.current = v;      sharedDrawState.size = v;      setSizeState(v) }
   const setAlpha       = (v: number)    => { alphaRef.current = v;     sharedDrawState.alpha = v;     setAlphaState(v) }
   const setHardness    = (v: number)    => { hardnessRef.current = v;  sharedDrawState.hardness = v;  setHardnessState(v) }
-  const setMixRate     = (v: number)    => { mixRateRef.current = v;   sharedDrawState.mixRate = v;   setMixRateState(v) }
+  const setMixRate     = (v: number)    => { mixRateRef.current = v;     sharedDrawState.mixRate = v;     setMixRateState(v) }
+  const setDilution    = (v: number)    => { dilutionRef.current = v;    sharedDrawState.dilution = v;    setDilutionState(v) }
+  const setPersistence = (v: number)    => { persistenceRef.current = v; sharedDrawState.persistence = v; setPersistenceState(v) }
   const setShapeType   = (v: ShapeType | null) => { shapeTypeRef.current = v; sharedDrawState.shapeType = v; setShapeTypeState(v) }
   const setShapeFill   = (v: boolean) => { shapeFillRef.current = v;   sharedDrawState.shapeFill = v;   setShapeFillState(v) }
   const setShapeStroke = (v: number)  => { shapeStrokeRef.current = v; sharedDrawState.shapeStroke = v; setShapeStrokeState(v) }
@@ -1149,17 +1367,20 @@ export function DrawPanel({ isZh, addImageBlock, canvasWidth = 600, activePageId
     setAlpha(p.alpha)
     setHardness(p.hardness ?? 100)
     setMixRate(p.mixRate ?? 0)
+    setDilution(p.dilution ?? 0)
+    setPersistence(p.persistence ?? 0)
   }, [])
 
   const addPreset = useCallback(() => {
     const name = presetName.trim() || (isZh ? `预设 ${userPresets.length+1}` : `Preset ${userPresets.length+1}`)
     const preset: BrushPreset = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2),
-      name, brushType, color, size, alpha, hardness, mixRate, createdAt: Date.now(),
+      name, brushType, color, size, alpha, hardness, mixRate,
+      dilution, persistence, createdAt: Date.now(),
     }
     const next = [...userPresets, preset]
     setUserPresets(next); savePresets(next); setPresetName(''); setSavingPreset(false)
-  }, [presetName, brushType, color, size, alpha, hardness, mixRate, userPresets, isZh])
+  }, [presetName, brushType, color, size, alpha, hardness, mixRate, dilution, persistence, userPresets, isZh])
 
   const deletePreset = useCallback((id: string) => {
     const next = userPresets.filter(p => p.id !== id)
@@ -1209,7 +1430,7 @@ export function DrawPanel({ isZh, addImageBlock, canvasWidth = 600, activePageId
     { label: 'Line',    labelZh: '线条', brushes: BRUSHES.filter(b => ['pen','marker','pencil','ink'].includes(b.type)) },
     { label: 'Texture', labelZh: '纹理', brushes: BRUSHES.filter(b => ['chalk','wetbrush'].includes(b.type)) },
     { label: 'Paint',   labelZh: '绘画', brushes: BRUSHES.filter(b => ['watercolor','oilpaint','airbrush'].includes(b.type)) },
-    { label: 'Special', labelZh: '特殊', brushes: BRUSHES.filter(b => ['blur','smear','eraser'].includes(b.type)) },
+    { label: 'Special', labelZh: '特殊', brushes: BRUSHES.filter(b => ['blur','smear','blend','eraser'].includes(b.type)) },
   ]
 
   const sliderBtn = (onClick: () => void, label: string): React.CSSProperties => ({
@@ -1291,7 +1512,13 @@ export function DrawPanel({ isZh, addImageBlock, canvasWidth = 600, activePageId
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '5px' }}>
               {group.brushes.map(b => (
                 <button key={b.type}
-                  onClick={() => { setBrushType(b.type); setShapeType(null); setSize(b.defaultSize); setAlpha(b.defaultAlpha); setHardness(b.defaultHardness); setMixRate(b.defaultMixRate) }}
+                  onClick={() => {
+                    setBrushType(b.type); setShapeType(null)
+                    setSize(b.defaultSize); setAlpha(b.defaultAlpha)
+                    setHardness(b.defaultHardness); setMixRate(b.defaultMixRate)
+                    setDilution(b.defaultDilution ?? 0)
+                    setPersistence(b.defaultPersistence ?? 0)
+                  }}
                   style={{ ...chipBtn(brushType === b.type && shapeType === null), flexDirection: 'column', padding: '7px 4px', gap: '3px', fontSize: '0.62rem', justifyContent: 'center', textAlign: 'center' }}>
                   <span style={{ fontSize: '1rem', lineHeight: 1, fontFamily: 'monospace', color: brushType === b.type && shapeType === null ? '#1a1a1a' : '#888' }}>{b.icon}</span>
                   <span style={{ lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{isZh ? b.labelZh : b.label}</span>
@@ -1376,6 +1603,33 @@ export function DrawPanel({ isZh, addImageBlock, canvasWidth = 600, activePageId
                 {isZh ? '混色率决定笔刷拾取画布颜色的比例，产生水彩/油画叠色感。' : 'Controls how much canvas color is picked up and blended, creating layered watercolor / oil paint feel.'}
               </p>
             </div>
+          )}
+          {/* Dilution + Persistence — watercolor / oilpaint / wetbrush only */}
+          {isWetBrush && (
+            <>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span style={labelStyle}>{t('Dilution','稀释度')}</span>
+                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.62rem', color: '#4a90d9' }}>{dilution}%</span>
+                </div>
+                <input type="range" min={0} max={100} value={dilution} onChange={e => setDilution(Number(e.target.value))} style={{ width: '100%', accentColor: '#4a90d9' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '3px' }}>
+                  <span style={{ fontSize: '0.5rem', color: '#ccc', fontFamily: 'Inter, sans-serif' }}>{t('Full opacity','完全上色')}</span>
+                  <span style={{ fontSize: '0.5rem', color: '#ccc', fontFamily: 'Inter, sans-serif' }}>{t('Thinner','稀释透明')}</span>
+                </div>
+              </div>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                  <span style={labelStyle}>{t('Persistence','拖尾')}</span>
+                  <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.62rem', color: '#4a90d9' }}>{persistence}%</span>
+                </div>
+                <input type="range" min={0} max={100} value={persistence} onChange={e => setPersistence(Number(e.target.value))} style={{ width: '100%', accentColor: '#4a90d9' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '3px' }}>
+                  <span style={{ fontSize: '0.5rem', color: '#ccc', fontFamily: 'Inter, sans-serif' }}>{t('No trail','无拖尾')}</span>
+                  <span style={{ fontSize: '0.5rem', color: '#ccc', fontFamily: 'Inter, sans-serif' }}>{t('Long trail','长拖尾')}</span>
+                </div>
+              </div>
+            </>
           )}
           {/* Blur info */}
           {brushType === 'blur' && (

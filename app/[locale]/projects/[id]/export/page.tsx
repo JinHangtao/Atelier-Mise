@@ -13,6 +13,7 @@ import { useEmojiPicker } from './useEmojiPicker'
 import { EmojiBlock, ArrowDirection } from './types'
 import { generateId } from './pageHelpers'
 import EmojiPickerPanel from './EmojiPickerPanel'
+import { exportCanvasFile } from '@/lib/canvasFormat'
 
 export default function ExportPage() {
   const s = useExportPage()
@@ -24,7 +25,9 @@ export default function ExportPage() {
   const prevZoomRef = React.useRef<number>(1)
   const prevPanRef = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 })
   const canvasWrapRef = s.canvasWrapRef
-
+  const [canvasExportOpen, setCanvasExportOpen] = React.useState(false)
+  const [canvasFilename, setCanvasFilename] = React.useState(s.project?.title ?? 'untitled')
+const handleOpen = () => { setCanvasFilename(project?.title ?? 'untitled'); setCanvasExportOpen(true) }
   // ── Emoji state ───────────────────────────────────────────────────────────
   const [emojiBlocks, setEmojiBlocks] = React.useState<EmojiBlock[]>([])
   const [selectedEmojiId, setSelectedEmojiId] = React.useState<string | null>(null)
@@ -282,6 +285,63 @@ export default function ExportPage() {
           {saveStatus === 'idle' && <span style={{ fontSize: '0.65rem', color: '#d0d0cc', letterSpacing: '0.1em', fontFamily: 'Inter, DM Sans, sans-serif' }}>{pages.length} PAGES · {allBlocksForExport.length} BLOCKS</span>}
         </div>
 
+{/* .sensei 导出弹窗 */}
+{canvasExportOpen && (
+  <div
+    onClick={e => { if (e.target === e.currentTarget) setCanvasExportOpen(false) }}
+    style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.28)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+  >
+    <div style={{ background: '#fff', borderRadius: 18, padding: '28px 32px', width: 360, boxShadow: '0 16px 48px rgba(0,0,0,0.16)', display: 'flex', flexDirection: 'column', gap: 20, fontFamily: 'Inter, DM Sans, sans-serif' }}>
+      <div>
+        <p style={{ fontSize: '0.6rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: '#bbb', fontWeight: 600, margin: '0 0 6px' }}>{isZh ? '保存为项目文件' : 'Save project file'}</p>
+        <p style={{ fontSize: '1rem', fontWeight: 700, color: '#1a1a1a', margin: 0 }}>{isZh ? '导出 .sensei' : 'Export .sensei'}</p>
+      </div>
+
+      <div>
+        <p style={{ fontSize: '0.72rem', color: '#888', marginBottom: 8 }}>{isZh ? '文件名' : 'Filename'}</p>
+        <div style={{ display: 'flex', alignItems: 'center', border: '1.5px solid rgba(26,26,26,0.12)', borderRadius: 10, overflow: 'hidden' }}>
+          <input
+            value={canvasFilename}
+            onChange={e => setCanvasFilename(e.target.value)}
+            autoFocus
+            style={{ flex: 1, border: 'none', outline: 'none', padding: '10px 14px', fontSize: '0.85rem', color: '#1a1a1a', fontFamily: 'inherit', background: 'transparent' }}
+            placeholder="untitled"
+          />
+          <span style={{ padding: '10px 14px', fontSize: '0.75rem', color: '#aaa', borderLeft: '1px solid rgba(26,26,26,0.08)', background: '#fafafa' }}>.sensei</span>
+        </div>
+      </div>
+
+      <div style={{ background: '#f7f7f5', borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {[
+          { label: isZh ? '页面数' : 'Pages', value: `${pages.length}` },
+          { label: isZh ? '元素数' : 'Blocks', value: `${allBlocksForExport.length}` },
+          { label: isZh ? '格式' : 'Format', value: 'ZIP · 懒加载资源' },
+        ].map(({ label, value }) => (
+          <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+            <span style={{ color: '#aaa' }}>{label}</span>
+            <span style={{ color: '#1a1a1a', fontWeight: 500 }}>{value}</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button onClick={() => setCanvasExportOpen(false)}
+          style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid rgba(26,26,26,0.1)', background: 'transparent', fontSize: '0.82rem', color: '#888', cursor: 'pointer', fontFamily: 'inherit' }}>
+          {isZh ? '取消' : 'Cancel'}
+        </button>
+        <button
+          onClick={async () => {
+            setCanvasExportOpen(false)
+            await exportCanvasFile(project, pages, canvasFilename || project.title)
+          }}
+          style={{ flex: 2, padding: '11px 0', borderRadius: 10, border: 'none', background: '#1a1a1a', fontSize: '0.82rem', color: '#fff', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}>
+          {isZh ? '下载 .sensei ↓' : 'Download .sensei ↓'}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
         {/* Actions */}
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
           <button onClick={undo} disabled={undoStack.current.length === 0} title={isZh ? '撤销 (⌘Z)' : 'Undo (⌘Z)'} style={{ background: 'transparent', border: '1px solid rgba(26,26,26,0.1)', padding: '7px 12px', borderRadius: '8px', fontSize: '0.82rem', cursor: undoStack.current.length === 0 ? 'not-allowed' : 'pointer', color: undoStack.current.length === 0 ? '#ddd' : '#888', transition: 'all 0.12s' }}>↩</button>
@@ -293,6 +353,7 @@ export default function ExportPage() {
             </button>
           )}
           <div style={{ width: '1px', height: '18px', background: 'rgba(26,26,26,0.08)' }} />
+
 
           {/* ⚙ Settings */}
           <div style={{ position: 'relative' }} ref={settingsRef}>
@@ -310,6 +371,18 @@ export default function ExportPage() {
             ⛶
           </button>
           <div style={{ width: '1px', height: '18px', background: 'rgba(26,26,26,0.08)' }} />
+          
+          <button
+  onClick={handleOpen}
+  style={{ background: 'rgba(74,171,111,0.06)', color: '#4aab6f', border: '1px solid rgba(74,171,111,0.25)', padding: '8px 14px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.06em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}
+  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(74,171,111,0.12)'; e.currentTarget.style.borderColor = 'rgba(74,171,111,0.5)' }}
+  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(74,171,111,0.06)'; e.currentTarget.style.borderColor = 'rgba(74,171,111,0.25)' }}
+>
+  {isZh ? '保存项目' : 'Save'}
+  <span style={{ fontSize: '0.58rem', background: 'rgba(74,171,111,0.15)', padding: '2px 6px', borderRadius: 4 }}>.sensei</span>
+</button>
+<div style={{ width: '1px', height: '18px', background: 'rgba(26,26,26,0.08)' }} />
+
           <button onClick={() => setExportDialogOpen(true)} style={{ background: '#1a1a1a', color: '#f7f7f5', border: 'none', padding: '8px 16px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.1em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 600 }}>
             {isZh ? '导出' : 'Export'}
             <span style={{ fontSize: '0.6rem', background: 'rgba(255,255,255,0.18)', padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.06em' }}>HTML</span>
@@ -318,6 +391,8 @@ export default function ExportPage() {
           <button onClick={() => doExportDOCX()} style={{ background: 'transparent', color: '#666', border: '1px solid rgba(26,26,26,0.12)', padding: '8px 14px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.08em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', transition: 'all 0.12s' }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.04)'; e.currentTarget.style.color = '#1a1a1a' }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#666' }}>Word</button>
         </div>
       </nav>
+
+
 
       {/* ── Main layout ── */}
       {(() => {

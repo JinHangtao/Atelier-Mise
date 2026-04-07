@@ -1,4 +1,5 @@
 import './globals.css'
+import { CanvasImportWrapper } from '@/lib/CanvasImportWrapper'
 
 export default function RootLayout({
   children,
@@ -7,7 +8,10 @@ export default function RootLayout({
 }) {
   return (
     <html suppressHydrationWarning>
-      <body>{children}</body>
+      <body>
+        {children}
+        <CanvasImportWrapper />
+      </body>
     </html>
   )
 }
