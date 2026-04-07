@@ -698,23 +698,28 @@ export function useExportPage() {
       // cloneNode 不复制 canvas 内容，需要手动 drawImage
       // scale: 3 导出时 html2canvas 把 DOM 放大 3x，canvas 内容也要同步放大
       // 否则笔迹分辨率不变，放大后反而更糊
-      const EXPORT_SCALE = 3
-      const srcCanvases = Array.from(el.querySelectorAll('canvas')) as HTMLCanvasElement[]
-      const dstCanvases = Array.from(clone.querySelectorAll('canvas')) as HTMLCanvasElement[]
-      srcCanvases.forEach((src, idx) => {
-        const dst = dstCanvases[idx]
-        if (!dst) return
-        // 用 EXPORT_SCALE 倍物理尺寸，让笔迹在高分辨率下也锐利
-        dst.width  = src.width  * EXPORT_SCALE
-        dst.height = src.height * EXPORT_SCALE
-        const ctx = dst.getContext('2d')
-        if (ctx) {
-          ctx.imageSmoothingEnabled = false
-          ctx.scale(EXPORT_SCALE, EXPORT_SCALE)
-          ctx.drawImage(src, 0, 0)
-        }
-      })
-
+// ── 把原始 canvas 像素复制到 clone 里对应的 canvas ──────────────────
+const EXPORT_SCALE = 4
+const dpr = window.devicePixelRatio || 1
+const srcCanvases = Array.from(el.querySelectorAll('canvas')) as HTMLCanvasElement[]
+const dstCanvases = Array.from(clone.querySelectorAll('canvas')) as HTMLCanvasElement[]
+srcCanvases.forEach((src, idx) => {
+  const dst = dstCanvases[idx]
+  if (!dst) return
+  const cssW = Math.round(src.width  / dpr)
+  const cssH = Math.round(src.height / dpr)
+  dst.width  = cssW * EXPORT_SCALE
+  dst.height = cssH * EXPORT_SCALE
+  const ctx = dst.getContext('2d')
+  if (!ctx) return
+  ctx.imageSmoothingEnabled = true
+  ctx.imageSmoothingQuality = 'high'
+  ctx.drawImage(
+    src,
+    0, 0, src.width, src.height,
+    0, 0, dst.width, dst.height
+  )
+})
       ;[
         '[data-resize-handle]', '[data-selection-overlay]', '[data-drag-handle]',
         '.block-toolbar', '.resize-handle', '.selection-ring', '.block-selected-indicator',
