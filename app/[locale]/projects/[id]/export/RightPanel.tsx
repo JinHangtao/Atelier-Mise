@@ -42,6 +42,11 @@ export function RightPanel(s: ExportPageState) {
     gridEditMode, setGridEditMode,
   } = s as any
 
+  // ── 快速插入文字 state ──
+  const [quickText, setQuickText] = React.useState('')
+  const [quickTextHeight, setQuickTextHeight] = React.useState(72)
+  const quickDragRef = React.useRef<{ startY: number; startH: number } | null>(null)
+
   return (
     <div
       style={{ background: '#fff', overflowY: 'auto', borderLeft: '1px solid rgba(26,26,26,0.07)', display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}
@@ -57,6 +62,13 @@ export function RightPanel(s: ExportPageState) {
         ._rp-export-btn { transition: background 0.15s, transform 0.12s !important; }
         ._rp-export-btn:hover { background: #333 !important; }
         ._rp-export-btn:active { transform: scale(0.98) !important; }
+        ._rp-quick-ta { resize: none; outline: none; border: none; background: transparent; width: 100%; font-family: Inter, DM Sans, sans-serif; font-size: 0.82rem; color: #1a1a1a; line-height: 1.6; padding: 0; box-sizing: border-box; }
+        ._rp-quick-ta::placeholder { color: #ccc; }
+        ._rp-quick-ta:focus { outline: none; }
+        ._rp-drag-handle { height: 12px; cursor: ns-resize; display: flex; align-items: center; justify-content: center; margin: 0 -14px -14px; border-radius: 0 0 10px 10px; transition: background 0.12s; }
+        ._rp-drag-handle:hover { background: rgba(26,26,26,0.04); }
+        ._rp-drag-handle-bar { width: 28px; height: 3px; border-radius: 2px; background: rgba(26,26,26,0.12); transition: background 0.12s; }
+        ._rp-drag-handle:hover ._rp-drag-handle-bar { background: rgba(26,26,26,0.28); }
       `}</style>
       {/* Tab switcher */}
       <div style={{ position: 'sticky', top: 0, background: '#fff', zIndex: 10 }}>
@@ -101,6 +113,90 @@ export function RightPanel(s: ExportPageState) {
       {/* ── BLOCKS tab ── */}
       {rightTab === 'blocks' && (
         <div className="_rp-tab-panel" style={{ padding: '24px 20px', flex: 1 }}>
+
+          {/* Current page label */}
+          <div style={{ marginBottom: '16px', padding: '8px 12px', background: activePage?.isCover ? 'rgba(196,160,68,0.07)' : 'rgba(26,26,26,0.03)', borderRadius: '8px', border: `1px solid ${activePage?.isCover ? 'rgba(196,160,68,0.2)' : 'rgba(26,26,26,0.07)'}` }}>
+            <span style={{ fontSize: '0.65rem', fontFamily: 'Space Mono, monospace', color: activePage?.isCover ? '#c4a044' : '#888', letterSpacing: '0.08em' }}>
+              {activePage?.isCover ? (isZh ? '★ 封面' : '★ Cover') : activePage?.label}
+              {' · '}{aspectLabel(activePage?.aspect ?? 'free')}
+              {' · '}{blocks.length} {isZh ? '块' : 'block'}{blocks.length !== 1 && !isZh ? 's' : ''}
+            </span>
+          </div>
+
+          {/* ── 快速插入 ── */}
+          <div style={{ marginBottom: '20px', padding: '14px', background: 'rgba(26,26,26,0.025)', borderRadius: '10px', border: '1px solid rgba(26,26,26,0.07)', position: 'relative' }}>
+            {/* 顶栏：标签 + 插入按钮 */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+              <span style={{ fontSize: '0.58rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: '#888', fontFamily: 'Inter, DM Sans, sans-serif', fontWeight: 600 }}>
+                {isZh ? '插入' : 'Insert'}
+              </span>
+              <button
+                onClick={() => {
+                  const trimmed = quickText.trim()
+                  if (!trimmed) return
+                  trimmed.split('\n').filter(l => l.trim()).forEach(line => addBlock('text', line.trim()))
+                  setQuickText('')
+                }}
+                disabled={!quickText.trim()}
+                style={{
+                  padding: '3px 10px', borderRadius: '6px', border: 'none', cursor: quickText.trim() ? 'pointer' : 'default',
+                  background: quickText.trim() ? '#1a1a1a' : 'rgba(26,26,26,0.06)',
+                  color: quickText.trim() ? '#fff' : '#ccc',
+                  fontSize: '0.62rem', fontFamily: 'Inter, DM Sans, sans-serif', fontWeight: 600,
+                  letterSpacing: '0.06em', transition: 'all 0.15s cubic-bezier(0.22,1,0.36,1)',
+                }}
+                onMouseEnter={e => { if (quickText.trim()) e.currentTarget.style.background = '#333' }}
+                onMouseLeave={e => { if (quickText.trim()) e.currentTarget.style.background = '#1a1a1a' }}
+              >
+                {isZh ? '加入 ↵' : 'Add ↵'}
+              </button>
+            </div>
+
+            {/* Textarea */}
+            <textarea
+              className="_rp-quick-ta"
+              value={quickText}
+              onChange={e => setQuickText(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault()
+                  const trimmed = quickText.trim()
+                  if (!trimmed) return
+                  trimmed.split('\n').filter(l => l.trim()).forEach(line => addBlock('text', line.trim()))
+                  setQuickText('')
+                }
+              }}
+              placeholder={isZh ? '输入任意内容，每行一个 block…\n⌘↵ 插入' : 'Type anything, one block per line…\n⌘↵ to insert'}
+              style={{ height: quickTextHeight }}
+            />
+
+            {/* 拖拽调高手柄 */}
+            <div
+              className="_rp-drag-handle"
+              onMouseDown={e => {
+                e.preventDefault()
+                quickDragRef.current = { startY: e.clientY, startH: quickTextHeight }
+                const onMove = (ev: MouseEvent) => {
+                  if (!quickDragRef.current) return
+                  const delta = ev.clientY - quickDragRef.current.startY
+                  setQuickTextHeight(Math.max(48, Math.min(400, quickDragRef.current.startH + delta)))
+                }
+                const onUp = () => {
+                  quickDragRef.current = null
+                  document.body.style.cursor = ''
+                  document.body.style.userSelect = ''
+                  window.removeEventListener('mousemove', onMove)
+                  window.removeEventListener('mouseup', onUp)
+                }
+                document.body.style.cursor = 'ns-resize'
+                document.body.style.userSelect = 'none'
+                window.addEventListener('mousemove', onMove)
+                window.addEventListener('mouseup', onUp)
+              }}
+            >
+              <div className="_rp-drag-handle-bar" />
+            </div>
+          </div>
 
 {/* Table style controls */}
 {(() => {
@@ -490,15 +586,6 @@ export function RightPanel(s: ExportPageState) {
               </div>
             )
           })()}
-
-          {/* Current page label */}
-          <div style={{ marginBottom: '16px', padding: '8px 12px', background: activePage?.isCover ? 'rgba(196,160,68,0.07)' : 'rgba(26,26,26,0.03)', borderRadius: '8px', border: `1px solid ${activePage?.isCover ? 'rgba(196,160,68,0.2)' : 'rgba(26,26,26,0.07)'}` }}>
-            <span style={{ fontSize: '0.65rem', fontFamily: 'Space Mono, monospace', color: activePage?.isCover ? '#c4a044' : '#888', letterSpacing: '0.08em' }}>
-              {activePage?.isCover ? (isZh ? '★ 封面' : '★ Cover') : activePage?.label}
-              {' · '}{aspectLabel(activePage?.aspect ?? 'free')}
-              {' · '}{blocks.length} {isZh ? '块' : 'block'}{blocks.length !== 1 && !isZh ? 's' : ''}
-            </span>
-          </div>
 
           {/* Page background picker */}
           {activePage && (
