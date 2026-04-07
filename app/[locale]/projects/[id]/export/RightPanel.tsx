@@ -134,7 +134,7 @@ export function RightPanel(s: ExportPageState) {
                 onClick={() => {
                   const trimmed = quickText.trim()
                   if (!trimmed) return
-                  trimmed.split('\n').filter(l => l.trim()).forEach(line => addBlock('text', line.trim()))
+                  trimmed.split('\n').filter(l => l.trim()).forEach(line => addBlock('text' as any, line.trim()))
                   setQuickText('')
                 }}
                 disabled={!quickText.trim()}
@@ -162,7 +162,7 @@ export function RightPanel(s: ExportPageState) {
                   e.preventDefault()
                   const trimmed = quickText.trim()
                   if (!trimmed) return
-                  trimmed.split('\n').filter(l => l.trim()).forEach(line => addBlock('text', line.trim()))
+                  trimmed.split('\n').filter(l => l.trim()).forEach(line => addBlock('text' as any, line.trim()))
                   setQuickText('')
                 }
               }}
