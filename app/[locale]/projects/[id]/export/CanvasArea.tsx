@@ -1167,8 +1167,20 @@ export function CanvasArea(s: ExportPageState) {
   // ── 直接 DOM 操作 pan，避免 mousemove 触发 React re-render ────────────────
   const panLayerRef  = React.useRef<HTMLDivElement>(null)
   const livePan      = React.useRef({ x: canvasPan.x, y: canvasPan.y })
+  // liveZoom mirrors canvasZoom for DOM-direct transform — no setState on wheel
+  const liveZoom     = React.useRef(canvasZoom)
   // 每次 canvasPan state 变化（zoom/immersive 等）同步 livePan
   React.useEffect(() => { livePan.current = { x: canvasPan.x, y: canvasPan.y } }, [canvasPan])
+  // Sync liveZoom when canvasZoom state changes (e.g. toolbar +/- buttons)
+  React.useEffect(() => {
+    liveZoom.current = canvasZoom
+    canvasZoomRef.current = canvasZoom
+    if (panLayerRef.current) {
+      panLayerRef.current.style.transition = 'none'
+      panLayerRef.current.style.transform =
+        `translate(${livePan.current.x}px,${livePan.current.y}px) scale(${canvasZoom})`
+    }
+  }, [canvasZoom])
 
   // ── 笔刷事件已迁移至 SVG overlay 的 onPointer 回调统一处理 ──────────────────
   // canvas 只负责渲染（pointerEvents: none），不再绑定任何事件。
@@ -1219,15 +1231,29 @@ export function CanvasArea(s: ExportPageState) {
   React.useEffect(() => {
     const wrap = canvasWrapRef.current
     if (!wrap) return
+    let rafId = 0
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return
       e.preventDefault()
       e.stopPropagation()
       const delta = e.deltaY > 0 ? -0.05 : 0.05
-      setCanvasZoom(z => Math.min(3, Math.max(0.3, +((z + delta).toFixed(2)))))
+      // 1. Update liveZoom ref immediately
+      liveZoom.current = Math.min(3, Math.max(0.3, +((liveZoom.current + delta).toFixed(2))))
+      // 2. Apply transform via DOM — zero React re-render
+      if (panLayerRef.current) {
+        panLayerRef.current.style.transition = 'none'
+        panLayerRef.current.style.transform =
+          `translate(${livePan.current.x}px,${livePan.current.y}px) scale(${liveZoom.current})`
+      }
+      // 3. Debounce setState so Rnd's scale prop and toolbar % settle once wheel stops
+      cancelAnimationFrame(rafId)
+      rafId = requestAnimationFrame(() => {
+        setCanvasZoom(liveZoom.current)
+        canvasZoomRef.current = liveZoom.current
+      })
     }
     wrap.addEventListener('wheel', onWheel, { passive: false })
-    return () => wrap.removeEventListener('wheel', onWheel)
+    return () => { wrap.removeEventListener('wheel', onWheel); cancelAnimationFrame(rafId) }
   }, [canvasWrapRef, setCanvasZoom])
 
 
@@ -1407,18 +1433,28 @@ export function CanvasArea(s: ExportPageState) {
           e.preventDefault()
           const rect     = toolbarRef.current!.getBoundingClientRect()
           const wrapRect = canvasWrapRef.current!.getBoundingClientRect()
-          toolbarDragStart.current = { mx: e.clientX, my: e.clientY, ex: rect.left - wrapRect.left, ey: rect.top - wrapRect.top }
+          const startEx  = rect.left - wrapRect.left
+          const startEy  = rect.top  - wrapRect.top
+          toolbarDragStart.current = { mx: e.clientX, my: e.clientY, ex: startEx, ey: startEy }
           setToolbarDragging(true)
-          setToolbarDragPos({ x: rect.left - wrapRect.left, y: rect.top - wrapRect.top })
+          // 立即设好初始位置，让 posStyle 切到 dragging 分支（transition:none）
+          setToolbarDragPos({ x: startEx, y: startEy })
           const onMove = (me: MouseEvent) => {
-            if (!toolbarDragStart.current) return
-            setToolbarDragPos({ x: toolbarDragStart.current.ex + me.clientX - toolbarDragStart.current.mx, y: toolbarDragStart.current.ey + me.clientY - toolbarDragStart.current.my })
+            if (!toolbarDragStart.current || !toolbarRef.current) return
+            const nx = toolbarDragStart.current.ex + me.clientX - toolbarDragStart.current.mx
+            const ny = toolbarDragStart.current.ey + me.clientY - toolbarDragStart.current.my
+            // ✅ 直接操作 DOM，零 React re-render，彻底消除拖拽卡顿
+            toolbarRef.current.style.left      = `${nx}px`
+            toolbarRef.current.style.top       = `${ny}px`
+            toolbarRef.current.style.right     = 'auto'
+            toolbarRef.current.style.bottom    = 'auto'
+            toolbarRef.current.style.transform = 'none'
           }
-          const onUp = (me: MouseEvent) => {
+          const onUp = () => {
             window.removeEventListener('mousemove', onMove)
             window.removeEventListener('mouseup', onUp)
             setToolbarDragging(false)
-            setToolbarDragPos(null)
+            setToolbarDragPos(null)  // 清除 dragPos，让 posStyle 切回 anchor 分支
             if (!toolbarDragStart.current || !canvasWrapRef.current || !toolbarRef.current) return
             const wRect = canvasWrapRef.current.getBoundingClientRect()
             const tRect = toolbarRef.current.getBoundingClientRect()
@@ -1757,7 +1793,7 @@ export function CanvasArea(s: ExportPageState) {
 
         {/* ── Zoom + pan layers ── */}
         {/* 画布固定 860px，用 scale 适配屏幕，坐标系与导出完全一致 */}
-       <div ref={panLayerRef} style={{ transformOrigin: 'left top', transform: `translate(${canvasPan.x}px, ${canvasPan.y}px) scale(${canvasZoom})`, willChange: 'transform', transition: isPanningRef.current ? 'none' : 'transform 0.65s cubic-bezier(0.16,1,0.3,1)', width: '860px' }}>
+       <div ref={panLayerRef} style={{ transformOrigin: 'left top', transform: `translate(${canvasPan.x}px, ${canvasPan.y}px) scale(${canvasZoom})`, willChange: 'transform', transition: 'none', width: '860px' }}>
 <div style={{ paddingTop: 24 }}>
           {/* ── Render every page ── */}
           {pages.map((page, pageIdx) => {
@@ -2372,11 +2408,7 @@ export function CanvasArea(s: ExportPageState) {
                           className={`rnd-block${stickyBoxShadow ? ' sticky-shadow-on' : ''}`}
                           style={undefined}
                           size={{ width: pos.w, height: pos.h }}
-                          position={
-                            dragSnap?.id === block.id
-                              ? { x: dragSnap.x, y: dragSnap.y }
-                              : { x: pos.x, y: pos.y }
-                          }
+                          position={{ x: pos.x, y: pos.y }}
                           onDragStart={(e, _d) => {
                             didDragRef.current = false
                             const _me = e as unknown as MouseEvent
@@ -2389,44 +2421,28 @@ export function CanvasArea(s: ExportPageState) {
                               buildSnapCandidates(block.id, pgBlocks, contentWidth, pgHeight, page.id)
                             }
                           }}
-                          onDrag={(e, _d) => {
+                          onDrag={(_e, d) => {
+                            // No setState here at all — Rnd owns its own DOM transform during drag.
+                            // d.x/d.y are already scale-corrected because we pass scale={canvasZoom}.
                             didDragRef.current = true
-                            const _me2 = e as unknown as MouseEvent
-                            const origin = dragOriginRef.current
-                            const rawX = origin ? origin.bx + (_me2.clientX - origin.mx) / canvasZoom : pos.x
-                            const rawY = origin ? origin.by + (_me2.clientY - origin.my) / canvasZoom : pos.y
-                            // X and Y are both unclamped — no boundary walls on any side.
-                            // Blocks can be dragged freely outside the page frame.
-                            // onBlockDragStop handles final position commit.
-                            let nx = rawX
-                            let ny = rawY
-                            // Only snap when the block is clearly within this page's vertical bounds.
-                            // If rawY is negative (dragging above page top) or well beyond page bottom,
-                            // the user is doing a cross-page move — skip snap so page-edge candidates
-                            // don't pull the block back into this page.
+                            let nx = d.x
+                            let ny = d.y
                             const pgH = pgHeight ?? 800
                             const isWithinPage = ny > -(pos.h) && ny < pgH + pos.h
                             if (smartGuidesOn && isWithinPage) {
                               const { sx, sy, lines } = computeSnap(nx, ny, pos.w, pos.h, page.id)
                               nx = sx; ny = sy
-                              // Paint guide lines directly into SVG — no setState, no re-render
                               paintSnapLines(lines, page.id)
                             } else if (smartGuidesOn) {
                               clearSnapLines(page.id)
                             }
                             snapActiveRef.current = { x: nx, y: ny }
-                            // Drive the snapped position through React-controlled Rnd position prop.
-                            // This is the only setState in onDrag; it only re-renders this one block's
-                            // Rnd (position prop changed) — other blocks' props are unchanged so React
-                            // bails out of their subtrees via referential equality.
-                            setDragSnap({ id: block.id, x: nx, y: ny })
                           }}
                           onDragStop={(_e, _d) => {
                             clearSnapLines(page.id)
                             clearSizeHint(page.id)
                             draggingPageId.current = null
                             setDraggingPageIdState(null)
-                            setDragSnap(null)
                             const blockBelongsHere = page.blocks.some(b => b.id === block.id)
                             if (!blockBelongsHere) return
                             if (!didDragRef.current) {
@@ -2435,7 +2451,7 @@ export function CanvasArea(s: ExportPageState) {
                               snapActiveRef.current = null
                               return
                             }
-                            const final = snapActiveRef.current
+                            const final = snapActiveRef.current ?? { x: _d.x, y: _d.y }
                             snapActiveRef.current = null
                             dragOriginRef.current = null
                             if (final) onBlockDragStop(block.id, page.id, final.x, final.y)
