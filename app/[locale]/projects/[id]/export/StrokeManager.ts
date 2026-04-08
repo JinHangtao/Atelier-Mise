@@ -63,6 +63,7 @@ export class StrokeManager {
   private physW = 800
   private physH = 600
   private dpr   = 1
+  private _restoring = false   // 防止 _restore 并发
 
   // ── 持久化 ──────────────────────────────────────────────────────────────────
   private pageId: string
@@ -90,15 +91,17 @@ export class StrokeManager {
     this.physH = physH
     this.dpr   = dpr
 
-    if (this.layers.length === 0) {
+    if (this.layers.length === 0 && !this._restoring) {
+      this._restoring = true
       this._restore().then(ok => {
-        if (!ok) this.addLayer()
+        this._restoring = false
+        if (!ok && this.layers.length === 0) this.addLayer()
         // 异步恢复完成后通知外部重新 composite，否则恢复内容不显示
         this.emit({ type: 'layers-changed' })
-      })
+      }).catch(() => { this._restoring = false })
     }
     // 如果已有 layers（页面重新渲染），只需确保尺寸对齐
-    else {
+    else if (this.layers.length > 0) {
       this._ensureLayerSizes()
     }
   }
@@ -294,8 +297,8 @@ export class StrokeManager {
 
   startStroke(pt: LogicalPoint) {
     // _restore() 是异步的，首次使用时 layers 可能还是空数组。
-    // 此时同步创建兜底 layer，确保画笔不会静默丢失。
-    if (this.layers.length === 0) {
+    // 但如果正在恢复中，不要新建兜底 layer，等恢复完成。
+    if (this.layers.length === 0 && !this._restoring) {
       this.addLayer()
     }
     const layer = this._active()
@@ -435,7 +438,14 @@ export class StrokeManager {
 
   private _persist() {
     try {
-      const layers = this.layers.map(l => ({
+      // 按 id 去重，防止内存中残留重复图层
+      const seen = new Set<string>()
+      const dedupedLayers = this.layers.filter(l => {
+        if (seen.has(l.id)) return false
+        seen.add(l.id)
+        return true
+      })
+      const layers = dedupedLayers.map(l => ({
         id: l.id, name: l.name, visible: l.visible, locked: l.locked,
         opacity: l.opacity,
         dataUrl: l.canvas.toDataURL('image/png'),
@@ -459,8 +469,16 @@ export class StrokeManager {
       }
       if (!payload.layers?.length) return false
 
+      // 按 id 去重，只保留每个 id 的第一条（修复历史数据膨胀）
+      const seen = new Set<string>()
+      const uniqueLayers = payload.layers.filter(l => {
+        if (seen.has(l.id)) return false
+        seen.add(l.id)
+        return true
+      })
+
       this.layers = []
-      for (const s of payload.layers) {
+      for (const s of uniqueLayers) {
         const canvas = document.createElement('canvas')
         canvas.width  = this.physW
         canvas.height = this.physH

@@ -27,7 +27,7 @@ export default function ExportPage() {
   const canvasWrapRef = s.canvasWrapRef
   const [canvasExportOpen, setCanvasExportOpen] = React.useState(false)
   const [canvasFilename, setCanvasFilename] = React.useState(s.project?.title ?? 'untitled')
-const handleOpen = () => { setCanvasFilename(project?.title ?? 'untitled'); setCanvasExportOpen(true) }
+const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); setCanvasExportOpen(true) }
   // ── Emoji state ───────────────────────────────────────────────────────────
   const [emojiBlocks, setEmojiBlocks] = React.useState<EmojiBlock[]>([])
   const [selectedEmojiId, setSelectedEmojiId] = React.useState<string | null>(null)
@@ -259,12 +259,13 @@ const handleOpen = () => { setCanvasFilename(project?.title ?? 'untitled'); setC
       if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) return
       if (e.key === 'f' || e.key === 'F') immersive ? exitImmersive() : enterImmersive()
       if (e.key === 'Escape') exitImmersive()
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'z') { e.preventDefault(); s.redo() }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [immersive, enterImmersive, exitImmersive])
+  }, [immersive, enterImmersive, exitImmersive, s])
 
-  const { router, isZh, project, schools, pages, allBlocksForExport, exportOpts, saveStatus, undoStack, undo, clearAll, imageEditorUrl, imageEditorIdx, setImageEditorUrl, setImageEditorIdx, setBlocks, previewOpen, setPreviewOpen, doExportHTML, doExportPDF, doExportDOCX, } = s
+  const { router, isZh, project, schools, pages, allBlocksForExport, exportOpts, saveStatus, undoStack, undo, redo, redoStack, clearAll,imageEditorUrl, imageEditorIdx, setImageEditorUrl, setImageEditorIdx, setBlocks, previewOpen, setPreviewOpen, doExportHTML, doExportPDF, doExportDOCX, } = s
 
   if (!project) return (
     <div style={{ padding: '60px', fontFamily: 'Space Mono, monospace', color: '#888' }}>
@@ -536,7 +537,8 @@ const handleOpen = () => { setCanvasFilename(project?.title ?? 'untitled'); setC
 
         {/* Actions */}
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
-          <button onClick={undo} disabled={undoStack.current.length === 0} title={isZh ? '撤销 (⌘Z)' : 'Undo (⌘Z)'} style={{ background: 'transparent', border: '1px solid rgba(26,26,26,0.1)', padding: '7px 12px', borderRadius: '8px', fontSize: '0.82rem', cursor: undoStack.current.length === 0 ? 'not-allowed' : 'pointer', color: undoStack.current.length === 0 ? '#ddd' : '#888', transition: 'all 0.12s' }}>↩</button>
+                   <button onClick={undo} disabled={undoStack.current.length === 0} title={isZh ? '撤销 (⌘Z)' : 'Undo (⌘Z)'} style={{ background: 'transparent', border: '1px solid rgba(26,26,26,0.1)', padding: '7px 12px', borderRadius: '8px', fontSize: '0.82rem', cursor: undoStack.current.length === 0 ? 'not-allowed' : 'pointer', color: undoStack.current.length === 0 ? '#ddd' : '#888', transition: 'all 0.12s' }}>↩</button>
+          <button onClick={redo} disabled={redoStack.current.length === 0} title={isZh ? '重做 (⌘⇧Z)' : 'Redo (⌘⇧Z)'} style={{ background: 'transparent', border: '1px solid rgba(26,26,26,0.1)', padding: '7px 12px', borderRadius: '8px', fontSize: '0.82rem', cursor: redoStack.current.length === 0 ? 'not-allowed' : 'pointer', color: redoStack.current.length === 0 ? '#ddd' : '#888', transition: 'all 0.12s' }}>↪</button>
           {allBlocksForExport.length > 0 && (
             <button onClick={() => {
               if (window.confirm(isZh ? '清空全部页面？此操作不可撤销。' : 'Clear all pages? This cannot be undone.')) clearAll()

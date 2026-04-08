@@ -90,14 +90,18 @@ export function useExportPage() {
     return loaded[0]?.id ?? ''
   })
 
-  // ── Undo ──
+// ── Undo / Redo ──
   const undoStack  = useRef<Page[][]>([])
+  const redoStack  = useRef<Page[][]>([])
   const isUndoing  = useRef(false)
   const setPages   = useCallback((updater: Page[] | ((prev: Page[]) => Page[])) => {
     setPagesRaw(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater
-      if (!isUndoing.current) undoStack.current = [...undoStack.current.slice(-49), prev]
-      pagesRef.current = next  // 始终同步最新值，让拖拽回调不依赖闭包快照
+      if (!isUndoing.current) {
+        undoStack.current = [...undoStack.current.slice(-49), prev]
+        redoStack.current = []  // 新操作清空 redo
+      }
+      pagesRef.current = next
       return next
     })
   }, [])
@@ -106,7 +110,23 @@ export function useExportPage() {
     const prev = undoStack.current[undoStack.current.length - 1]
     undoStack.current = undoStack.current.slice(0, -1)
     isUndoing.current = true
-    setPagesRaw(prev)
+    setPagesRaw(cur => {
+      redoStack.current = [...redoStack.current, cur]  // 当前状态推入 redo
+      pagesRef.current = prev
+      return prev
+    })
+    isUndoing.current = false
+  }, [])
+  const redo = useCallback(() => {
+    if (redoStack.current.length === 0) return
+    const next = redoStack.current[redoStack.current.length - 1]
+    redoStack.current = redoStack.current.slice(0, -1)
+    isUndoing.current = true
+    setPagesRaw(cur => {
+      undoStack.current = [...undoStack.current, cur]  // 当前状态推回 undo
+      pagesRef.current = next
+      return next
+    })
     isUndoing.current = false
   }, [])
 
@@ -967,8 +987,8 @@ srcCanvases.forEach((src, idx) => {
     // page mutations
     addPage, deletePage, duplicatePage, reorderPages, renamePage, changePageAspect, clearAll,
     updatePageBlocks, setBlocks,
-    // undo
-    undo, undoStack,
+   // undo / redo
+    undo, redo, undoStack, redoStack,
     // canvas
     canvasWrapRef, isPanningRef, panStart,
     canvasZoom, setCanvasZoom, canvasPan, setCanvasPan,
