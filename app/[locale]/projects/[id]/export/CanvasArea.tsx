@@ -13,6 +13,133 @@ import EmojiBlockComponent from './EmojiBlock'
 import { sharedDrawState, BRUSHES, universalRenderStroke } from './DrawPanel'
 import { getDrawLayerManager, destroyDrawLayerManager, DrawnShape } from './DrawLayerManager'
 
+// ── Cursor system — tldraw production-grade SVG data-URI cursors ───────────
+// SVG paths sourced directly from @tldraw/editor v4.5.8 (editor.css, MIT).
+// Drop shadow filter gives the professional floating appearance used in tldraw/Figma.
+// svgCursor() is kept for the remaining dynamic cursors (crosshair, pen, eraser, resize).
+
+function svgCursor(svg: string, hx: number, hy: number): string {
+  const encoded = svg
+    .replace(/"/g, "'")
+    .replace(/#/g, '%23')
+    .replace(/\n/g, ' ')
+  return `url("data:image/svg+xml,${encoded}") ${hx} ${hy}, auto`
+}
+
+// Shared tldraw drop-shadow SVG wrapper — 40px for better clarity.
+// fillColor: cursor body fill (default white). strokeColor: outline/body color (default black).
+// withShadow: whether to include the feDropShadow filter.
+function makeTLCursor(
+  innerFn: (fill: string, stroke: string) => string,
+  hx: number, hy: number, fallback: string,
+  withShadow: boolean,
+  fillColor = 'white', strokeColor = 'black'
+): string {
+  // SVG data URI里 # 必须编码为 %23，否则浏览器截断 URI 导致回退本地光标
+  const encColor = (c: string) => c.replace(/#/g, '%23')
+  const fill   = encColor(fillColor)
+  const stroke = encColor(strokeColor)
+  const filter = withShadow
+    ? `<defs><filter id='shadow' y='-40%25' x='-40%25' width='180px' height='180%25' color-interpolation-filters='sRGB'><feDropShadow dx='1' dy='1' stdDeviation='1.2' flood-opacity='.5'/></filter></defs>`
+    : ``
+  const gAttr = withShadow ? `filter='url(%23shadow)'` : ``
+  const inner = innerFn(fill, stroke)
+  return `url("data:image/svg+xml,<svg height='40' width='40' viewBox='0 0 32 32' xmlns='http://www.w3.org/2000/svg' style='color: black;'>${filter}<g fill='none' transform='rotate(0 16 16)' ${gAttr}>${inner}</g></svg>") ${Math.round(hx * 1.25)} ${Math.round(hy * 1.25)}, ${fallback}`
+}
+
+// Arrow — rounded tip via stroke-linejoin=round + stroke outline for premium feel
+const _ARROW_INNER = (fill: string, stroke: string) =>
+  `<path d='m12 24.4219v-16.015l11.591 11.619h-6.781l-.411.124z' fill='${fill}' stroke='${fill}' stroke-width='1.2' stroke-linejoin='round'/><path d='m12 24.4219v-16.015l11.591 11.619h-6.781l-.411.124z' fill='none' stroke='${stroke}' stroke-width='0.8' stroke-linejoin='round'/><path d='m13 10.814v11.188l2.969-2.866.428-.139h4.768z' fill='${stroke}' stroke='${stroke}' stroke-width='0.4' stroke-linejoin='round'/>`
+
+// Grab / Grabbing — color-aware versions
+const _GRAB_INNER = (fill: string, stroke: string) =>
+  `<path d='m13.5557 17.5742c-.098-.375-.196-.847-.406-1.552-.167-.557-.342-.859-.47-1.233-.155-.455-.303-.721-.496-1.181-.139-.329-.364-1.048-.457-1.44-.119-.509.033-.924.244-1.206.253-.339.962-.49 1.357-.351.371.13.744.512.916.788.288.46.357.632.717 1.542.393.992.564 1.918.611 2.231l.085.452c-.001-.04-.043-1.122-.044-1.162-.035-1.029-.06-1.823-.038-2.939.002-.126.064-.587.084-.715.078-.5.305-.8.673-.979.412-.201.926-.215 1.401-.017.423.173.626.55.687 1.022.014.109.094.987.093 1.107-.013 1.025.006 1.641.015 2.174.004.231.003 1.625.017 1.469.061-.656.094-3.189.344-3.942.144-.433.405-.746.794-.929.431-.203 1.113-.07 1.404.243.285.305.446.692.482 1.153.032.405-.019.897-.02 1.245 0 .867-.021 1.324-.037 2.121-.001.038-.015.298.023.182.094-.28.188-.542.266-.745.049-.125.241-.614.359-.859.114-.234.211-.369.415-.688.2-.313.415-.448.668-.561.54-.235 1.109.112 1.301.591.086.215.009.713-.028 1.105-.061.647-.254 1.306-.352 1.648-.128.447-.274 1.235-.34 1.601-.072.394-.234 1.382-.359 1.82-.086.301-.371.978-.652 1.384 0 0-1.074 1.25-1.192 1.812-.117.563-.078.567-.101.965-.024.399.121.923.121.923s-.802.104-1.234.034c-.391-.062-.875-.841-1-1.078-.172-.328-.539-.265-.682-.023-.225.383-.709 1.07-1.051 1.113-.668.084-2.054.03-3.139.02 0 0 .185-1.011-.227-1.358-.305-.26-.83-.784-1.144-1.06l-.832-.921c-.284-.36-.629-1.093-1.243-1.985-.348-.504-1.027-1.085-1.284-1.579-.223-.425-.331-.954-.19-1.325.225-.594.675-.897 1.362-.832.519.05.848.206 1.238.537.225.19.573.534.75.748.163.195.203.276.377.509.23.307.302.459.214.121' fill='${fill}'/><g stroke='${stroke}' stroke-linecap='round' stroke-width='.75'><path d='m13.5557 17.5742c-.098-.375-.196-.847-.406-1.552-.167-.557-.342-.859-.47-1.233-.155-.455-.303-.721-.496-1.181-.139-.329-.364-1.048-.457-1.44-.119-.509.033-.924.244-1.206.253-.339.962-.49 1.357-.351.371.13.744.512.916.788.288.46.357.632.717 1.542.393.992.564 1.918.611 2.231l.085.452c-.001-.04-.043-1.122-.044-1.162-.035-1.029-.06-1.823-.038-2.939.002-.126.064-.587.084-.715.078-.5.305-.8.673-.979.412-.201.926-.215 1.401-.017.423.173.626.55.687 1.022.014.109.094.987.093 1.107-.013 1.025.006 1.641.015 2.174.004.231.003 1.625.017 1.469.061-.656.094-3.189.344-3.942.144-.433.405-.746.794-.929.431-.203 1.113-.07 1.404.243.285.305.446.692.482 1.153.032.405-.019.897-.02 1.245 0 .867-.021 1.324-.037 2.121-.001.038-.015.298.023.182.094-.28.188-.542.266-.745.049-.125.241-.614.359-.859.114-.234.211-.369.415-.688.2-.313.415-.448.668-.561.54-.235 1.109.112 1.301.591.086.215.009.713-.028 1.105-.061.647-.254 1.306-.352 1.648-.128.447-.274 1.235-.34 1.601-.072.394-.234 1.382-.359 1.82-.086.301-.371.978-.652 1.384 0 0-1.074 1.25-1.192 1.812-.117.563-.078.567-.101.965-.024.399.121.923.121.923s-.802.104-1.234.034c-.391-.062-.875-.841-1-1.078-.172-.328-.539-.265-.682-.023-.225.383-.709 1.07-1.051 1.113-.668.084-2.054.03-3.139.02 0 0 .185-1.011-.227-1.358-.305-.26-.83-.784-1.144-1.06l-.832-.921c-.284-.36-.629-1.093-1.243-1.985-.348-.504-1.027-1.085-1.284-1.579-.223-.425-.331-.954-.19-1.325.225-.594.675-.897 1.362-.832.519.05.848.206 1.238.537.225.19.573.534.75.748.163.195.203.276.377.509.23.307.302.459.214.121' stroke-linejoin='round'/><path d='m20.5664 21.7344v-3.459'/><path d='m18.5508 21.7461-.016-3.473'/><path d='m16.5547 18.3047.021 3.426'/></g>`
+
+const _GRABBING_INNER = (fill: string, stroke: string) =>
+  `<path d='m13.5732 12.0361c.48-.178 1.427-.069 1.677.473.213.462.396 1.241.406 1.075.024-.369-.024-1.167.137-1.584.117-.304.347-.59.686-.691.285-.086.62-.116.916-.055.313.064.642.287.765.499.362.623.368 1.899.385 1.831.064-.272.07-1.229.283-1.584.141-.235.497-.445.687-.479.294-.052.656-.068.964-.008.249.049.586.344.677.487.219.344.342 1.316.379 1.658.016.141.074-.393.293-.736.406-.639 1.844-.763 1.898.639.026.654.02.624.02 1.064 0 .516-.012.828-.04 1.202-.03.399-.116 1.304-.241 1.742-.086.301-.371.978-.653 1.384 0 0-1.074 1.25-1.191 1.812-.117.563-.078.567-.102.965-.023.399.121.923.121.923s-.801.104-1.234.034c-.391-.062-.875-.84-1-1.078-.172-.328-.539-.265-.682-.023-.224.383-.709 1.07-1.05 1.113-.669.084-2.055.03-3.14.02 0 0 .185-1.011-.227-1.358-.305-.26-.83-.784-1.144-1.06l-.832-.921c-.283-.36-1.002-.929-1.243-1.985-.213-.936-.192-1.395.037-1.77.232-.381.67-.589.854-.625.208-.042.692-.039.875.062.223.123.313.159.488.391.23.307.312.456.213.121-.076-.262-.322-.595-.434-.97-.109-.361-.401-.943-.38-1.526.008-.221.103-.771.832-1.042' fill='${fill}'/><g stroke='${stroke}' stroke-width='.75'><path d='m13.5732 12.0361c.48-.178 1.427-.069 1.677.473.213.462.396 1.241.406 1.075.024-.369-.024-1.167.137-1.584.117-.304.347-.59.686-.691.285-.086.62-.116.916-.055.313.064.642.287.765.499.362.623.368 1.899.385 1.831.064-.272.07-1.229.283-1.584.141-.235.497-.445.687-.479.294-.052.656-.068.964-.008.249.049.586.344.677.487.219.344.342 1.316.379 1.658.016.141.074-.393.293-.736.406-.639 1.844-.763 1.898.639.026.654.02.624.02 1.064 0 .516-.012.828-.04 1.202-.03.399-.116 1.304-.241 1.742-.086.301-.371.978-.653 1.384 0 0-1.074 1.25-1.191 1.812-.117.563-.078.567-.102.965-.023.399.121.923.121.923s-.801.104-1.234.034c-.391-.062-.875-.84-1-1.078-.172-.328-.539-.265-.682-.023-.224.383-.709 1.07-1.05 1.113-.669.084-2.055.03-3.14.02 0 0 .185-1.011-.227-1.358-.305-.26-.83-.784-1.144-1.06l-.832-.921c-.283-.36-1.002-.929-1.243-1.985-.213-.936-.192-1.395.037-1.77.232-.381.67-.589.854-.625.208-.042.692-.039.875.062.223.123.313.159.488.391.23.307.312.456.213.121-.076-.262-.322-.595-.434-.97-.109-.361-.401-.943-.38-1.526.008-.221.103-.771.832-1.042z' stroke-linejoin='round'/><path d='m20.5664 19.7344v-3.459' stroke-linecap='round'/><path d='m18.5508 19.7461-.016-3.473' stroke-linecap='round'/><path d='m16.5547 16.3047.021 3.426' stroke-linecap='round'/></g>`
+
+// Crosshair — 圆点+外环，外环更贴近中心，精准感强。
+const CURSOR_CROSSHAIR = svgCursor(`
+<svg width="40" height="40" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="16" cy="16" r="3.2" stroke="%23111" stroke-width="1.0"/>
+  <circle cx="16" cy="16" r="1.0" fill="%23111"/>
+</svg>`, 20, 20)
+
+// Pen — for bezier/pen tool. 40px, hotspot tip (6,34).
+const CURSOR_PEN = svgCursor(`
+<svg width="40" height="40" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M5 27L11 21.5M20 5L28 13L14 27L5 28L5.5 19L20 5Z"
+    fill="white" stroke="%23111" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>
+  <circle cx="5" cy="27" r="2.5" fill="%234f46e5" stroke="white" stroke-width="1.3"/>
+</svg>`, 6, 34)
+
+// Eraser. 40px, hotspot tip (6,31).
+const CURSOR_ERASER = svgCursor(`
+<svg width="40" height="40" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M5 25L13 8L25 20L17 28H5V25Z"
+    fill="white" stroke="%23111" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>
+  <path d="M13 8L25 20" stroke="%23111" stroke-width="1.4" stroke-linecap="round"/>
+  <path d="M5 25H17" stroke="%23444" stroke-width="1.2" stroke-linecap="round"/>
+</svg>`, 6, 31)
+
+const _SHAPE_INNER = (fill: string, stroke: string) =>
+  `<path d='m12 24.4219v-16.015l11.591 11.619h-6.781l-.411.124z' fill='${fill}' stroke='${fill}' stroke-width='1.2' stroke-linejoin='round'/><path d='m12 24.4219v-16.015l11.591 11.619h-6.781l-.411.124z' fill='none' stroke='${stroke}' stroke-width='0.8' stroke-linejoin='round'/><path d='m13 10.814v11.188l2.969-2.866.428-.139h4.768z' fill='${stroke}' stroke='${stroke}' stroke-width='0.4' stroke-linejoin='round'/><rect x='19.5' y='19.5' width='9' height='9' rx='1.8' fill='${fill}' stroke='%234f46e5' stroke-width='1.4'/>`
+
+
+// Move — for dragging shapes. 40px, hotspot center (20,20).
+const CURSOR_MOVE = svgCursor(`
+<svg width="40" height="40" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M16 3V8M16 24V29M3 16H8M24 16H29" stroke="%23111" stroke-width="1.6" stroke-linecap="round"/>
+  <path d="M16 5L13 8M16 5L19 8M5 16L8 13M5 16L8 19M27 16L24 13M27 16L24 19M16 27L13 24M16 27L19 24"
+    stroke="%23111" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="16" cy="16" r="3.5" fill="white" stroke="%23111" stroke-width="1.4"/>
+</svg>`, 20, 20)
+
+// Resize cursors — 40px output, viewBox stays 32×32, hotspot at center (20,20)
+function makeResizeCursor(angle: number): string {
+  const cos = Math.cos(angle * Math.PI / 180)
+  const sin = Math.sin(angle * Math.PI / 180)
+  const cx = 16, cy = 16, len = 9
+  const x1 = cx - cos * len, y1 = cy - sin * len
+  const x2 = cx + cos * len, y2 = cy + sin * len
+  const ax1 = x2 - cos * 4.5 + sin * 3.5
+  const ay1 = y2 - sin * 4.5 - cos * 3.5
+  const ax2 = x2 - cos * 4.5 - sin * 3.5
+  const ay2 = y2 - sin * 4.5 + cos * 3.5
+  const bx1 = x1 + cos * 4.5 + sin * 3.5
+  const by1 = y1 + sin * 4.5 - cos * 3.5
+  const bx2 = x1 + cos * 4.5 - sin * 3.5
+  const by2 = y1 + sin * 4.5 + cos * 3.5
+  return svgCursor(`
+<svg width="40" height="40" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"
+    stroke="white" stroke-width="4" stroke-linecap="round"/>
+  <line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"
+    stroke="%23111" stroke-width="1.8" stroke-linecap="round"/>
+  <polyline points="${ax1.toFixed(1)},${ay1.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)} ${ax2.toFixed(1)},${ay2.toFixed(1)}"
+    stroke="white" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="${ax1.toFixed(1)},${ay1.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)} ${ax2.toFixed(1)},${ay2.toFixed(1)}"
+    stroke="%23111" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="${bx1.toFixed(1)},${by1.toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)} ${bx2.toFixed(1)},${by2.toFixed(1)}"
+    stroke="white" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="${bx1.toFixed(1)},${by1.toFixed(1)} ${x1.toFixed(1)},${y1.toFixed(1)} ${bx2.toFixed(1)},${by2.toFixed(1)}"
+    stroke="%23111" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`, 20, 20)
+}
+
+const CURSOR_RESIZE_NS   = makeResizeCursor(90)   // n-resize / s-resize
+const CURSOR_RESIZE_EW   = makeResizeCursor(0)    // e-resize / w-resize
+const CURSOR_RESIZE_NWSE = makeResizeCursor(135)  // nw-resize / se-resize
+const CURSOR_RESIZE_NESW = makeResizeCursor(45)   // ne-resize / sw-resize
+
+// Map from CSS cursor name → our SVG cursor
+const HANDLE_CURSOR_MAP: Record<string, string> = {
+  'ns-resize':   CURSOR_RESIZE_NS,
+  'ew-resize':   CURSOR_RESIZE_EW,
+  'nwse-resize': CURSOR_RESIZE_NWSE,
+  'nesw-resize': CURSOR_RESIZE_NESW,
+}
+
 // ── Shape SVG helpers ──────────────────────────────────────────────────────
 // Builds the SVG path/element for a DrawnShape using its absolute coordinates.
 // `opacity` is layered on top of the shape's own alpha so previews can fade.
@@ -168,7 +295,7 @@ function DrawModeShapeWrapper({ shape, isSel, pageId, onDelete }: {
   return (
     <>
       <g
-        style={{ pointerEvents: 'all', cursor: 'default' }}
+        style={{ pointerEvents: 'all', cursor: CURSOR_MOVE }}
         onContextMenu={e => {
           e.preventDefault()
           e.stopPropagation()
@@ -422,14 +549,14 @@ interface NonDrawShapeProps {
 function handleDefs(x0: number, y0: number, x1: number, y1: number, p: number): Array<{ id: HandleId; cx: number; cy: number; cursor: string }> {
   const mx = (x0 + x1) / 2, my = (y0 + y1) / 2
   return [
-    { id: 'tl', cx: x0 - p, cy: y0 - p, cursor: 'nwse-resize' },
-    { id: 'tc', cx: mx,     cy: y0 - p, cursor: 'ns-resize'   },
-    { id: 'tr', cx: x1 + p, cy: y0 - p, cursor: 'nesw-resize' },
-    { id: 'ml', cx: x0 - p, cy: my,     cursor: 'ew-resize'   },
-    { id: 'mr', cx: x1 + p, cy: my,     cursor: 'ew-resize'   },
-    { id: 'bl', cx: x0 - p, cy: y1 + p, cursor: 'nesw-resize' },
-    { id: 'bc', cx: mx,     cy: y1 + p, cursor: 'ns-resize'   },
-    { id: 'br', cx: x1 + p, cy: y1 + p, cursor: 'nwse-resize' },
+    { id: 'tl', cx: x0 - p, cy: y0 - p, cursor: CURSOR_RESIZE_NWSE },
+    { id: 'tc', cx: mx,     cy: y0 - p, cursor: CURSOR_RESIZE_NS   },
+    { id: 'tr', cx: x1 + p, cy: y0 - p, cursor: CURSOR_RESIZE_NESW },
+    { id: 'ml', cx: x0 - p, cy: my,     cursor: CURSOR_RESIZE_EW   },
+    { id: 'mr', cx: x1 + p, cy: my,     cursor: CURSOR_RESIZE_EW   },
+    { id: 'bl', cx: x0 - p, cy: y1 + p, cursor: CURSOR_RESIZE_NESW },
+    { id: 'bc', cx: mx,     cy: y1 + p, cursor: CURSOR_RESIZE_NS   },
+    { id: 'br', cx: x1 + p, cy: y1 + p, cursor: CURSOR_RESIZE_NWSE },
   ]
 }
 
@@ -554,7 +681,7 @@ function NonDrawShape({ shape, isSel, PAD, minX, minY, maxX, maxY, canvasZoom, p
       <g
         ref={gRef}
         data-shape-id={shape.id}
-        style={{ cursor: 'move', pointerEvents: 'all' }}
+        style={{ cursor: CURSOR_MOVE, pointerEvents: 'all' }}
         onPointerDown={onBodyPointerDown}
         onPointerMove={onBodyPointerMove}
         onPointerUp={onBodyPointerUp}
@@ -661,6 +788,20 @@ export function CanvasArea(s: ExportPageState) {
   } = s
   const gridEditMode: boolean = s.gridEditMode
   const setGridEditMode: (v: boolean) => void = s.setGridEditMode
+
+  // ── Cursor style — 由 page.tsx 通过 ExportPageState 传入 ────────────────
+  const cursorStyle: 'grab' | 'arrow' = (s as any).cursorStyle ?? 'grab'
+  const cursorShadow: boolean = (s as any).cursorShadow !== false
+  const cursorFill: string   = (s as any).cursorFill   ?? 'white'
+  const cursorStroke: string = (s as any).cursorStroke ?? 'black'
+
+  // 根据 cursorShadow / 颜色动态生成 cursor 字符串
+  const { CURSOR_DEFAULT, CURSOR_GRAB, CURSOR_GRABBING, CURSOR_SHAPE } = React.useMemo(() => ({
+    CURSOR_DEFAULT:  makeTLCursor(_ARROW_INNER,    12, 8,  'default',  cursorShadow, cursorFill, cursorStroke),
+    CURSOR_GRAB:     makeTLCursor(_GRAB_INNER,     16, 16, 'grab',     cursorShadow, cursorFill, cursorStroke),
+    CURSOR_GRABBING: makeTLCursor(_GRABBING_INNER, 16, 16, 'grabbing', cursorShadow, cursorFill, cursorStroke),
+    CURSOR_SHAPE:    makeTLCursor(_SHAPE_INNER,    12, 8,  'default',  cursorShadow, cursorFill, cursorStroke),
+  }), [cursorShadow, cursorFill, cursorStroke])
 
   // ── Draw overlay refs (one canvas per page, keyed by page.id) ────────────
   // These canvases sit above all rnd-blocks and receive pointer events only
@@ -1023,6 +1164,12 @@ export function CanvasArea(s: ExportPageState) {
   const canvasZoomRef = React.useRef(canvasZoom)
   React.useEffect(() => { canvasZoomRef.current = canvasZoom }, [canvasZoom])
 
+  // ── 直接 DOM 操作 pan，避免 mousemove 触发 React re-render ────────────────
+  const panLayerRef  = React.useRef<HTMLDivElement>(null)
+  const livePan      = React.useRef({ x: canvasPan.x, y: canvasPan.y })
+  // 每次 canvasPan state 变化（zoom/immersive 等）同步 livePan
+  React.useEffect(() => { livePan.current = { x: canvasPan.x, y: canvasPan.y } }, [canvasPan])
+
   // ── 笔刷事件已迁移至 SVG overlay 的 onPointer 回调统一处理 ──────────────────
   // canvas 只负责渲染（pointerEvents: none），不再绑定任何事件。
 
@@ -1071,17 +1218,21 @@ export function CanvasArea(s: ExportPageState) {
       ref={canvasWrapRef}
       style={{
         borderRight: '1px solid rgba(26,26,26,0.08)',
-        background: (s as any).canvasBg || '#EBEBF0',
+        backgroundColor: (s as any).canvasBg || '#EBEBF0',
+        backgroundImage: (s as any).dotGrid
+          ? `radial-gradient(circle, ${(s as any).dotColor || '#c8c8c4'} 1px, transparent 1px)`
+          : 'none',
+        backgroundSize: (s as any).dotGrid ? '24px 24px' : 'auto',
+        backgroundPosition: (s as any).dotGrid ? '0 0' : '0 0',
         overflow: 'hidden', position: 'relative',
-        cursor: isDrawMode ? 'crosshair' : panningCursor ? 'grabbing' : 'default',
+        cursor: isDrawMode
+          ? (sharedDrawState.brushType === 'eraser' ? CURSOR_ERASER
+            : sharedDrawState.shapeType ? CURSOR_SHAPE
+            : CURSOR_CROSSHAIR)
+          : panningCursor ? CURSOR_GRABBING
+          : cursorStyle === 'arrow' ? CURSOR_DEFAULT
+          : CURSOR_GRAB,
         height: '100%',
-        ...((s as any).dotGrid ? {
-          backgroundImage: `radial-gradient(circle, ${(s as any).dotColor || '#c8c8c4'} 1px, transparent 1px)`,
-          backgroundSize: '24px 24px',
-          backgroundPosition: '0 0',
-          // 배경색과 도트 같이 쓰려면 배경색을 별도 설정
-          backgroundColor: (s as any).canvasBg || '#EBEBF0',
-        } : {}),
       }}
       onMouseDown={e => {
         if (isDrawMode) return  // draw mode: canvas overlay handles all pointer events
@@ -1107,15 +1258,26 @@ export function CanvasArea(s: ExportPageState) {
         const W = wrap ? wrap.offsetWidth : 800
         const H = wrap ? wrap.offsetHeight : 600
         const MARGIN = 120
-        const nx = panStart.current.px + e.clientX - panStart.current.mx
-        const ny = panStart.current.py + e.clientY - panStart.current.my
-        setCanvasPan({
-          x: Math.min(W - MARGIN, Math.max(-(W * 2), nx)),
-          y: Math.min(H - MARGIN, Math.max(-(H * 4), ny)),
-        })
+        const nx = Math.min(W - MARGIN, Math.max(-(W * 2), panStart.current.px + e.clientX - panStart.current.mx))
+        const ny = Math.min(H - MARGIN, Math.max(-(H * 4), panStart.current.py + e.clientY - panStart.current.my))
+        // 直接操作 DOM，不触发 React re-render
+        livePan.current = { x: nx, y: ny }
+        if (panLayerRef.current) {
+          panLayerRef.current.style.transform = `translate(${nx}px,${ny}px) scale(${canvasZoomRef.current})`
+        }
       }}
-      onMouseUp={() => { isPanningRef.current = false; setPanningCursor(false) }}
-      onMouseLeave={() => { isPanningRef.current = false; setPanningCursor(false) }}
+      onMouseUp={() => {
+        isPanningRef.current = false
+        setPanningCursor(false)
+        // 松手时才同步回 React state（触发一次 re-render，坐标正确）
+        setCanvasPan({ x: livePan.current.x, y: livePan.current.y })
+      }}
+      onMouseLeave={() => {
+        if (!isPanningRef.current) return
+        isPanningRef.current = false
+        setPanningCursor(false)
+        setCanvasPan({ x: livePan.current.x, y: livePan.current.y })
+      }}
     >
       {/* CSS for canvas/blocks */}
       <style>{`
@@ -1128,7 +1290,7 @@ export function CanvasArea(s: ExportPageState) {
         .rnd-block:hover { filter: drop-shadow(0 3px 16px rgba(0,0,0,0.14)); }
         .rnd-block.dragging {
           filter: drop-shadow(0 12px 32px rgba(0,0,0,0.22)) !important;
-          transition: filter 0s !important; cursor: grabbing !important; z-index: 999;
+          transition: filter 0s !important; z-index: 999;
         }
         .rnd-block.sticky-shadow-on { /* shadow now via box-shadow on inner div */ }
         .rnd-block-placeholder {
@@ -1161,13 +1323,12 @@ export function CanvasArea(s: ExportPageState) {
         }
         .img-resize-edge.h { width: 16px; height: 4px; }
         .img-resize-edge.v { width: 4px; height: 16px; }
-        .block-card { display: flex; flex-direction: column; background: transparent; overflow: visible; position: relative; height: 100%; cursor: grab; }
-        .block-card:active { cursor: grabbing; }
+        .block-card { display: flex; flex-direction: column; background: transparent; overflow: visible; position: relative; height: 100%; }
         .block-body { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 0; min-height: 0; height: 100%; }
         .rnd-block { position: absolute !important; }
         .rnd-block:hover > div[class*="handle"] { opacity: 1; }
         .rnd-block > div[class*="handle"] { opacity: 0; transition: opacity 0.15s; }
-        .rnd-block.dragging { user-select: none; -webkit-user-select: none; cursor: grabbing !important; }
+        .rnd-block.dragging { user-select: none; -webkit-user-select: none; }
         .rnd-block.dragging * { user-select: none; -webkit-user-select: none; pointer-events: none; }
         .rnd-block input, .rnd-block textarea { user-select: text; -webkit-user-select: text; }
         .style-popup {
@@ -1193,6 +1354,15 @@ export function CanvasArea(s: ExportPageState) {
         .style-popup .sp-color.active { border-color: rgba(255,255,255,0.8); }
         @keyframes bgRemoveSpin { to { transform: rotate(360deg) } }
       `}</style>
+      {/* Dynamic SVG cursor classes — injected at runtime so data URIs stay out of the static string */}
+      <style>{`
+        .block-card { cursor: ${CURSOR_GRAB} }
+        .block-card:active, .rnd-block.dragging { cursor: ${CURSOR_GRABBING} !important }
+        .rnd-block textarea, .rnd-block input, .rnd-block [contenteditable] { cursor: text }
+        .rnd-block button, .rnd-block select { cursor: ${CURSOR_DEFAULT} !important }
+        button, select, label { cursor: ${CURSOR_DEFAULT} !important }
+        a { cursor: ${CURSOR_DEFAULT} !important }
+      `}</style>
 
       {/* ── Floating toolbar ── */}
       <div
@@ -1207,7 +1377,7 @@ export function CanvasArea(s: ExportPageState) {
             ? '0 8px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.10)'
             : '0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.05)',
           border: '1px solid rgba(255,255,255,0.8)',
-          cursor: toolbarDragging ? 'grabbing' : 'grab',
+          cursor: toolbarDragging ? CURSOR_GRABBING : CURSOR_GRAB,
           userSelect: 'none',
           ...posStyle,
         }}
@@ -1567,7 +1737,7 @@ export function CanvasArea(s: ExportPageState) {
 
         {/* ── Zoom + pan layers ── */}
         {/* 画布固定 860px，用 scale 适配屏幕，坐标系与导出完全一致 */}
-       <div style={{ transformOrigin: 'left top', transform: `translate(${canvasPan.x}px, ${canvasPan.y}px) scale(${canvasZoom})`, willChange: 'transform', transition: isPanningRef.current ? 'none' : 'transform 0.65s cubic-bezier(0.16,1,0.3,1)', width: '860px' }}>
+       <div ref={panLayerRef} style={{ transformOrigin: 'left top', transform: `translate(${canvasPan.x}px, ${canvasPan.y}px) scale(${canvasZoom})`, willChange: 'transform', transition: isPanningRef.current ? 'none' : 'transform 0.65s cubic-bezier(0.16,1,0.3,1)', width: '860px' }}>
 <div style={{ paddingTop: 24 }}>
           {/* ── Render every page ── */}
           {pages.map((page, pageIdx) => {
@@ -1579,7 +1749,7 @@ export function CanvasArea(s: ExportPageState) {
               <div key={page.id} style={{ marginBottom: 48 }}>
                 {/* Page label strip */}
                 <div
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', cursor: 'pointer', userSelect: 'none' }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', cursor: 'inherit', userSelect: 'none' }}
                   onClick={() => { setActivePageId(page.id); setEditingBlockId(null); setSelectedBlockId(null); setFontPickerOpen(false); setColorPickerOpen(false) }}
                 >
                   <span style={{ fontSize: '0.58rem', letterSpacing: '0.14em', fontFamily: 'Space Mono, monospace', color: page.isCover ? '#c4a044' : (isActivePg ? '#1a1a1a' : '#bbb'), background: page.isCover ? 'rgba(196,160,68,0.12)' : (isActivePg ? 'rgba(26,26,26,0.08)' : 'transparent'), padding: '2px 7px', borderRadius: '4px', transition: 'all 0.15s', fontWeight: isActivePg ? 600 : 400 }}>
@@ -1691,8 +1861,10 @@ export function CanvasArea(s: ExportPageState) {
                       style={{
                         position: 'absolute', inset: 0, width: '100%', height: '100%',
                         zIndex: 960, overflow: 'visible',
-                        cursor: sharedDrawState.shapeType ? 'crosshair'
-                          : sharedDrawState.brushType === 'eraser' ? 'cell' : 'crosshair',
+                        cursor: sharedDrawState.shapeType === 'bezier' ? CURSOR_PEN
+                          : sharedDrawState.shapeType ? CURSOR_SHAPE
+                          : sharedDrawState.brushType === 'eraser' ? CURSOR_ERASER
+                          : CURSOR_CROSSHAIR,
                         touchAction: 'none',
                       }}
                       onPointerDown={e => {
@@ -2278,23 +2450,23 @@ export function CanvasArea(s: ExportPageState) {
                             right: <span className="img-resize-edge v" />, left: <span className="img-resize-edge v" />,
                           } : undefined}
                           resizeHandleStyles={block.type === 'image' ? {
-                            bottomRight: { width: 20, height: 20, right: -10, bottom: -10, cursor: 'se-resize', zIndex: 10 },
-                            bottomLeft:  { width: 20, height: 20, left: -10, bottom: -10, cursor: 'sw-resize', zIndex: 10 },
-                            topRight:    { width: 20, height: 20, right: -10, top: -10, cursor: 'ne-resize', zIndex: 10 },
-                            topLeft:     { width: 20, height: 20, left: -10, top: -10, cursor: 'nw-resize', zIndex: 10 },
-                            bottom: { width: 32, height: 12, bottom: -6, left: '50%', marginLeft: -16, cursor: 's-resize', zIndex: 10 },
-                            top:    { width: 32, height: 12, top: -6, left: '50%', marginLeft: -16, cursor: 'n-resize', zIndex: 10 },
-                            right:  { width: 12, height: 32, right: -6, top: '50%', marginTop: -16, cursor: 'e-resize', zIndex: 10 },
-                            left:   { width: 12, height: 32, left: -6, top: '50%', marginTop: -16, cursor: 'w-resize', zIndex: 10 },
+                            bottomRight: { width: 20, height: 20, right: -10, bottom: -10, cursor: CURSOR_RESIZE_NWSE, zIndex: 10 },
+                            bottomLeft:  { width: 20, height: 20, left: -10, bottom: -10, cursor: CURSOR_RESIZE_NESW, zIndex: 10 },
+                            topRight:    { width: 20, height: 20, right: -10, top: -10, cursor: CURSOR_RESIZE_NESW, zIndex: 10 },
+                            topLeft:     { width: 20, height: 20, left: -10, top: -10, cursor: CURSOR_RESIZE_NWSE, zIndex: 10 },
+                            bottom: { width: 32, height: 12, bottom: -6, left: '50%', marginLeft: -16, cursor: CURSOR_RESIZE_NS, zIndex: 10 },
+                            top:    { width: 32, height: 12, top: -6, left: '50%', marginLeft: -16, cursor: CURSOR_RESIZE_NS, zIndex: 10 },
+                            right:  { width: 12, height: 32, right: -6, top: '50%', marginTop: -16, cursor: CURSOR_RESIZE_EW, zIndex: 10 },
+                            left:   { width: 12, height: 32, left: -6, top: '50%', marginTop: -16, cursor: CURSOR_RESIZE_EW, zIndex: 10 },
                           } : {
-                            bottomRight: { width: 16, height: 16, right: -4, bottom: -4, cursor: 'se-resize' },
-                            bottomLeft:  { width: 16, height: 16, left: -4, bottom: -4, cursor: 'sw-resize' },
-                            topRight:    { width: 16, height: 16, right: -4, top: -4, cursor: 'ne-resize' },
-                            topLeft:     { width: 16, height: 16, left: -4, top: -4, cursor: 'nw-resize' },
-                            bottom: { height: 10, bottom: -4, cursor: 's-resize' },
-                            top:    { height: 10, top: -4, cursor: 'n-resize' },
-                            right:  { width: 10, right: -4, cursor: 'e-resize' },
-                            left:   { width: 10, left: -4, cursor: 'w-resize' },
+                            bottomRight: { width: 16, height: 16, right: -4, bottom: -4, cursor: CURSOR_RESIZE_NWSE },
+                            bottomLeft:  { width: 16, height: 16, left: -4, bottom: -4, cursor: CURSOR_RESIZE_NESW },
+                            topRight:    { width: 16, height: 16, right: -4, top: -4, cursor: CURSOR_RESIZE_NESW },
+                            topLeft:     { width: 16, height: 16, left: -4, top: -4, cursor: CURSOR_RESIZE_NWSE },
+                            bottom: { height: 10, bottom: -4, cursor: CURSOR_RESIZE_NS },
+                            top:    { height: 10, top: -4, cursor: CURSOR_RESIZE_NS },
+                            right:  { width: 10, right: -4, cursor: CURSOR_RESIZE_EW },
+                            left:   { width: 10, left: -4, cursor: CURSOR_RESIZE_EW },
                           }}
                         >
                           <div className="block-card" onDragStart={e => e.preventDefault()}
@@ -2435,7 +2607,7 @@ export function CanvasArea(s: ExportPageState) {
                                               }
                                               imageDragIndex.current = null
                                             }}
-                                            style={{ cursor: 'grab', position: 'relative', borderRadius: '6px', overflow: 'hidden', border: '1px solid rgba(26,26,26,0.08)' }}>
+                                            style={{ cursor: CURSOR_GRAB, position: 'relative', borderRadius: '6px', overflow: 'hidden', border: '1px solid rgba(26,26,26,0.08)' }}>
                                             <img src={url} alt="" draggable={false} onDragStart={e => e.preventDefault()} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', display: 'block', pointerEvents: 'none' }} />
                                             <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0)', transition: 'background 0.15s', display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', gap: '3px', padding: '4px' }}
                                               onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.25)')}

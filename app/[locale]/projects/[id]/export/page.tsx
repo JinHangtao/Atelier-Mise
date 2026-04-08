@@ -74,6 +74,15 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
   const [hoverShadow, setHoverShadow] = React.useState<boolean>(() => {
     try { return localStorage.getItem('ws_hoverShadow') !== 'false' } catch { return true }
   })
+  const [cursorShadow, setCursorShadow] = React.useState<boolean>(() => {
+    try { return localStorage.getItem('ws_cursorShadow') !== 'false' } catch { return true }
+  })
+  const [cursorFill, setCursorFill] = React.useState<string>(() => {
+    try { return localStorage.getItem('ws_cursorFill') || 'white' } catch { return 'white' }
+  })
+  const [cursorStroke, setCursorStroke] = React.useState<string>(() => {
+    try { return localStorage.getItem('ws_cursorStroke') || 'black' } catch { return 'black' }
+  })
   const [canvasBg, setCanvasBg] = React.useState<string>(() => {
     try { return localStorage.getItem('ws_canvasBg') || '#EBEBF0' } catch { return '#EBEBF0' }
   })
@@ -97,6 +106,9 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
       const saved = localStorage.getItem('ws_selectionShadow')
       return saved ? JSON.parse(saved) : { size: 32, color: 'rgba(0,0,0,0.12)' }
     } catch { return { size: 32, color: 'rgba(0,0,0,0.12)' } }
+  })
+  const [cursorStyle, setCursorStyle] = React.useState<'grab' | 'arrow'>(() => {
+    try { return (localStorage.getItem('canvasCursorStyle') as 'grab' | 'arrow') || 'grab' } catch { return 'grab' }
   })
 
   // ── Immersive panel ───────────────────────────────────────────────────────
@@ -178,12 +190,16 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
     handleEmojiSelect,
     // workspace settings
     hoverShadow,
+    cursorShadow,
+    cursorFill,
+    cursorStroke,
     canvasBg,
     dotGrid,
     dotColor,
     pageRadius,
     selectionStroke,
     selectionShadow,
+    cursorStyle,
   }
 
   const enterImmersive = React.useCallback(() => {
@@ -273,8 +289,21 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
     </div>
   )
 
+  // 计算当前默认光标，用于全局注入
+  const _cursorFill   = cursorFill.replace(/#/g, '%23')
+  const _cursorStroke = cursorStroke.replace(/#/g, '%23')
+  const _globalCursor = `url("data:image/svg+xml,<svg height='40' width='40' viewBox='0 0 32 32' xmlns='http://www.w3.org/2000/svg'><g fill='none'><path d='m12 24.4219v-16.015l11.591 11.619h-6.781l-.411.124z' fill='${_cursorFill}' stroke='${_cursorFill}' stroke-width='1.2' stroke-linejoin='round'/><path d='m12 24.4219v-16.015l11.591 11.619h-6.781l-.411.124z' fill='none' stroke='${_cursorStroke}' stroke-width='0.8' stroke-linejoin='round'/><path d='m13 10.814v11.188l2.969-2.866.428-.139h4.768z' fill='${_cursorStroke}' stroke='${_cursorStroke}' stroke-width='0.4' stroke-linejoin='round'/></g></svg>") 15 10, default`
+
   return (
-    <main style={{ height: '100vh', background: '#f7f7f5', fontFamily: 'Space Mono, monospace', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <main style={{ height: '100vh', background: '#f7f7f5', fontFamily: 'Space Mono, monospace', display: 'flex', flexDirection: 'column', overflow: 'hidden', cursor: _globalCursor, ['--custom-cursor' as any]: _globalCursor }}>
+      {/* 全局 cursor 覆盖 — button UA stylesheet 有 cursor:default，必须 !important 覆盖 */}
+      <style>{`
+        *, *::before, *::after { cursor: inherit }
+        button, [role="button"], select, label, a { cursor: var(--custom-cursor) !important }
+        input[type="text"], input[type="number"], input[type="email"], textarea, [contenteditable="true"] { cursor: text !important }
+        input[type="range"] { cursor: ew-resize !important }
+        input[type="color"] { cursor: var(--custom-cursor) !important }
+      `}</style>
       {/* Export HTML Dialog */}
       <ExportHtmlDialog open={exportDialogOpen} config={htmlExportConfig} onChange={setHtmlExportConfig} onConfirm={() => { setExportDialogOpen(false); doExportHTML(htmlExportConfig) }} onCancel={() => setExportDialogOpen(false)} isZh={isZh} />
 
@@ -929,11 +958,36 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
               {/* 分隔线 */}
               <div style={{ height: 1, background: 'rgba(0,0,0,0.06)' }} />
 
+              {/* 鼠标样式 */}
+              <div>
+                <p style={{ fontSize: '0.6rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b0b0ac', fontWeight: 600, marginBottom: 10 }}>{isZh ? '鼠标样式' : 'Cursor Style'}</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  {([
+                    { val: 'grab',  icon: '🖐', label: isZh ? '手套' : 'Hand',  sub: isZh ? '平移画布时显示抓手' : 'Pan gesture feel' },
+                    { val: 'arrow', icon: '↖',  label: isZh ? '箭头' : 'Arrow', sub: isZh ? 'Figma 风格箭头光标' : 'Figma-style pointer' },
+                  ] as const).map(({ val, icon, label, sub }) => {
+                    const isActive = cursorStyle === val
+                    return (
+                      <button key={val} onClick={() => { setCursorStyle(val); saveSetting('canvasCursorStyle', val) }}
+                        style={{ padding: '14px 0', borderRadius: 12, border: `1.5px solid ${isActive ? '#1a1a1a' : 'rgba(26,26,26,0.1)'}`, background: isActive ? 'rgba(26,26,26,0.05)' : 'transparent', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, transition: 'all 0.12s' }}>
+                        <span style={{ fontSize: 20, lineHeight: 1 }}>{icon}</span>
+                        <span style={{ fontSize: '0.72rem', color: isActive ? '#1a1a1a' : '#aaa', fontWeight: isActive ? 600 : 400 }}>{label}</span>
+                        <span style={{ fontSize: '0.6rem', color: '#bbb', textAlign: 'center', padding: '0 8px' }}>{sub}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* 分隔线 */}
+              <div style={{ height: 1, background: 'rgba(0,0,0,0.06)' }} />
+
               {/* 开关区 */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                 {([
                   { key: 'panel', label: isZh ? '显示面板' : 'Show Panel', sub: isZh ? '隐藏后画布占满全屏' : 'Canvas fills full width when hidden', value: panelVisible, set: (v: boolean) => { setPanelVisible(v); saveSetting('ws_panelVisible', String(v)) } },
                   { key: 'hover', label: isZh ? '悬停阴影' : 'Hover Shadow', sub: isZh ? '鼠标停留在元素上时显示阴影' : 'Drop shadow when hovering over blocks', value: hoverShadow, set: (v: boolean) => { setHoverShadow(v); saveSetting('ws_hoverShadow', String(v)) } },
+                  { key: 'cursorShadow', label: isZh ? '光标阴影' : 'Cursor Shadow', sub: isZh ? '自定义光标下方的投影效果' : 'Drop shadow beneath custom cursors', value: cursorShadow, set: (v: boolean) => { setCursorShadow(v); saveSetting('ws_cursorShadow', String(v)) } },
                 ]).map((item, i) => (
                   <div key={item.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 0', borderTop: i === 0 ? 'none' : '1px solid rgba(0,0,0,0.06)' }}>
                     <div>
@@ -944,6 +998,30 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
                       style={{ width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', background: item.value ? '#1a1a1a' : '#e0e0e0', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
                       <span style={{ position: 'absolute', top: 3, left: item.value ? 23 : 3, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.25)' }} />
                     </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* 分隔线 */}
+              <div style={{ height: 1, background: 'rgba(0,0,0,0.06)' }} />
+
+              {/* 光标颜色 */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {([
+                  { key: 'fill',   label: isZh ? '光标填充色' : 'Cursor Fill',   val: cursorFill,   presets: ['white', '#1a1a1a', '#f7f7f5', '#4f46e5', '#c4a044', '#4aab6f', '#e45c3a'], set: (v: string) => { setCursorFill(v); saveSetting('ws_cursorFill', v) } },
+                  { key: 'stroke', label: isZh ? '光标描边色' : 'Cursor Stroke', val: cursorStroke, presets: ['black', 'white', '#4f46e5', '#c4a044', '#4aab6f', '#e45c3a', '#1a1a1a'], set: (v: string) => { setCursorStroke(v); saveSetting('ws_cursorStroke', v) } },
+                ] as const).map(item => (
+                  <div key={item.key}>
+                    <p style={{ fontSize: '0.6rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b0b0ac', fontWeight: 600, marginBottom: 8 }}>{item.label}</p>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {item.presets.map(c => (
+                        <button key={c} onClick={() => item.set(c)}
+                          style={{ width: 22, height: 22, borderRadius: '50%', border: 'none', cursor: 'pointer', background: c, flexShrink: 0, padding: 0, transition: 'transform 0.1s, box-shadow 0.1s', boxShadow: item.val === c ? '0 0 0 2px #1a1a1a, 0 0 0 3.5px #fff' : '0 0 0 1px rgba(26,26,26,0.14)', transform: item.val === c ? 'scale(1.18)' : 'scale(1)', outline: (c === 'white' || c === '#f7f7f5') ? '1px solid rgba(26,26,26,0.1)' : 'none' }} />
+                      ))}
+                      <label style={{ width: 22, height: 22, borderRadius: '50%', overflow: 'hidden', cursor: 'pointer', position: 'relative', boxShadow: '0 0 0 1px rgba(26,26,26,0.14)', background: 'conic-gradient(red,yellow,lime,cyan,blue,magenta,red)', flexShrink: 0 }}>
+                        <input type="color" value={item.val.startsWith('#') ? item.val : '#ffffff'} onChange={e => item.set(e.target.value)} style={{ opacity: 0, position: 'absolute', inset: 0, width: '100%', height: '100%', cursor: 'pointer' }} />
+                      </label>
+                    </div>
                   </div>
                 ))}
               </div>
