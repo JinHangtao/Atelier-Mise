@@ -300,6 +300,7 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
       <style>{`
         *, *::before, *::after { cursor: inherit }
         button, [role="button"], select, label, a { cursor: var(--custom-cursor) !important }
+        ::-webkit-scrollbar { display: none; }
         input[type="text"], input[type="number"], input[type="email"], textarea, [contenteditable="true"] { cursor: text !important }
         input[type="range"] { cursor: ew-resize !important }
         input[type="color"] { cursor: var(--custom-cursor) !important }
@@ -337,7 +338,7 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
       `}</style>
 
       {/* ── Nav ── */}
-      <nav style={{ padding: '0 32px', borderBottom: '1px solid rgba(26,26,26,0.1)', background: '#ffffff', position: 'sticky', top: 0, zIndex: 100, display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: immersive ? '0px' : '52px', overflow: 'hidden', opacity: immersive ? 0 : 1, transition: 'height 0.32s cubic-bezier(0.4,0,0.2,1), opacity 0.24s ease', gap: '16px', flexShrink: 0, }}>
+      <nav style={{ padding: '0 32px', borderBottom: '1px solid rgba(26,26,26,0.1)', background: 'rgba(255,255,255,0.72)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', position: 'sticky',  top: 0, zIndex: 100, display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: immersive ? '0px' : '52px', overflow: 'hidden', opacity: immersive ? 0 : 1, transition: 'height 0.32s cubic-bezier(0.4,0,0.2,1), opacity 0.24s ease', gap: '16px', flexShrink: 0, }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', minWidth: 0 }}>
           <button onClick={() => router.back()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '0.78rem', letterSpacing: '0.12em', fontFamily: 'Inter, DM Sans, sans-serif', flexShrink: 0, padding: '0', transition: 'color 0.12s' }} onMouseEnter={e => (e.currentTarget.style.color = '#1a1a1a')} onMouseLeave={e => (e.currentTarget.style.color = '#aaa')}>
             ← {isZh ? '返回' : 'Back'}
@@ -798,7 +799,7 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
             </div>
 
             {/* Body */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: 24 }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '24px', scrollbarWidth: 'none', msOverflowStyle: 'none', display: 'flex', flexDirection: 'column', gap: 24 }}>
 
               {/* 面板位置 */}
               <div>

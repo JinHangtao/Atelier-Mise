@@ -9,15 +9,19 @@ import { type TableData } from './TableBlock'
 import { Aspect } from './types'
 import DrawLayerPanel from './DrawLayerPanel'
 
+const TABS = ['pages', 'blocks', 'draw', 'style'] as const
+type RightTabKey = typeof TABS[number]
+
 const tabStyle = (active: boolean): React.CSSProperties => ({
   flex: 1, padding: '6px 0', fontSize: '0.62rem', letterSpacing: '0.14em',
   textTransform: 'uppercase', fontFamily: 'Inter, DM Sans, sans-serif', fontWeight: 600,
   border: 'none', cursor: 'pointer',
   borderRadius: '7px',
-  background: active ? '#fff' : 'transparent',
-  color: active ? '#1a1a1a' : '#aaa',
-  boxShadow: active ? '0 1px 3px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(26,26,26,0.06)' : 'none',
-  transition: 'all 0.15s cubic-bezier(0.22,1,0.36,1)',
+  background: 'transparent',
+  color: active ? '#1a1a1a' : '#9a9a9a',
+  position: 'relative', zIndex: 1,
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  transition: 'color 0.22s cubic-bezier(0.22,1,0.36,1)',
 })
 
 export function RightPanel(s: ExportPageState) {
@@ -49,11 +53,15 @@ export function RightPanel(s: ExportPageState) {
 
   return (
     <div
-      style={{ background: '#fff', overflowY: 'auto', borderLeft: '1px solid rgba(26,26,26,0.07)', display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}
+      style={{ background: '#fff', overflowY: 'auto', borderLeft: '1px solid rgba(26,26,26,0.07)', display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', scrollbarWidth: 'none', msOverflowStyle: 'none' } as React.CSSProperties}
       data-rp-scroll=""
       onDragOver={e => e.stopPropagation()} onDrop={e => e.stopPropagation()}
     >
       <style>{`
+      @keyframes _rp-block-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
         @keyframes _rp-tab-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes _rp-press  { 0%,100% { transform: scale(1); } 45% { transform: scale(0.96); } }
         @keyframes _rp-flash  { 0% { background: rgba(26,26,26,0.07); } 100% { background: transparent; } }
@@ -70,18 +78,34 @@ export function RightPanel(s: ExportPageState) {
         ._rp-drag-handle-bar { width: 28px; height: 3px; border-radius: 2px; background: rgba(26,26,26,0.12); transition: background 0.12s; }
         ._rp-drag-handle:hover ._rp-drag-handle-bar { background: rgba(26,26,26,0.28); }
         div:hover > ._media-del { opacity: 1 !important; }
+        [data-rp-scroll]::-webkit-scrollbar { display: none; }
+        [data-rp-scroll] { scrollbar-width: none; }
       `}</style>
       {/* Tab switcher */}
       <div style={{ position: 'sticky', top: 0, background: '#fff', zIndex: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', padding: '6px', background: 'rgba(26,26,26,0.04)', margin: '8px 10px', borderRadius: '10px' }}>
-          <div style={{ flex: 1, display: 'flex' }}>
-            {(['pages', 'blocks', 'draw', 'style'] as const).map(tab => (
+          <div style={{ flex: 1, display: 'flex', position: 'relative' }}>
+            {/* Sliding pill — same coordinate system as buttons */}
+            <div
+              aria-hidden="true"
+              style={{
+                position: 'absolute',
+                top: '0', bottom: '0',
+                left: `calc(${TABS.indexOf(rightTab as RightTabKey)} * 25%)`,
+                width: '25%',
+                background: '#fff',
+                borderRadius: '7px',
+                boxShadow: '0 1px 4px rgba(0,0,0,0.07), 0 0 0 0.5px rgba(26,26,26,0.055)',
+                transition: 'left 0.3s cubic-bezier(0.34,1.2,0.64,1)',
+                pointerEvents: 'none',
+              }}
+            />
+            {TABS.map(tab => (
               <button key={tab} onClick={() => setRightTab(tab)} style={tabStyle(rightTab === tab)}>
                 {tab === 'pages' ? 'Pages' : tab === 'blocks' ? 'Blocks' : tab === 'draw' ? (isZh ? '画图' : 'Draw') : 'Style'}
               </button>
             ))}
           </div>
-
         </div>
       </div>
 
@@ -588,6 +612,73 @@ export function RightPanel(s: ExportPageState) {
             )
           })()}
 
+          {/* ── Images / Media Library — 始终显示，放在 Background 上面 ── */}
+          <div style={{ marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <p style={{ fontSize: '0.65rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b0b0ac', fontFamily: 'Inter, DM Sans, sans-serif' }}>
+                {isZh ? '图片' : 'Images'}{mediaUrls.length > 0 && <span style={{ color: '#d0d0cc' }}> ({mediaUrls.length})</span>}
+              </p>
+              {mediaUrls.length > 0 && (
+                <span style={{ fontSize: '0.62rem', color: '#ccc', fontFamily: 'Inter, DM Sans, sans-serif' }}>{isZh ? '点击加入画布' : 'Click to add'}</span>
+              )}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
+              {/* Upload cell — 始终显示 */}
+              <label
+                style={{ aspectRatio: '1', borderRadius: '6px', border: '1px dashed rgba(26,26,26,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', transition: 'border-color 0.12s' }}
+                onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(26,26,26,0.35)')}
+                onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(26,26,26,0.15)')}
+                title={isZh ? '上传图片' : 'Upload image'}
+              >
+                <span style={{ fontSize: '1rem', color: '#ccc', lineHeight: 1 }}>+</span>
+                <input ref={localImageInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
+                  onChange={async e => {
+                    const files = Array.from(e.target.files || [])
+                    for (const file of files) {
+                      const dataUrl = await new Promise<string>(res => {
+                        const r = new FileReader(); r.onload = ev => res(ev.target?.result as string); r.readAsDataURL(file)
+                      })
+                      const compressed = await compressImage(dataUrl, 2400, 0.88)
+                      addToMediaLibrary(compressed)
+                    }
+                    e.target.value = ''
+                  }} />
+              </label>
+              {/* Image thumbnails */}
+              {mediaUrls.map((media) => (
+                <div key={media.id} style={{ position: 'relative', aspectRatio: '1' }}>
+                  <button onClick={() => addImageBlock(media.url)}
+                    style={{ position: 'absolute', inset: 0, padding: 0, border: 'none', borderRadius: '6px', overflow: 'hidden', cursor: 'pointer', width: '100%', height: '100%', outline: '1px solid rgba(26,26,26,0.1)', background: 'rgba(26,26,26,0.04)', transition: 'outline-color 0.1s' }}
+                    onMouseEnter={e => (e.currentTarget.style.outlineColor = 'rgba(26,26,26,0.4)')}
+                    onMouseLeave={e => (e.currentTarget.style.outlineColor = 'rgba(26,26,26,0.1)')}
+                    title={isZh ? '加入画布' : 'Add to canvas'}
+                  >
+                    <img src={media.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(26,26,26,0)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.12s' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.22)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'rgba(26,26,26,0)')}>
+                      <span style={{ color: '#fff', fontSize: '0.65rem', fontFamily: 'Space Mono, monospace', opacity: 0, transition: 'opacity 0.12s' }}
+                        onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                        onMouseLeave={e => (e.currentTarget.style.opacity = '0')}>+</span>
+                    </div>
+                  </button>
+                  {(s as any).removeFromMediaLibrary && (
+                    <button
+                      onClick={e => { e.stopPropagation(); (s as any).removeFromMediaLibrary(media.id) }}
+                      style={{ position: 'absolute', top: 3, right: 3, width: 16, height: 16, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: '0.5rem', lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity 0.12s', zIndex: 2 }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(220,60,60,0.9)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.55)')}
+                      title={isZh ? '删除' : 'Remove'}
+                      className="_media-del"
+                    >×</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ height: '1px', background: 'rgba(26,26,26,0.06)', marginBottom: '24px' }} />
+
           {/* Page background picker */}
           {activePage && (
             <div style={{ marginBottom: '24px' }}>
@@ -839,74 +930,7 @@ export function RightPanel(s: ExportPageState) {
             )
           })()}
 
-          {/* Divider before Images */}
-          <div style={{ height: '1px', background: 'rgba(26,26,26,0.06)', marginBottom: '24px' }} />
 
-          {/* Images — click to add as block */}
-          {mediaUrls.length > 0 && (
-            <div style={{ marginBottom: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <p style={{ fontSize: '0.65rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b0b0ac', fontFamily: 'Inter, DM Sans, sans-serif' }}>
-                  {isZh ? '图片' : 'Images'} <span style={{ color: '#d0d0cc' }}>({mediaUrls.length})</span>
-                </p>
-                <span style={{ fontSize: '0.62rem', color: '#ccc', fontFamily: 'Inter, DM Sans, sans-serif' }}>{isZh ? '点击加入画布' : 'Click to add'}</span>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
-                {/* Upload cell */}
-                <label
-                  style={{ aspectRatio: '1', borderRadius: '6px', border: '1px dashed rgba(26,26,26,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', transition: 'border-color 0.12s' }}
-                  onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(26,26,26,0.35)')}
-                  onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(26,26,26,0.15)')}
-                  title={isZh ? '上传图片' : 'Upload image'}
-                >
-                  <span style={{ fontSize: '1rem', color: '#ccc', lineHeight: 1 }}>+</span>
-                  <input ref={localImageInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
-                    onChange={async e => {
-                      const files = Array.from(e.target.files || [])
-                      for (const file of files) {
-                        const dataUrl = await new Promise<string>(res => {
-                          const r = new FileReader(); r.onload = ev => res(ev.target?.result as string); r.readAsDataURL(file)
-                        })
-                        const compressed = await compressImage(dataUrl, 2400, 0.88)
-                        addToMediaLibrary(compressed)
-                      }
-                      e.target.value = ''
-                    }} />
-                </label>
-                {/* Image thumbnails */}
-                {mediaUrls.map((media) => (
-                  <div key={media.id} style={{ position: 'relative', aspectRatio: '1' }}>
-                    <button onClick={() => addImageBlock(media.url)}
-                      style={{ position: 'absolute', inset: 0, padding: 0, border: 'none', borderRadius: '6px', overflow: 'hidden', cursor: 'pointer', width: '100%', height: '100%', outline: '1px solid rgba(26,26,26,0.1)', background: 'rgba(26,26,26,0.04)', transition: 'outline-color 0.1s' }}
-                      onMouseEnter={e => (e.currentTarget.style.outlineColor = 'rgba(26,26,26,0.4)')}
-                      onMouseLeave={e => (e.currentTarget.style.outlineColor = 'rgba(26,26,26,0.1)')}
-                      title={isZh ? '加入画布' : 'Add to canvas'}
-                    >
-                      <img src={media.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                      <div style={{ position: 'absolute', inset: 0, background: 'rgba(26,26,26,0)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.12s' }}
-                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.22)')}
-                        onMouseLeave={e => (e.currentTarget.style.background = 'rgba(26,26,26,0)')}>
-                        <span style={{ color: '#fff', fontSize: '0.65rem', fontFamily: 'Space Mono, monospace', opacity: 0, transition: 'opacity 0.12s' }}
-                          onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                          onMouseLeave={e => (e.currentTarget.style.opacity = '0')}>+</span>
-                      </div>
-                    </button>
-                    {/* 删除按钮 */}
-                    {(s as any).removeFromMediaLibrary && (
-                      <button
-                        onClick={e => { e.stopPropagation(); (s as any).removeFromMediaLibrary(media.id) }}
-                        style={{ position: 'absolute', top: 3, right: 3, width: 16, height: 16, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: '0.5rem', lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity 0.12s', zIndex: 2 }}
-                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(220,60,60,0.9)')}
-                        onMouseLeave={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.55)')}
-                        title={isZh ? '删除' : 'Remove'}
-                        className="_media-del"
-                      >×</button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Add Table block + Sticky + Emoji */}
           <div style={{ height: '1px', background: 'rgba(26,26,26,0.06)', marginBottom: '16px' }} />
