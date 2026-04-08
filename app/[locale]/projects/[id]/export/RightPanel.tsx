@@ -69,6 +69,7 @@ export function RightPanel(s: ExportPageState) {
         ._rp-drag-handle:hover { background: rgba(26,26,26,0.04); }
         ._rp-drag-handle-bar { width: 28px; height: 3px; border-radius: 2px; background: rgba(26,26,26,0.12); transition: background 0.12s; }
         ._rp-drag-handle:hover ._rp-drag-handle-bar { background: rgba(26,26,26,0.28); }
+        div:hover > ._media-del { opacity: 1 !important; }
       `}</style>
       {/* Tab switcher */}
       <div style={{ position: 'sticky', top: 0, background: '#fff', zIndex: 10 }}>
@@ -873,22 +874,35 @@ export function RightPanel(s: ExportPageState) {
                     }} />
                 </label>
                 {/* Image thumbnails */}
-                {mediaUrls.map((url, i) => (
-                  <button key={i} onClick={() => addImageBlock(url)}
-                    style={{ position: 'relative', padding: 0, border: 'none', borderRadius: '6px', overflow: 'hidden', cursor: 'pointer', aspectRatio: '1', outline: '1px solid rgba(26,26,26,0.1)', background: 'rgba(26,26,26,0.04)', transition: 'outline-color 0.1s' }}
-                    onMouseEnter={e => (e.currentTarget.style.outlineColor = 'rgba(26,26,26,0.4)')}
-                    onMouseLeave={e => (e.currentTarget.style.outlineColor = 'rgba(26,26,26,0.1)')}
-                    title={isZh ? '加入画布' : 'Add to canvas'}
-                  >
-                    <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(26,26,26,0)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.12s' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.28)')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'rgba(26,26,26,0)')}>
-                      <span style={{ color: '#fff', fontSize: '0.65rem', fontFamily: 'Space Mono, monospace', opacity: 0, transition: 'opacity 0.12s' }}
-                        onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                        onMouseLeave={e => (e.currentTarget.style.opacity = '0')}>+</span>
-                    </div>
-                  </button>
+                {mediaUrls.map((media) => (
+                  <div key={media.id} style={{ position: 'relative', aspectRatio: '1' }}>
+                    <button onClick={() => addImageBlock(media.url)}
+                      style={{ position: 'absolute', inset: 0, padding: 0, border: 'none', borderRadius: '6px', overflow: 'hidden', cursor: 'pointer', width: '100%', height: '100%', outline: '1px solid rgba(26,26,26,0.1)', background: 'rgba(26,26,26,0.04)', transition: 'outline-color 0.1s' }}
+                      onMouseEnter={e => (e.currentTarget.style.outlineColor = 'rgba(26,26,26,0.4)')}
+                      onMouseLeave={e => (e.currentTarget.style.outlineColor = 'rgba(26,26,26,0.1)')}
+                      title={isZh ? '加入画布' : 'Add to canvas'}
+                    >
+                      <img src={media.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                      <div style={{ position: 'absolute', inset: 0, background: 'rgba(26,26,26,0)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.12s' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.22)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'rgba(26,26,26,0)')}>
+                        <span style={{ color: '#fff', fontSize: '0.65rem', fontFamily: 'Space Mono, monospace', opacity: 0, transition: 'opacity 0.12s' }}
+                          onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                          onMouseLeave={e => (e.currentTarget.style.opacity = '0')}>+</span>
+                      </div>
+                    </button>
+                    {/* 删除按钮 */}
+                    {(s as any).removeFromMediaLibrary && (
+                      <button
+                        onClick={e => { e.stopPropagation(); (s as any).removeFromMediaLibrary(media.id) }}
+                        style={{ position: 'absolute', top: 3, right: 3, width: 16, height: 16, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: '0.5rem', lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity 0.12s', zIndex: 2 }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(220,60,60,0.9)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.55)')}
+                        title={isZh ? '删除' : 'Remove'}
+                        className="_media-del"
+                      >×</button>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>

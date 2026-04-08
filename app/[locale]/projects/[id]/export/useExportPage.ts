@@ -13,6 +13,7 @@ import {
   generateId, aspectLabel, pageHeight, migrateOrLoad,
   defaultPages, makeNewPage, draftKey, optKey, pagesKey,
 } from './pageHelpers'
+import { saveMediaImage, loadMediaImages, deleteMediaImage } from './mediaLibraryDB'
 
 export type Anchor = 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right'
 
@@ -460,10 +461,55 @@ export function useExportPage() {
     }
   }
 
+  // ── 媒体库图片存入 IndexedDB，project 里只留 id 引用 ──────────────────────────
+  const [mediaUrls, setMediaUrls] = useState<{ id: string; url: string }[]>([])
+
+  // 初始化时从 IDB 加载该项目的所有图片
+  useEffect(() => {
+    if (!id) return
+    let cancelled = false
+    loadMediaImages(id).then(map => {
+      if (cancelled) return
+      // 按 project.mediaIds 顺序排列，保证展示顺序稳定
+      const ids: string[] = (project as any)?.mediaIds || []
+      const ordered = ids
+        .filter(mid => map[mid])
+        .map(mid => ({ id: mid, url: map[mid] }))
+      // 把 IDB 有但 project.mediaIds 没记录的也追加进来（容错）
+      Object.entries(map).forEach(([mid, url]) => {
+        if (!ids.includes(mid)) ordered.push({ id: mid, url })
+      })
+      setMediaUrls(ordered)
+    }).catch(err => console.error('[MediaLibrary] 加载 IDB 失败:', err))
+    return () => { cancelled = true }
+  }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const addToMediaLibrary = (dataUrl: string) => {
-    compressImage(dataUrl).then(compressed => {
-      setProjects(ps => ps.map(p => p.id === id ? { ...p, mediaUrls: [...(p.mediaUrls || []), compressed] } : p))
+    compressImage(dataUrl).then(async compressed => {
+      try {
+        const imageId = await saveMediaImage(id, compressed)
+        setProjects(ps => ps.map(p => p.id === id
+          ? { ...p, mediaIds: [...((p as any).mediaIds || []), imageId] }
+          : p
+        ))
+        setMediaUrls(prev => [...prev, { id: imageId, url: compressed }])
+      } catch (err) {
+        console.error('[MediaLibrary] 存入 IndexedDB 失败:', err)
+      }
     })
+  }
+
+  const removeFromMediaLibrary = async (imageId: string) => {
+    try {
+      await deleteMediaImage(id, imageId)
+      setProjects(ps => ps.map(p => p.id === id
+        ? { ...p, mediaIds: ((p as any).mediaIds || []).filter((mid: string) => mid !== imageId) }
+        : p
+      ))
+      setMediaUrls(prev => prev.filter(m => m.id !== imageId))
+    } catch (err) {
+      console.error('[MediaLibrary] 删除 IndexedDB 失败:', err)
+    }
   }
 
   // ── Block CRUD ──
@@ -972,7 +1018,7 @@ srcCanvases.forEach((src, idx) => {
   }
 
   const visibleSchools = schoolsExpanded ? schools : schools.slice(0, 3)
-  const mediaUrls      = project?.mediaUrls || []
+  // mediaUrls 现在是 { id, url }[] 从 IDB 异步加载，调用方用 .url 拿 dataUrl
 
   return {
     // routing
@@ -1026,7 +1072,7 @@ srcCanvases.forEach((src, idx) => {
     moveBlockToPage, onBlockDragStop,
     startEdit, saveEdit, cancelEdit,
     toggleImageSelection, addImageRow,
-    compressImage, addToMediaLibrary, removeBackground,
+    compressImage, addToMediaLibrary, removeFromMediaLibrary, removeBackground,
     // export
     pagesForExport, allBlocksForExport, doExportHTML, doExportPDF, doExportDOCX,
     visibleSchools, mediaUrls,

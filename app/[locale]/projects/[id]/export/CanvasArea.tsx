@@ -1212,6 +1212,24 @@ export function CanvasArea(s: ExportPageState) {
     return () => window.removeEventListener('keydown', onKey)
   }, [isDrawMode, activePageId])
 
+  // ── 鼠标滚轮缩放（Ctrl/Meta + Wheel）────────────────────────────────────
+  // 必须用 addEventListener + passive:false，React 合成事件无法 preventDefault 滚动。
+  // draw 模式下 SVG overlay 捕获了所有 pointer 事件，但 wheel 事件仍会冒泡到 wrap，
+  // 所以绑在 canvasWrapRef 上即可在两种模式下都生效。
+  React.useEffect(() => {
+    const wrap = canvasWrapRef.current
+    if (!wrap) return
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return
+      e.preventDefault()
+      e.stopPropagation()
+      const delta = e.deltaY > 0 ? -0.05 : 0.05
+      setCanvasZoom(z => Math.min(3, Math.max(0.3, +((z + delta).toFixed(2)))))
+    }
+    wrap.addEventListener('wheel', onWheel, { passive: false })
+    return () => wrap.removeEventListener('wheel', onWheel)
+  }, [canvasWrapRef, setCanvasZoom])
+
 
   return (
     <div
@@ -1358,6 +1376,8 @@ export function CanvasArea(s: ExportPageState) {
       <style>{`
         .block-card { cursor: ${CURSOR_GRAB} }
         .block-card:active, .rnd-block.dragging { cursor: ${CURSOR_GRABBING} !important }
+        .rnd-block img { cursor: ${CURSOR_GRAB} }
+        .rnd-block img:active { cursor: ${CURSOR_GRABBING} !important }
         .rnd-block textarea, .rnd-block input, .rnd-block [contenteditable] { cursor: text }
         .rnd-block button, .rnd-block select { cursor: ${CURSOR_DEFAULT} !important }
         button, select, label { cursor: ${CURSOR_DEFAULT} !important }
