@@ -1276,7 +1276,7 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
             (window as any).__editingImageIdx = null
           }}
           onStartEdit={block => {
-            s.startEdit(block)
+            s.startEdit(block as import('../../../../../lib/exportStyles').Block)
           }}
           onRemoveBg={(id, content) => {
             s.removeBackground(id, content)
