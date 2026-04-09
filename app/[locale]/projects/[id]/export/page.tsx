@@ -314,6 +314,23 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
     }
   }, [])
 
+  // ── Block iOS Safari pull-to-refresh / overscroll ─────────────────────────
+  React.useEffect(() => {
+    const blockOverscroll = (e: TouchEvent) => {
+      const target = e.target as HTMLElement
+      if (target.closest('.allow-scroll')) return
+      e.preventDefault()
+    }
+    document.documentElement.style.overscrollBehavior = 'none'
+    document.body.style.overscrollBehavior = 'none'
+    document.addEventListener('touchmove', blockOverscroll, { passive: false })
+    return () => {
+      document.removeEventListener('touchmove', blockOverscroll)
+      document.documentElement.style.overscrollBehavior = ''
+      document.body.style.overscrollBehavior = ''
+    }
+  }, [])
+
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName
@@ -351,11 +368,12 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
         input[type="color"] { cursor: var(--custom-cursor) !important }
         /* Tablet (landscape): lock viewport, prevent body scroll */
         @media (max-width: 1200px) and (orientation: landscape) {
-          html, body { overflow: hidden !important; height: 100% !important; touch-action: none; }
+          html, body { overflow: hidden !important; height: 100% !important; touch-action: none !important; overscroll-behavior: none !important; }
         }
         @media (max-width: 1024px) {
-          html, body { overflow: hidden !important; height: 100% !important; }
+          html, body { overflow: hidden !important; height: 100% !important; touch-action: none !important; overscroll-behavior: none !important; }
         }
+        html, body { overscroll-behavior: none !important; }
       `}</style>
       {/* Export HTML Dialog */}
       <ExportHtmlDialog open={exportDialogOpen} config={htmlExportConfig} onChange={setHtmlExportConfig} onConfirm={() => { setExportDialogOpen(false); doExportHTML(htmlExportConfig) }} onCancel={() => setExportDialogOpen(false)} isZh={isZh} />

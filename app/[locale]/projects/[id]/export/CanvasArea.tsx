@@ -1501,17 +1501,17 @@ export function CanvasArea(s: ExportPageState) {
         if (isDrawMode) return
         clearLongPress()
         const target = e.target as HTMLElement
-        // 1-finger on a block → let the block handle it (drag), but start long-press timer
+        // 1-finger on a block → let the block handle drag, but arm long-press timer
         if (target.closest('.rnd-block')) {
-          const rndEl = target.closest('.rnd-block') as HTMLElement | null
-          const bid = rndEl?.getAttribute('data-block-id')
+          // data-block-id lives on .block-card inside Rnd, climb up to find it
+          const cardEl = target.closest('[data-block-id]') as HTMLElement | null
+          const bid = cardEl?.getAttribute('data-block-id')
           if (bid && e.touches.length === 1) {
             const t = e.touches[0]
             longPressBlockRef.current = { blockId: bid, clientX: t.clientX, clientY: t.clientY }
             longPressTimerRef.current = setTimeout(() => {
               const lp = longPressBlockRef.current
               if (!lp) return
-              e.preventDefault()
               setCtxMenu({ x: lp.clientX, y: lp.clientY, gridX: 0, gridY: 0, blockId: lp.blockId })
               clearLongPress()
             }, 550)
