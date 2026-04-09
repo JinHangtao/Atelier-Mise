@@ -1362,6 +1362,21 @@ export function CanvasArea(s: ExportPageState) {
   // Tracks mouse-drag pan position for settle on mouseUp (no livePan needed)
   const _mousePanPos = React.useRef({ x: canvasPan.x, y: canvasPan.y })
 
+  // ── Tablet touch: pan + pinch-zoom ────────────────────────────────────────
+  // Completely separate from mouse events — touch events fire on all touch devices.
+  const touchPanRef = React.useRef<{ startX: number; startY: number; px: number; py: number } | null>(null)
+  const touchPinchRef = React.useRef<{ dist: number; midX: number; midY: number; startZoom: number; startPanX: number; startPanY: number } | null>(null)
+  const _touchPanPos = React.useRef({ x: canvasPan.x, y: canvasPan.y })
+
+  // ── Tablet: long-press to show context menu ────────────────────────────────
+  const longPressTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+  const longPressBlockRef = React.useRef<{ blockId: string; clientX: number; clientY: number } | null>(null)
+
+  const clearLongPress = () => {
+    if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null }
+    longPressBlockRef.current = null
+  }
+
   // ── 笔刷事件已迁移至 SVG overlay 的 onPointer 回调统一处理 ──────────────────
   // canvas 只负责渲染（pointerEvents: none），不再绑定任何事件。
 
@@ -1421,6 +1436,7 @@ export function CanvasArea(s: ExportPageState) {
         backgroundSize: (s as any).dotGrid ? '24px 24px' : 'auto',
         backgroundPosition: (s as any).dotGrid ? '0 0' : '0 0',
         overflow: 'hidden', position: 'relative',
+        touchAction: 'none',
         cursor: isDrawMode
           ? (sharedDrawState.brushType === 'eraser' ? CURSOR_ERASER
             : sharedDrawState.shapeType ? CURSOR_SHAPE
@@ -1480,6 +1496,114 @@ export function CanvasArea(s: ExportPageState) {
         setPanningCursor(false)
         setCanvasPan({ x: _mousePanPos.current.x, y: _mousePanPos.current.y })
       }}
+      // ── Tablet touch: pan (1 finger on empty canvas) + pinch zoom (2 fingers) ──
+      onTouchStart={e => {
+        if (isDrawMode) return
+        clearLongPress()
+        const target = e.target as HTMLElement
+        // 1-finger on a block → let the block handle it (drag), but start long-press timer
+        if (target.closest('.rnd-block')) {
+          const rndEl = target.closest('.rnd-block') as HTMLElement | null
+          const bid = rndEl?.getAttribute('data-block-id')
+          if (bid && e.touches.length === 1) {
+            const t = e.touches[0]
+            longPressBlockRef.current = { blockId: bid, clientX: t.clientX, clientY: t.clientY }
+            longPressTimerRef.current = setTimeout(() => {
+              const lp = longPressBlockRef.current
+              if (!lp) return
+              e.preventDefault()
+              setCtxMenu({ x: lp.clientX, y: lp.clientY, gridX: 0, gridY: 0, blockId: lp.blockId })
+              clearLongPress()
+            }, 550)
+          }
+          return
+        }
+        if (e.touches.length === 1) {
+          // Single-finger pan on empty canvas
+          const panLayerEl = panLayerRef.current
+          const liveTransform = panLayerEl?.style.transform ?? ''
+          const mat = liveTransform && liveTransform !== 'none' ? new DOMMatrix(liveTransform) : null
+          const livePx = mat ? mat.m41 : canvasPan.x
+          const livePy = mat ? mat.m42 : canvasPan.y
+          touchPanRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, px: livePx, py: livePy }
+          _touchPanPos.current = { x: livePx, y: livePy }
+        } else if (e.touches.length === 2) {
+          // Two-finger pinch
+          touchPanRef.current = null
+          const t0 = e.touches[0], t1 = e.touches[1]
+          const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY)
+          const midX = (t0.clientX + t1.clientX) / 2
+          const midY = (t0.clientY + t1.clientY) / 2
+          const panLayerEl = panLayerRef.current
+          const liveTransform = panLayerEl?.style.transform ?? ''
+          const mat = liveTransform && liveTransform !== 'none' ? new DOMMatrix(liveTransform) : null
+          const livePx = mat ? mat.m41 : canvasPan.x
+          const livePy = mat ? mat.m42 : canvasPan.y
+          touchPinchRef.current = { dist, midX, midY, startZoom: canvasZoomRef.current, startPanX: livePx, startPanY: livePy }
+          e.preventDefault()
+        }
+      }}
+      onTouchMove={e => {
+        if (isDrawMode) return
+        // If finger moved more than 10px, cancel long-press
+        if (longPressBlockRef.current && e.touches.length === 1) {
+          const t = e.touches[0]
+          const lp = longPressBlockRef.current
+          if (Math.hypot(t.clientX - lp.clientX, t.clientY - lp.clientY) > 10) clearLongPress()
+        }
+        if (e.touches.length === 1 && touchPanRef.current) {
+          e.preventDefault()
+          const wrap = canvasWrapRef.current
+          const W = wrap ? wrap.offsetWidth : 800
+          const H = wrap ? wrap.offsetHeight : 600
+          const MARGIN = 120
+          const nx = Math.min(W - MARGIN, Math.max(-(W * 2), touchPanRef.current.px + e.touches[0].clientX - touchPanRef.current.startX))
+          const ny = Math.min(H - MARGIN, Math.max(-(H * 4), touchPanRef.current.py + e.touches[0].clientY - touchPanRef.current.startY))
+          if (panLayerRef.current) {
+            panLayerRef.current.style.transform = `translate(${nx}px,${ny}px) scale(${canvasZoomRef.current})`
+          }
+          _touchPanPos.current = { x: nx, y: ny }
+        } else if (e.touches.length === 2 && touchPinchRef.current) {
+          e.preventDefault()
+          const t0 = e.touches[0], t1 = e.touches[1]
+          const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY)
+          const pinch = touchPinchRef.current
+          const rawZoom = pinch.startZoom * (dist / pinch.dist)
+          const newZoom = +Math.min(3, Math.max(0.2, rawZoom)).toFixed(3)
+          // Pan so pinch midpoint stays fixed on canvas
+          const wrap = canvasWrapRef.current
+          const wRect = wrap?.getBoundingClientRect()
+          const midX = (t0.clientX + t1.clientX) / 2
+          const midY = (t0.clientY + t1.clientY) / 2
+          const originX = wRect ? midX - wRect.left : midX
+          const originY = wRect ? midY - wRect.top  : midY
+          const scaleDelta = newZoom / pinch.startZoom
+          const newPanX = originX + (pinch.startPanX - originX) * scaleDelta + (midX - pinch.midX)
+          const newPanY = originY + (pinch.startPanY - originY) * scaleDelta + (midY - pinch.midY)
+          if (panLayerRef.current) {
+            panLayerRef.current.style.transform = `translate(${newPanX}px,${newPanY}px) scale(${newZoom})`
+          }
+          _touchPanPos.current = { x: newPanX, y: newPanY }
+          canvasZoomRef.current = newZoom
+        }
+      }}
+      onTouchEnd={e => {
+        clearLongPress()
+        if (touchPanRef.current) {
+          touchPanRef.current = null
+          setCanvasPan({ x: _touchPanPos.current.x, y: _touchPanPos.current.y })
+        }
+        if (touchPinchRef.current && e.touches.length < 2) {
+          setCanvasZoom(canvasZoomRef.current)
+          setCanvasPan({ x: _touchPanPos.current.x, y: _touchPanPos.current.y })
+          touchPinchRef.current = null
+        }
+      }}
+      onTouchCancel={() => {
+        clearLongPress()
+        touchPanRef.current = null
+        touchPinchRef.current = null
+      }}
     >
       {/* CSS for canvas/blocks */}
       <style>{`
@@ -1505,6 +1629,16 @@ export function CanvasArea(s: ExportPageState) {
         .rnd-block > div[class*="handle"]::after {
           content: ''; position: absolute; inset: 2px; border-radius: 50%;
           background: #fff; box-shadow: 0 0 0 1.5px rgba(26,26,26,0.4), 0 1px 4px rgba(0,0,0,0.2);
+        }
+        /* ── Tablet: selected block shows handles even without hover ── */
+        @media (hover: none) and (pointer: coarse) {
+          .rnd-block.tablet-selected > div[class*="handle"] { opacity: 1 !important; }
+          .rnd-block.tablet-selected .img-resize-corner,
+          .rnd-block.tablet-selected .img-resize-edge { opacity: 1 !important; transform: translate(-50%, -50%) scale(1.2) !important; }
+          .rnd-block > div[class*="handle"]::after {
+            width: 20px; height: 20px; inset: auto;
+            top: 50%; left: 50%; transform: translate(-50%, -50%);
+          }
         }
         .img-resize-corner, .img-resize-edge {
           display: block; position: absolute; top: 50%; left: 50%;
@@ -2584,7 +2718,7 @@ export function CanvasArea(s: ExportPageState) {
                       return (
                         <Rnd
                           key={block.id}
-                          className={`rnd-block${stickyBoxShadow ? ' sticky-shadow-on' : ''}`}
+                          className={`rnd-block${stickyBoxShadow ? ' sticky-shadow-on' : ''}${selectedBlockId === block.id ? ' tablet-selected' : ''}`}
                           style={undefined}
                           size={{ width: pos.w, height: pos.h }}
                           position={{ x: pos.x, y: pos.y }}
@@ -2706,6 +2840,33 @@ export function CanvasArea(s: ExportPageState) {
                           }}
                         >
                           <div className="block-card" onDragStart={e => e.preventDefault()}
+                            data-block-id={block.id}
+                            onTouchStart={e => {
+                              // Long-press on block → context menu (tablet)
+                              clearLongPress()
+                              if (e.touches.length === 1) {
+                                const t = e.touches[0]
+                                longPressBlockRef.current = { blockId: block.id, clientX: t.clientX, clientY: t.clientY }
+                                longPressTimerRef.current = setTimeout(() => {
+                                  const lp = longPressBlockRef.current
+                                  if (!lp) return
+                                  if (!isActivePg) setActivePageId(page.id)
+                                  setCtxMenu({ x: lp.clientX, y: lp.clientY, gridX: 0, gridY: 0, blockId: lp.blockId })
+                                  setSelectedBlockId(block.id)
+                                  setRightTab('blocks')
+                                  clearLongPress()
+                                }, 550)
+                              }
+                            }}
+                            onTouchMove={e => {
+                              if (longPressBlockRef.current && e.touches.length === 1) {
+                                const t = e.touches[0]
+                                const lp = longPressBlockRef.current
+                                if (Math.hypot(t.clientX - lp.clientX, t.clientY - lp.clientY) > 10) clearLongPress()
+                              }
+                            }}
+                            onTouchEnd={() => clearLongPress()}
+                            onTouchCancel={() => clearLongPress()}
                             onContextMenu={e => {
                               e.preventDefault(); e.stopPropagation()
                               // 右键时顺带激活所在页
@@ -2715,13 +2876,14 @@ export function CanvasArea(s: ExportPageState) {
                               setRightTab('blocks')
                             }}
                             onPointerDown={e => {
-                              if (e.button !== 0) return
+                              // button === -1 on touch (pen/finger), treat same as left click
+                              if (e.button !== 0 && e.button !== -1) return
                               // 点击时激活所在页
                               if (!isActivePg) { setActivePageId(page.id); setEditingBlockId(null); setSelectedBlockId(null) }
                               ;(e.currentTarget as any)._pStart = { x: e.clientX, y: e.clientY }
                             }}
                             onPointerUp={e => {
-                              if (e.button !== 0) return
+                              if (e.button !== 0 && e.button !== -1) return
                               const s = (e.currentTarget as any)._pStart
                               if (!s) return
                               ;(e.currentTarget as any)._pStart = null
