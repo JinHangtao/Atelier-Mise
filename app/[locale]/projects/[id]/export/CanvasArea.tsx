@@ -1371,6 +1371,8 @@ export function CanvasArea(s: ExportPageState) {
   // ── Tablet: long-press to show context menu ────────────────────────────────
   const longPressTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const longPressBlockRef = React.useRef<{ blockId: string; clientX: number; clientY: number } | null>(null)
+  // Blocks synthetic mousedown that browsers fire ~300ms after long-press touchend
+  const suppressNextMouseDownRef = React.useRef(false)
 
   const clearLongPress = () => {
     if (longPressTimerRef.current) { clearTimeout(longPressTimerRef.current); longPressTimerRef.current = null }
@@ -1448,6 +1450,8 @@ export function CanvasArea(s: ExportPageState) {
       }}
       onMouseDown={e => {
         if (isDrawMode) return  // draw mode: canvas overlay handles all pointer events
+        // Suppress synthetic mousedown fired by browser after long-press touchend
+        if (suppressNextMouseDownRef.current) { suppressNextMouseDownRef.current = false; return }
         const target = e.target as HTMLElement
         if (target.closest('.rnd-block') || target.closest('button') || target.closest('input') || target.closest('textarea')) return
         if (e.button !== 0) return
@@ -1466,6 +1470,8 @@ export function CanvasArea(s: ExportPageState) {
         const livePx = mat ? mat.m41 : canvasPan.x
         const livePy = mat ? mat.m42 : canvasPan.y
         panStart.current = { mx: e.clientX, my: e.clientY, px: livePx, py: livePy }
+        // 初始化 _mousePanPos，防止没有 mousemove 时 mouseup 写 {0,0}
+        _mousePanPos.current = { x: livePx, y: livePy }
         e.preventDefault()
       }}
       onMouseMove={e => {
@@ -1513,6 +1519,9 @@ export function CanvasArea(s: ExportPageState) {
               const lp = longPressBlockRef.current
               if (!lp) return
               setCtxMenu({ x: lp.clientX, y: lp.clientY, gridX: 0, gridY: 0, blockId: lp.blockId })
+              // Suppress the synthetic mousedown browsers fire after touchend
+              suppressNextMouseDownRef.current = true
+              setTimeout(() => { suppressNextMouseDownRef.current = false }, 600)
               clearLongPress()
             }, 550)
           }
@@ -2854,6 +2863,8 @@ export function CanvasArea(s: ExportPageState) {
                                   setCtxMenu({ x: lp.clientX, y: lp.clientY, gridX: 0, gridY: 0, blockId: lp.blockId })
                                   setSelectedBlockId(block.id)
                                   setRightTab('blocks')
+                                  suppressNextMouseDownRef.current = true
+                                  setTimeout(() => { suppressNextMouseDownRef.current = false }, 600)
                                   clearLongPress()
                                 }, 550)
                               }
