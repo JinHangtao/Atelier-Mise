@@ -14,10 +14,23 @@ import { EmojiBlock, ArrowDirection } from './types'
 import { generateId } from './pageHelpers'
 import EmojiPickerPanel from './EmojiPickerPanel'
 import { exportCanvasFile } from '@/lib/canvasFormat'
+import { MobileBottomSheet, MobileBottomBar } from './MobileBottomSheet'
 
 export default function ExportPage() {
   const s = useExportPage()
   const gridHook = useGridSystem()
+
+  // ── Mobile detection + bottom sheet state ─────────────────────────────────
+  const [isMobile, setIsMobile] = React.useState(false)
+  React.useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth <= 768)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+  const [mobileSheetBlock, setMobileSheetBlock] = React.useState<any>(null)
+  // Expose setter so CanvasArea long-press can open sheet instead of ctxMenu on mobile
+  ;(s as any).__openMobileSheet = setMobileSheetBlock
   const [gridEditMode, setGridEditMode] = React.useState(false)
   const [exportDialogOpen, setExportDialogOpen] = React.useState(false)
   const [htmlExportConfig, setHtmlExportConfig] = React.useState<HtmlExportConfig>(DEFAULT_HTML_EXPORT_CONFIG)
@@ -392,7 +405,7 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
       `}</style>
 
       {/* ── Nav ── */}
-      <nav style={{ padding: '0 32px', borderBottom: '1px solid rgba(26,26,26,0.1)', background: 'rgba(255,255,255,0.72)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', position: 'sticky',  top: 0, zIndex: 100, display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: immersive ? '0px' : '52px', overflow: 'hidden', opacity: immersive ? 0 : 1, transition: 'height 0.32s cubic-bezier(0.4,0,0.2,1), opacity 0.24s ease', gap: '16px', flexShrink: 0, minHeight: 0 }}>
+      <nav style={{ padding: isMobile ? '0 16px' : '0 32px', borderBottom: '1px solid rgba(26,26,26,0.1)', background: 'rgba(255,255,255,0.72)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', position: 'sticky',  top: 0, zIndex: 100, display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: immersive ? '0px' : isMobile ? '48px' : '52px', overflow: 'hidden', opacity: immersive ? 0 : 1, transition: 'height 0.32s cubic-bezier(0.4,0,0.2,1), opacity 0.24s ease', gap: '16px', flexShrink: 0, minHeight: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', minWidth: 0 }}>
           <button onClick={() => router.back()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '0.78rem', letterSpacing: '0.12em', fontFamily: 'Inter, DM Sans, sans-serif', flexShrink: 0, padding: '0', transition: 'color 0.12s' }} onMouseEnter={e => (e.currentTarget.style.color = '#1a1a1a')} onMouseLeave={e => (e.currentTarget.style.color = '#aaa')}>
             ← {isZh ? '返回' : 'Back'}
@@ -621,8 +634,8 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
 
         {/* Actions */}
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
-                   <button onClick={undo} disabled={undoStack.current.length === 0} title={isZh ? '撤销 (⌘Z)' : 'Undo (⌘Z)'} style={{ background: 'transparent', border: '1px solid rgba(26,26,26,0.1)', padding: '7px 12px', borderRadius: '8px', fontSize: '0.82rem', cursor: undoStack.current.length === 0 ? 'not-allowed' : 'pointer', color: undoStack.current.length === 0 ? '#ddd' : '#888', transition: 'all 0.12s' }}>↩</button>
-          <button onClick={redo} disabled={redoStack.current.length === 0} title={isZh ? '重做 (⌘⇧Z)' : 'Redo (⌘⇧Z)'} style={{ background: 'transparent', border: '1px solid rgba(26,26,26,0.1)', padding: '7px 12px', borderRadius: '8px', fontSize: '0.82rem', cursor: redoStack.current.length === 0 ? 'not-allowed' : 'pointer', color: redoStack.current.length === 0 ? '#ddd' : '#888', transition: 'all 0.12s' }}>↪</button>
+                   {!isMobile && <button onClick={undo} disabled={undoStack.current.length === 0} title={isZh ? '撤销 (⌘Z)' : 'Undo (⌘Z)'} style={{ background: 'transparent', border: '1px solid rgba(26,26,26,0.1)', padding: '7px 12px', borderRadius: '8px', fontSize: '0.82rem', cursor: undoStack.current.length === 0 ? 'not-allowed' : 'pointer', color: undoStack.current.length === 0 ? '#ddd' : '#888', transition: 'all 0.12s' }}>↩</button>}
+          {!isMobile && <button onClick={redo} disabled={redoStack.current.length === 0} title={isZh ? '重做 (⌘⇧Z)' : 'Redo (⌘⇧Z)'} style={{ background: 'transparent', border: '1px solid rgba(26,26,26,0.1)', padding: '7px 12px', borderRadius: '8px', fontSize: '0.82rem', cursor: redoStack.current.length === 0 ? 'not-allowed' : 'pointer', color: redoStack.current.length === 0 ? '#ddd' : '#888', transition: 'all 0.12s' }}>↪</button>}
           {allBlocksForExport.length > 0 && (
             <button onClick={() => {
               if (window.confirm(isZh ? '清空全部页面？此操作不可撤销。' : 'Clear all pages? This cannot be undone.')) clearAll()
@@ -665,15 +678,23 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
             {isZh ? '导出' : 'Export'}
             <span style={{ fontSize: '0.6rem', background: 'rgba(255,255,255,0.18)', padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.06em' }}>HTML</span>
           </button>
-          <button onClick={() => doExportPDF()} style={{ background: 'transparent', color: '#666', border: '1px solid rgba(26,26,26,0.12)', padding: '8px 14px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.08em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', transition: 'all 0.12s' }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.04)'; e.currentTarget.style.color = '#1a1a1a' }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#666' }}>PDF</button>
-          <button onClick={() => doExportDOCX()} style={{ background: 'transparent', color: '#666', border: '1px solid rgba(26,26,26,0.12)', padding: '8px 14px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.08em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', transition: 'all 0.12s' }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.04)'; e.currentTarget.style.color = '#1a1a1a' }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#666' }}>Word</button>
+          {!isMobile && <><button onClick={() => doExportPDF()} style={{ background: 'transparent', color: '#666', border: '1px solid rgba(26,26,26,0.12)', padding: '8px 14px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.08em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', transition: 'all 0.12s' }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.04)'; e.currentTarget.style.color = '#1a1a1a' }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#666' }}>PDF</button>
+          <button onClick={() => doExportDOCX()} style={{ background: 'transparent', color: '#666', border: '1px solid rgba(26,26,26,0.12)', padding: '8px 14px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.08em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', transition: 'all 0.12s' }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.04)'; e.currentTarget.style.color = '#1a1a1a' }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#666' }}>Word</button></>}
         </div>
       </nav>
 
 
 
       {/* ── Main layout ── */}
-      {(() => {
+      {isMobile ? (
+        // ── Mobile: full-screen canvas only, no side panel ──
+        <div style={{ flex: 1, minHeight: 0, height: 0, position: 'relative' }}>
+          <CanvasArea {...sWithGrid} />
+          {/* Mobile bottom bar padding so canvas isn't hidden under bottom bar */}
+          <div style={{ height: 60 }} />
+        </div>
+      ) : (
+      (() => {
         const panelCol = immersive ? '0px' : panelVisible ? '300px' : '0px'
         const cols = panelSide === 'left'
           ? `${panelCol} 1fr`
@@ -693,7 +714,8 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
             )}
           </div>
         )
-      })()}
+      })()
+      )}
 
       {/* ── Immersive floating panel ── */}
       {immersive && (() => {
@@ -1137,6 +1159,129 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Mobile Bottom Bar ── */}
+      {isMobile && (
+        <MobileBottomBar
+          zoom={s.canvasZoom}
+          onZoomIn={() => {
+            const nz = Math.min(3, +(s.canvasZoom + 0.15).toFixed(2))
+            s.setCanvasZoom(nz)
+            if (s.panLayerRef?.current) {
+              s.panLayerRef.current.style.transform = `translate(${s.canvasPan.x}px,${s.canvasPan.y}px) scale(${nz})`
+            }
+          }}
+          onZoomOut={() => {
+            const nz = Math.max(0.2, +(s.canvasZoom - 0.15).toFixed(2))
+            s.setCanvasZoom(nz)
+            if (s.panLayerRef?.current) {
+              s.panLayerRef.current.style.transform = `translate(${s.canvasPan.x}px,${s.canvasPan.y}px) scale(${nz})`
+            }
+          }}
+          onZoomFit={() => {
+            const wrap = canvasWrapRef?.current
+            if (!wrap) return
+            const PAGE_WIDTH = 860
+            const availW = wrap.offsetWidth
+            const zoom = +(availW / PAGE_WIDTH * 0.92).toFixed(3)
+            const panX = (availW - PAGE_WIDTH * zoom) / 2
+            s.setCanvasZoom(zoom)
+            s.setCanvasPan({ x: panX, y: 24 })
+            if (s.panLayerRef?.current) {
+              s.panLayerRef.current.style.transform = `translate(${panX}px,24px) scale(${zoom})`
+            }
+          }}
+          currentPage={s.pages.findIndex(p => p.id === s.activePageId) + 1 || 1}
+          totalPages={s.pages.length}
+          isZh={isZh}
+        />
+      )}
+
+      {/* ── Mobile Bottom Sheet ── */}
+      {isMobile && (
+        <MobileBottomSheet
+          block={mobileSheetBlock}
+          isZh={isZh}
+          onClose={() => setMobileSheetBlock(null)}
+          onDelete={id => {
+            s.updatePageBlocks(s.activePageId, prev => prev.filter(b => b.id !== id))
+            s.setSelectedBlockId(null)
+            setMobileSheetBlock(null)
+          }}
+          onDuplicate={id => {
+            s.updatePageBlocks(s.activePageId, prev => {
+              const src = prev.find(b => b.id === id)
+              if (!src) return prev
+              const { generateId } = require('./pageHelpers')
+              const clone = { ...src, id: generateId(), pixelPos: src.pixelPos ? { ...src.pixelPos, x: src.pixelPos.x + 20, y: src.pixelPos.y + 20 } : src.pixelPos }
+              return [...prev, clone]
+            })
+          }}
+          onBringForward={id => {
+            s.updatePageBlocks(s.activePageId, prev => {
+              const idx = prev.findIndex(b => b.id === id)
+              if (idx === -1 || idx === prev.length - 1) return prev
+              const arr = [...prev]; [arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]]; return arr
+            })
+          }}
+          onSendBackward={id => {
+            s.updatePageBlocks(s.activePageId, prev => {
+              const idx = prev.findIndex(b => b.id === id)
+              if (idx <= 0) return prev
+              const arr = [...prev]; [arr[idx], arr[idx - 1]] = [arr[idx - 1], arr[idx]]; return arr
+            })
+          }}
+          onBringToFront={id => {
+            s.updatePageBlocks(s.activePageId, prev => {
+              const idx = prev.findIndex(b => b.id === id)
+              if (idx === -1) return prev
+              const arr = [...prev]; const [item] = arr.splice(idx, 1); arr.push(item); return arr
+            })
+          }}
+          onSendToBack={id => {
+            s.updatePageBlocks(s.activePageId, prev => {
+              const idx = prev.findIndex(b => b.id === id)
+              if (idx <= 0) return prev
+              const arr = [...prev]; const [item] = arr.splice(idx, 1); arr.unshift(item); return arr
+            })
+          }}
+          onReplaceImage={id => {
+            const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'
+            inp.onchange = () => {
+              const f = inp.files?.[0]; if (!f) return
+              const reader = new FileReader()
+              reader.onload = () => {
+                s.compressImage(reader.result as string).then(compressed => {
+                  const block = s.activePage?.blocks.find(b => b.id === id)
+                  const imgEl = new window.Image()
+                  imgEl.onload = () => {
+                    const ratio = imgEl.naturalHeight / imgEl.naturalWidth
+                    const curW = block?.pixelPos?.w ?? s.contentWidth
+                    s.patchBlock(id, { content: compressed, pixelPos: block?.pixelPos ? { ...block.pixelPos, h: Math.round(curW * ratio) } : block?.pixelPos })
+                  }
+                  imgEl.src = compressed
+                })
+              }
+              reader.readAsDataURL(f)
+            }
+            inp.click()
+          }}
+          onEditImage={id => {
+            const block = s.activePage?.blocks.find(b => b.id === id)
+            if (!block) return
+            s.setImageEditorUrl(block.content)
+            s.setImageEditorIdx(-1);
+            (window as any).__editingBlockId = id;
+            (window as any).__editingImageIdx = null
+          }}
+          onStartEdit={block => {
+            s.startEdit(block)
+          }}
+          onRemoveBg={(id, content) => {
+            s.removeBackground(id, content)
+          }}
+        />
       )}
     </main>
   )

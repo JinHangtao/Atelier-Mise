@@ -1425,6 +1425,27 @@ export function CanvasArea(s: ExportPageState) {
   // wheel 缩放/平移已在 useExportPage 里 DOM 直驱，此处不重复绑定。
   const panLayerRef = (s as any).panLayerRef as React.RefObject<HTMLDivElement>
 
+  // ── Mobile: auto zoom-to-fit on mount ────────────────────────────────────
+  React.useEffect(() => {
+    if (typeof window === 'undefined' || window.innerWidth > 768) return
+    // Small timeout to let layout settle
+    const t = setTimeout(() => {
+      const wrap = canvasWrapRef.current
+      if (!wrap) return
+      const PAGE_WIDTH = 860
+      const availW = wrap.offsetWidth
+      const zoom = +(availW / PAGE_WIDTH * 0.92).toFixed(3)
+      const panX = (availW - PAGE_WIDTH * zoom) / 2
+      setCanvasZoom(zoom)
+      setCanvasPan({ x: panX, y: 24 })
+      if (panLayerRef.current) {
+        panLayerRef.current.style.transform = `translate(${panX}px,24px) scale(${zoom})`
+      }
+    }, 120)
+    return () => clearTimeout(t)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // ── Tablet: prevent pull-to-refresh / overscroll ONLY inside canvas wrap ──
   // Must use native addEventListener with passive:false — React synthetic events
   // are always passive on modern browsers and cannot call preventDefault().
@@ -1433,8 +1454,15 @@ export function CanvasArea(s: ExportPageState) {
     const el = canvasWrapRef.current
     if (!el) return
     const onTouchMoveNative = (e: TouchEvent) => {
-      // Allow default only if the target itself needs native scroll
-      // (none of our canvas children need it — pan/zoom is handled in React)
+      // Only preventDefault on the canvas background / pan layer itself.
+      // If the touch started inside a scrollable child (block-body, page-scroll-wrap)
+      // let the browser handle native scroll normally.
+      const target = e.target as HTMLElement
+      if (
+        target.closest('.block-body') ||
+        target.closest('.page-scroll-wrap') ||
+        target.closest('[data-allow-scroll]')
+      ) return
       e.preventDefault()
     }
     el.addEventListener('touchmove', onTouchMoveNative, { passive: false })
@@ -1536,8 +1564,14 @@ export function CanvasArea(s: ExportPageState) {
             longPressTimerRef.current = setTimeout(() => {
               const lp = longPressBlockRef.current
               if (!lp) return
-              setCtxMenu({ x: lp.clientX, y: lp.clientY, gridX: 0, gridY: 0, blockId: lp.blockId })
-              // Suppress the synthetic mousedown browsers fire after touchend
+              // On mobile: open bottom sheet instead of context menu
+              const openMobileSheet = (s as any).__openMobileSheet
+              if (openMobileSheet && window.innerWidth <= 768) {
+                const block = (s as any).activePage?.blocks?.find((b: any) => b.id === lp.blockId)
+                if (block) { openMobileSheet(block) }
+              } else {
+                setCtxMenu({ x: lp.clientX, y: lp.clientY, gridX: 0, gridY: 0, blockId: lp.blockId })
+              }
               suppressNextMouseDownRef.current = true
               setTimeout(() => { suppressNextMouseDownRef.current = false }, 600)
               clearLongPress()
@@ -1912,6 +1946,7 @@ export function CanvasArea(s: ExportPageState) {
 
       {/* ── Multi-page canvas ── */}
       <div
+        data-allow-scroll=""
         style={{ padding: '24px 20px', position: 'absolute', inset: 0, userSelect: 'none', WebkitUserSelect: 'none', overflowY: 'auto', overflowX: 'hidden' }}
         onContextMenu={e => {
           const target = e.target as HTMLElement
@@ -2878,9 +2913,15 @@ export function CanvasArea(s: ExportPageState) {
                                   const lp = longPressBlockRef.current
                                   if (!lp) return
                                   if (!isActivePg) setActivePageId(page.id)
-                                  setCtxMenu({ x: lp.clientX, y: lp.clientY, gridX: 0, gridY: 0, blockId: lp.blockId })
                                   setSelectedBlockId(block.id)
                                   setRightTab('blocks')
+                                  // On mobile: open bottom sheet instead of context menu
+                                  const openMobileSheet = (s as any).__openMobileSheet
+                                  if (openMobileSheet && window.innerWidth <= 768) {
+                                    openMobileSheet(block)
+                                  } else {
+                                    setCtxMenu({ x: lp.clientX, y: lp.clientY, gridX: 0, gridY: 0, blockId: lp.blockId })
+                                  }
                                   suppressNextMouseDownRef.current = true
                                   setTimeout(() => { suppressNextMouseDownRef.current = false }, 600)
                                   clearLongPress()
