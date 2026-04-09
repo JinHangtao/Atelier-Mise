@@ -314,22 +314,6 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
     }
   }, [])
 
-  // ── Block iOS Safari pull-to-refresh / overscroll ─────────────────────────
-  React.useEffect(() => {
-    const blockOverscroll = (e: TouchEvent) => {
-      const target = e.target as HTMLElement
-      if (target.closest('.allow-scroll')) return
-      e.preventDefault()
-    }
-    document.documentElement.style.overscrollBehavior = 'none'
-    document.body.style.overscrollBehavior = 'none'
-    document.addEventListener('touchmove', blockOverscroll, { passive: false })
-    return () => {
-      document.removeEventListener('touchmove', blockOverscroll)
-      document.documentElement.style.overscrollBehavior = ''
-      document.body.style.overscrollBehavior = ''
-    }
-  }, [])
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

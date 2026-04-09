@@ -1425,6 +1425,24 @@ export function CanvasArea(s: ExportPageState) {
   // wheel 缩放/平移已在 useExportPage 里 DOM 直驱，此处不重复绑定。
   const panLayerRef = (s as any).panLayerRef as React.RefObject<HTMLDivElement>
 
+  // ── Tablet: prevent pull-to-refresh / overscroll ONLY inside canvas wrap ──
+  // Must use native addEventListener with passive:false — React synthetic events
+  // are always passive on modern browsers and cannot call preventDefault().
+  // Scoped to canvasWrapRef only so RightPanel scroll is completely unaffected.
+  React.useEffect(() => {
+    const el = canvasWrapRef.current
+    if (!el) return
+    const onTouchMoveNative = (e: TouchEvent) => {
+      // Allow default only if the target itself needs native scroll
+      // (none of our canvas children need it — pan/zoom is handled in React)
+      e.preventDefault()
+    }
+    el.addEventListener('touchmove', onTouchMoveNative, { passive: false })
+    return () => el.removeEventListener('touchmove', onTouchMoveNative)
+  // canvasWrapRef is stable, empty deps is correct
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
 
   return (
     <div
