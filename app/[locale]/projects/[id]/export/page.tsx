@@ -340,7 +340,7 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
   const _globalCursor = `url("data:image/svg+xml,<svg height='40' width='40' viewBox='0 0 32 32' xmlns='http://www.w3.org/2000/svg'><g fill='none'><path d='m12 24.4219v-16.015l11.591 11.619h-6.781l-.411.124z' fill='${_cursorFill}' stroke='${_cursorFill}' stroke-width='1.2' stroke-linejoin='round'/><path d='m12 24.4219v-16.015l11.591 11.619h-6.781l-.411.124z' fill='none' stroke='${_cursorStroke}' stroke-width='0.8' stroke-linejoin='round'/><path d='m13 10.814v11.188l2.969-2.866.428-.139h4.768z' fill='${_cursorStroke}' stroke='${_cursorStroke}' stroke-width='0.4' stroke-linejoin='round'/></g></svg>") 15 10, default`
 
   return (
-    <main style={{ height: '100vh', background: '#f7f7f5', fontFamily: 'Space Mono, monospace', display: 'flex', flexDirection: 'column', overflow: 'hidden', cursor: _globalCursor, ['--custom-cursor' as any]: _globalCursor }}>
+    <main style={{ height: '100dvh', background: '#f7f7f5', fontFamily: 'Space Mono, monospace', display: 'flex', flexDirection: 'column', overflow: 'hidden', cursor: _globalCursor, ['--custom-cursor' as any]: _globalCursor }}>
       {/* 全局 cursor 覆盖 — button UA stylesheet 有 cursor:default，必须 !important 覆盖 */}
       <style>{`
         *, *::before, *::after { cursor: inherit }
@@ -349,6 +349,13 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
         input[type="text"], input[type="number"], input[type="email"], textarea, [contenteditable="true"] { cursor: text !important }
         input[type="range"] { cursor: ew-resize !important }
         input[type="color"] { cursor: var(--custom-cursor) !important }
+        /* Tablet (landscape): lock viewport, prevent body scroll */
+        @media (max-width: 1200px) and (orientation: landscape) {
+          html, body { overflow: hidden !important; height: 100% !important; touch-action: none; }
+        }
+        @media (max-width: 1024px) {
+          html, body { overflow: hidden !important; height: 100% !important; }
+        }
       `}</style>
       {/* Export HTML Dialog */}
       <ExportHtmlDialog open={exportDialogOpen} config={htmlExportConfig} onChange={setHtmlExportConfig} onConfirm={() => { setExportDialogOpen(false); doExportHTML(htmlExportConfig) }} onCancel={() => setExportDialogOpen(false)} isZh={isZh} />
@@ -383,7 +390,7 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
       `}</style>
 
       {/* ── Nav ── */}
-      <nav style={{ padding: '0 32px', borderBottom: '1px solid rgba(26,26,26,0.1)', background: 'rgba(255,255,255,0.72)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', position: 'sticky',  top: 0, zIndex: 100, display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: immersive ? '0px' : '52px', overflow: 'hidden', opacity: immersive ? 0 : 1, transition: 'height 0.32s cubic-bezier(0.4,0,0.2,1), opacity 0.24s ease', gap: '16px', flexShrink: 0, }}>
+      <nav style={{ padding: '0 32px', borderBottom: '1px solid rgba(26,26,26,0.1)', background: 'rgba(255,255,255,0.72)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', position: 'sticky',  top: 0, zIndex: 100, display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: immersive ? '0px' : '52px', overflow: 'hidden', opacity: immersive ? 0 : 1, transition: 'height 0.32s cubic-bezier(0.4,0,0.2,1), opacity 0.24s ease', gap: '16px', flexShrink: 0, minHeight: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', minWidth: 0 }}>
           <button onClick={() => router.back()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '0.78rem', letterSpacing: '0.12em', fontFamily: 'Inter, DM Sans, sans-serif', flexShrink: 0, padding: '0', transition: 'color 0.12s' }} onMouseEnter={e => (e.currentTarget.style.color = '#1a1a1a')} onMouseLeave={e => (e.currentTarget.style.color = '#aaa')}>
             ← {isZh ? '返回' : 'Back'}
@@ -670,15 +677,15 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
           ? `${panelCol} 1fr`
           : `1fr ${panelCol}`
         return (
-          <div style={{ display: 'grid', gridTemplateColumns: cols, gap: '0', flex: 1, minHeight: 0, transition: 'grid-template-columns 0.32s cubic-bezier(0.4,0,0.2,1)', position: 'relative' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: cols, gap: '0', flex: 1, minHeight: 0, height: 0, transition: 'grid-template-columns 0.32s cubic-bezier(0.4,0,0.2,1)', position: 'relative' }}>
             {panelSide === 'left' && (
-              <div style={{ overflow: 'hidden', height: '100%', opacity: immersive || !panelVisible ? 0 : 1, transition: 'opacity 0.2s ease', minWidth: 0 }}>
+              <div style={{ overflow: 'hidden', height: '100%', maxHeight: '100%', opacity: immersive || !panelVisible ? 0 : 1, transition: 'opacity 0.2s ease', minWidth: 0 }}>
                 <RightPanel {...sWithGrid} />
               </div>
             )}
             <CanvasArea {...sWithGrid} />
             {panelSide === 'right' && (
-              <div style={{ overflow: 'hidden', height: '100%', opacity: immersive || !panelVisible ? 0 : 1, transition: 'opacity 0.2s ease', minWidth: 0 }}>
+              <div style={{ overflow: 'hidden', height: '100%', maxHeight: '100%', opacity: immersive || !panelVisible ? 0 : 1, transition: 'opacity 0.2s ease', minWidth: 0 }}>
                 <RightPanel {...sWithGrid} />
               </div>
             )}

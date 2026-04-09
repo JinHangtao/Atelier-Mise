@@ -53,7 +53,7 @@ export function RightPanel(s: ExportPageState) {
 
   return (
     <div
-      style={{ background: '#fff', overflowY: 'auto', borderLeft: '1px solid rgba(26,26,26,0.07)', display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', scrollbarWidth: 'none', msOverflowStyle: 'none' } as React.CSSProperties}
+      style={{ background: '#fff', overflowY: 'auto', WebkitOverflowScrolling: 'touch', borderLeft: '1px solid rgba(26,26,26,0.07)', display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', maxHeight: '100%', scrollbarWidth: 'none', msOverflowStyle: 'none' } as React.CSSProperties}
       data-rp-scroll=""
       onDragOver={e => e.stopPropagation()} onDrop={e => e.stopPropagation()}
     >

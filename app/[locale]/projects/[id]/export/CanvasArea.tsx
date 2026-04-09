@@ -240,48 +240,53 @@ function renderShapeSVGInBox(shape: DrawnShape, PAD: number, w: number, h: numbe
 
 // Selection handles rendered around a shape in draw mode.
 // Unified with NonDrawShape style: indigo solid border + 8 Figma-style handles + delete button.
-function renderSelectionHandles(shape: DrawnShape, onDelete: () => void): React.ReactElement {
+// canvasZoom: passed in so handles are always a fixed SCREEN size (tldraw --tl-scale pattern).
+function renderSelectionHandles(shape: DrawnShape, onDelete: () => void, canvasZoom = 1): React.ReactElement {
   const minX = Math.min(shape.x0, shape.x1)
   const minY = Math.min(shape.y0, shape.y1)
   const maxX = Math.max(shape.x0, shape.x1)
   const maxY = Math.max(shape.y0, shape.y1)
-  const PAD = 10
+  // s = 1/zoom — tldraw "--tl-scale" pattern.
+  // All handle geometry is in page-space, but we want fixed SCREEN pixels.
+  // Multiplying by s means: after the canvas scale(canvasZoom) transform, net = target screen px.
+  const s = 1 / Math.max(0.1, canvasZoom)
+  const PAD   = 10 * s
+  const HCS   = 4.5 * s  // half corner size  → 9px screen
+  const HEW   = 5   * s  // half edge wide    → 10px screen
+  const HEN   = 3   * s  // half edge narrow  → 6px screen
+  const sw1   = 1   * s  // selection border
+  const sw15  = 1.5 * s  // handle border
   const handles = handleDefs(minX, minY, maxX, maxY, PAD)
   return (
     <g>
-      {/* 选中框 — indigo 实线，与非 draw 模式完全统一 */}
+      {/* 选中框 */}
       <rect
         x={minX - PAD} y={minY - PAD}
         width={maxX - minX + PAD * 2} height={maxY - minY + PAD * 2}
-        fill="rgba(99,102,241,0.04)" stroke="#6366f1" strokeWidth={1} rx={4}
+        fill="rgba(99,102,241,0.04)" stroke="#6366f1" strokeWidth={sw1} rx={4 * s}
         pointerEvents="none"
       />
-      {/* 8个 resize handles — Figma style（draw 模式仅视觉展示，与非 draw 模式外观统一）*/}
+      {/* 8个 resize handles — 恒定屏幕像素尺寸 */}
       {handles.map(h => {
         const isCorner = h.id === 'tl' || h.id === 'tr' || h.id === 'bl' || h.id === 'br'
         return isCorner ? (
-          <rect
-            key={h.id}
-            x={h.cx - 4.5} y={h.cy - 4.5} width={9} height={9} rx={2.5}
-            fill="#fff" stroke="#6366f1" strokeWidth={1.5}
+          <rect key={h.id}
+            x={h.cx - HCS} y={h.cy - HCS} width={HCS * 2} height={HCS * 2} rx={2.5 * s}
+            fill="#fff" stroke="#6366f1" strokeWidth={sw15}
             style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.18))' }}
             pointerEvents="none"
           />
         ) : (
-          <rect
-            key={h.id}
-            x={h.id === 'tc' || h.id === 'bc' ? h.cx - 5 : h.cx - 3}
-            y={h.id === 'ml' || h.id === 'mr' ? h.cy - 5 : h.cy - 3}
-            width={h.id === 'tc' || h.id === 'bc' ? 10 : 6}
-            height={h.id === 'ml' || h.id === 'mr' ? 10 : 6}
-            rx={2}
-            fill="#6366f1" stroke="none"
-            style={{ opacity: 0.85 }}
+          <rect key={h.id}
+            x={h.id === 'tc' || h.id === 'bc' ? h.cx - HEW : h.cx - HEN}
+            y={h.id === 'ml' || h.id === 'mr' ? h.cy - HEW : h.cy - HEN}
+            width={h.id === 'tc' || h.id === 'bc' ? HEW * 2 : HEN * 2}
+            height={h.id === 'ml' || h.id === 'mr' ? HEW * 2 : HEN * 2}
+            rx={2 * s} fill="#6366f1" stroke="none" style={{ opacity: 0.85 }}
             pointerEvents="none"
           />
         )
       })}
-
     </g>
   )
 }
@@ -321,15 +326,19 @@ function buildShapeSVGString(shape: DrawnShape, x0: number, y0: number, x1: numb
 
 function imperativeResizePreview(
   previewG: SVGGElement, shape: DrawnShape,
-  coords: {x0:number;y0:number;x1:number;y1:number}, PAD: number
+  coords: {x0:number;y0:number;x1:number;y1:number},
+  canvasZoom: number   // replaces static PAD — all geometry compensated for zoom
 ) {
   const {x0,y0,x1,y1}=coords
   const rx0=Math.min(x0,x1),ry0=Math.min(y0,y1),rx1=Math.max(x0,x1),ry1=Math.max(y0,y1)
   const mx=(rx0+rx1)/2, my=(ry0+ry1)/2
   const rot=(shape as any).rotation
+  // s = 1/zoom: tldraw --tl-scale. All handle geometry * s → fixed screen pixels.
+  const s=1/Math.max(0.1,canvasZoom)
+  const PAD=10*s, HCS=4.5*s, HEW=5*s, HEN=3*s, sw1=s, sw15=1.5*s, rx4=4*s, rx25=2.5*s, rx2=2*s
   const shapeSvg=buildShapeSVGString(shape,x0,y0,x1,y1)
   const shapeWrapped=rot?`<g transform="rotate(${rot},${(x0+x1)/2},${(y0+y1)/2})">${shapeSvg}</g>`:shapeSvg
-  const selSvg=`<rect x="${rx0-PAD}" y="${ry0-PAD}" width="${rx1-rx0+PAD*2}" height="${ry1-ry0+PAD*2}" fill="rgba(99,102,241,0.04)" stroke="%236366f1" stroke-width="1" rx="4" pointer-events="none"/>`
+  const selSvg=`<rect x="${rx0-PAD}" y="${ry0-PAD}" width="${rx1-rx0+PAD*2}" height="${ry1-ry0+PAD*2}" fill="rgba(99,102,241,0.04)" stroke="%236366f1" stroke-width="${sw1}" rx="${rx4}" pointer-events="none"/>`
   const hPos:{[k:string]:{cx:number,cy:number}}={
     tl:{cx:rx0-PAD,cy:ry0-PAD},tc:{cx:mx,cy:ry0-PAD},tr:{cx:rx1+PAD,cy:ry0-PAD},
     ml:{cx:rx0-PAD,cy:my},mr:{cx:rx1+PAD,cy:my},
@@ -338,8 +347,8 @@ function imperativeResizePreview(
   const handlesSvg=['tl','tc','tr','ml','mr','bl','bc','br'].map(hid=>{
     const {cx,cy}=hPos[hid], isCorner=['tl','tr','bl','br'].includes(hid)
     return isCorner
-      ? `<rect x="${cx-4.5}" y="${cy-4.5}" width="9" height="9" rx="2.5" fill="white" stroke="%236366f1" stroke-width="1.5" pointer-events="none"/>`
-      : `<rect x="${hid==='tc'||hid==='bc'?cx-5:cx-3}" y="${hid==='ml'||hid==='mr'?cy-5:cy-3}" width="${hid==='tc'||hid==='bc'?10:6}" height="${hid==='ml'||hid==='mr'?10:6}" rx="2" fill="%236366f1" pointer-events="none" opacity="0.85"/>`
+      ? `<rect x="${cx-HCS}" y="${cy-HCS}" width="${HCS*2}" height="${HCS*2}" rx="${rx25}" fill="white" stroke="%236366f1" stroke-width="${sw15}" pointer-events="none"/>`
+      : `<rect x="${hid==='tc'||hid==='bc'?cx-HEW:cx-HEN}" y="${hid==='ml'||hid==='mr'?cy-HEW:cy-HEN}" width="${hid==='tc'||hid==='bc'?HEW*2:HEN*2}" height="${hid==='ml'||hid==='mr'?HEW*2:HEN*2}" rx="${rx2}" fill="%236366f1" pointer-events="none" opacity="0.85"/>`
   }).join('')
   previewG.innerHTML = shapeWrapped + selSvg + handlesSvg
 }
@@ -357,7 +366,7 @@ function DrawModeShapeWrapper({ shape, isSel, pageId, onDelete, canvasZoom }: {
     hid: HandleId; startX: number; startY: number
     origCoords: {x0:number;y0:number;x1:number;y1:number}
   } | null>(null)
-  const PAD = 10
+  const PAD = 10   // logical page-space constant (only used for hit-test rect)
 
   const startResize = (e: React.PointerEvent<SVGRectElement>, hid: HandleId) => {
     e.stopPropagation(); e.preventDefault()
@@ -375,14 +384,14 @@ function DrawModeShapeWrapper({ shape, isSel, pageId, onDelete, canvasZoom }: {
       origCoords: { x0: shape.x0, y0: shape.y0, x1: shape.x1, y1: shape.y1 } }
 
     if (previewGRef.current)
-      imperativeResizePreview(previewGRef.current, shape, resizeRef.current.origCoords, PAD)
+      imperativeResizePreview(previewGRef.current, shape, resizeRef.current.origCoords, canvasZoom)
 
     const onMove = (ev: PointerEvent) => {
       if (!resizeRef.current || !previewGRef.current) return
       const dx = (ev.clientX - resizeRef.current.startX) / canvasZoom
       const dy = (ev.clientY - resizeRef.current.startY) / canvasZoom
       imperativeResizePreview(previewGRef.current, shape,
-        applyHandle(resizeRef.current.hid, resizeRef.current.origCoords, dx, dy), PAD)
+        applyHandle(resizeRef.current.hid, resizeRef.current.origCoords, dx, dy), canvasZoom)
     }
     const onUp = (ev: PointerEvent) => {
       if (!resizeRef.current) return
@@ -405,6 +414,15 @@ function DrawModeShapeWrapper({ shape, isSel, pageId, onDelete, canvasZoom }: {
   const maxX=Math.max(shape.x0,shape.x1), maxY=Math.max(shape.y0,shape.y1)
   const mx=(minX+maxX)/2, my=(minY+maxY)/2
 
+  // s = 1/zoom — all handle geometry compensated so handles are fixed screen pixels
+  const s = 1 / Math.max(0.1, canvasZoom)
+  const HPAD  = 10  * s
+  const HCS   = 4.5 * s
+  const HEW   = 5   * s
+  const HEN   = 3   * s
+  const sw1   = 1   * s
+  const sw15  = 1.5 * s
+
   return (
     <>
       <g
@@ -419,26 +437,26 @@ function DrawModeShapeWrapper({ shape, isSel, pageId, onDelete, canvasZoom }: {
 
         {isSel && (
           <g>
-            <rect x={minX-PAD} y={minY-PAD} width={maxX-minX+PAD*2} height={maxY-minY+PAD*2}
-              fill="rgba(99,102,241,0.04)" stroke="#6366f1" strokeWidth={1} rx={4} pointerEvents="none" />
+            <rect x={minX-HPAD} y={minY-HPAD} width={maxX-minX+HPAD*2} height={maxY-minY+HPAD*2}
+              fill="rgba(99,102,241,0.04)" stroke="#6366f1" strokeWidth={sw1} rx={4*s} pointerEvents="none" />
             {([
-              {id:'tl',cx:minX-PAD,cy:minY-PAD,c:true},{id:'tc',cx:mx,      cy:minY-PAD,c:false},
-              {id:'tr',cx:maxX+PAD,cy:minY-PAD,c:true},{id:'ml',cx:minX-PAD,cy:my,      c:false},
-              {id:'mr',cx:maxX+PAD,cy:my,      c:false},{id:'bl',cx:minX-PAD,cy:maxY+PAD,c:true},
-              {id:'bc',cx:mx,      cy:maxY+PAD,c:false},{id:'br',cx:maxX+PAD,cy:maxY+PAD,c:true},
+              {id:'tl',cx:minX-HPAD,cy:minY-HPAD,c:true},{id:'tc',cx:mx,        cy:minY-HPAD,c:false},
+              {id:'tr',cx:maxX+HPAD,cy:minY-HPAD,c:true},{id:'ml',cx:minX-HPAD, cy:my,       c:false},
+              {id:'mr',cx:maxX+HPAD,cy:my,       c:false},{id:'bl',cx:minX-HPAD,cy:maxY+HPAD,c:true},
+              {id:'bc',cx:mx,       cy:maxY+HPAD,c:false},{id:'br',cx:maxX+HPAD,cy:maxY+HPAD,c:true},
             ] as Array<{id:string,cx:number,cy:number,c:boolean}>).map(h => h.c ? (
               <rect key={h.id}
-                x={h.cx-4.5} y={h.cy-4.5} width={9} height={9} rx={2.5}
-                fill="#fff" stroke="#6366f1" strokeWidth={1.5}
+                x={h.cx-HCS} y={h.cy-HCS} width={HCS*2} height={HCS*2} rx={2.5*s}
+                fill="#fff" stroke="#6366f1" strokeWidth={sw15}
                 style={{cursor:HANDLE_CURSOR_MAP[h.id==='tl'||h.id==='br'?'nwse-resize':'nesw-resize']??'nwse-resize',filter:'drop-shadow(0 1px 2px rgba(0,0,0,0.18))'}}
                 pointerEvents="all"
                 onPointerDown={e => startResize(e, h.id as HandleId)}
               />
             ) : (
               <rect key={h.id}
-                x={h.id==='tc'||h.id==='bc'?h.cx-5:h.cx-3} y={h.id==='ml'||h.id==='mr'?h.cy-5:h.cy-3}
-                width={h.id==='tc'||h.id==='bc'?10:6} height={h.id==='ml'||h.id==='mr'?10:6}
-                rx={2} fill="#6366f1" stroke="none"
+                x={h.id==='tc'||h.id==='bc'?h.cx-HEW:h.cx-HEN} y={h.id==='ml'||h.id==='mr'?h.cy-HEW:h.cy-HEN}
+                width={h.id==='tc'||h.id==='bc'?HEW*2:HEN*2} height={h.id==='ml'||h.id==='mr'?HEW*2:HEN*2}
+                rx={2*s} fill="#6366f1" stroke="none"
                 style={{cursor:HANDLE_CURSOR_MAP[h.id==='ml'||h.id==='mr'?'ew-resize':'ns-resize']??'ew-resize',opacity:0.85}}
                 pointerEvents="all"
                 onPointerDown={e => startResize(e, h.id as HandleId)}
@@ -711,21 +729,31 @@ function applyHandle(hid: HandleId, startCoords: { x0: number; y0: number; x1: n
 function NonDrawShape({ shape, isSel, PAD, minX, minY, maxX, maxY, canvasZoom, pageId, onSelect, onDelete }: NonDrawShapeProps) {
   // ── drag state (zero re-render, direct DOM) ───────────────────────────────
   const dragRef  = React.useRef<{ startX: number; startY: number; dx: number; dy: number } | null>(null)
+  // translateGRef wraps ALL content and is the only node we write transform to.
+  // It is a plain wrapper with no React-managed style props, so React's reconciler
+  // will never diff/clear the transform attribute we set imperatively during drag.
+  const translateGRef = React.useRef<SVGGElement>(null)
   const gRef     = React.useRef<SVGGElement>(null)
   const dragging = React.useRef(false)
 
-  // ── resize state (React-driven, shape is light SVG) ──────────────────────
-  const [resizePreview, setResizePreview] = React.useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
-  const resizeRef = React.useRef<{ hid: HandleId; startX: number; startY: number; origCoords: { x0: number; y0: number; x1: number; y1: number } } | null>(null)
+  // ── resize: 100% imperative (innerHTML) — zero React re-render during drag ──
+  const previewGRef = React.useRef<SVGGElement>(null)
+  const staticGRef  = React.useRef<SVGGElement>(null)  // hidden during resize
+  const resizeRef   = React.useRef<{ hid: HandleId; startX: number; startY: number; origCoords: { x0: number; y0: number; x1: number; y1: number } } | null>(null)
+  const canvasZoomRef = React.useRef(canvasZoom)
+  React.useEffect(() => { canvasZoomRef.current = canvasZoom }, [canvasZoom])
 
   // ── context menu ──────────────────────────────────────────────────────────
   const [ctxMenuPos, setCtxMenuPos] = React.useState<{ x: number; y: number } | null>(null)
 
   const applyTranslate = (dx: number, dy: number) => {
-    if (gRef.current) gRef.current.style.transform = `translate(${dx}px,${dy}px)`
+    // Write to the dedicated translate wrapper — React never manages its style,
+    // so the reconciler will not clear this transform on re-renders.
+    if (translateGRef.current) translateGRef.current.style.transform = `translate(${dx}px,${dy}px)`
   }
 
   // ── 本体 drag ─────────────────────────────────────────────────────────────
+  // window-level 原生事件 + 释放 pointer capture — 消除页面内"硬切"
   const onBodyPointerDown = (e: React.PointerEvent<SVGGElement>) => {
     if (e.button !== 0) return
     e.stopPropagation()
@@ -733,36 +761,46 @@ function NonDrawShape({ shape, isSel, PAD, minX, minY, maxX, maxY, canvasZoom, p
     ;(e.nativeEvent as any).__shapeSelected = true
     onSelect()
     dragging.current = false
-    dragRef.current = { startX: e.clientX, startY: e.clientY, dx: 0, dy: 0 }
-    ;(e.currentTarget as SVGGElement).setPointerCapture(e.pointerId)
-  }
+    // 释放 capture，交给 window listener 接管
+    const el = e.currentTarget as SVGGElement
+    if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId)
+    const startX = e.clientX, startY = e.clientY
+    dragRef.current = { startX, startY, dx: 0, dy: 0 }
 
-  const onBodyPointerMove = (e: React.PointerEvent<SVGGElement>) => {
-    if (!dragRef.current) return
-    e.stopPropagation()
-    const rawDx = (e.clientX - dragRef.current.startX) / canvasZoom
-    const rawDy = (e.clientY - dragRef.current.startY) / canvasZoom
-    if (!dragging.current && Math.hypot(rawDx, rawDy) > 3) dragging.current = true
-    if (!dragging.current) return
-    dragRef.current.dx = rawDx
-    dragRef.current.dy = rawDy
-    applyTranslate(rawDx, rawDy)
-  }
-
-  const onBodyPointerUp = (e: React.PointerEvent<SVGGElement>) => {
-    if (!dragRef.current) return
-    e.stopPropagation()
-    const { dx, dy } = dragRef.current
-    dragRef.current = null
-    applyTranslate(0, 0)
-    if (dragging.current && (Math.abs(dx) > 1 || Math.abs(dy) > 1)) {
-      getDrawLayerManager(pageId).patchShape(shape.id, {
-        x0: shape.x0 + dx, y0: shape.y0 + dy,
-        x1: shape.x1 + dx, y1: shape.y1 + dy,
-      })
+    const onMove = (ev: PointerEvent) => {
+      if (!dragRef.current) return
+      const rawDx = (ev.clientX - dragRef.current.startX) / canvasZoomRef.current
+      const rawDy = (ev.clientY - dragRef.current.startY) / canvasZoomRef.current
+      if (!dragging.current && Math.hypot(rawDx, rawDy) > 3) dragging.current = true
+      if (!dragging.current) return
+      dragRef.current.dx = rawDx
+      dragRef.current.dy = rawDy
+      applyTranslate(rawDx, rawDy)
     }
-    dragging.current = false
+    const onUp = (ev: PointerEvent) => {
+      if (!dragRef.current) return
+      const { dx, dy } = dragRef.current
+      dragRef.current = null
+      applyTranslate(0, 0)
+      if (dragging.current && (Math.abs(dx) > 1 || Math.abs(dy) > 1)) {
+        getDrawLayerManager(pageId).patchShape(shape.id, {
+          x0: shape.x0 + dx, y0: shape.y0 + dy,
+          x1: shape.x1 + dx, y1: shape.y1 + dy,
+        })
+      }
+      dragging.current = false
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup',   onUp)
+      window.removeEventListener('pointercancel', onUp)
+    }
+    window.addEventListener('pointermove',   onMove)
+    window.addEventListener('pointerup',     onUp)
+    window.addEventListener('pointercancel', onUp)
   }
+
+  // No-op stubs — event handling is fully in window listeners above
+  const onBodyPointerMove = (_e: React.PointerEvent<SVGGElement>) => {}
+  const onBodyPointerUp   = (_e: React.PointerEvent<SVGGElement>) => {}
 
   // ── right-click → context menu ────────────────────────────────────────────
   const onBodyContextMenu = (e: React.MouseEvent<SVGGElement>) => {
@@ -773,47 +811,70 @@ function NonDrawShape({ shape, isSel, PAD, minX, minY, maxX, maxY, canvasZoom, p
   }
 
   // ── resize handle ─────────────────────────────────────────────────────────
+  // window-level native listeners + release pointer capture + imperative innerHTML.
   const onHandlePointerDown = (e: React.PointerEvent<SVGRectElement>, hid: HandleId) => {
     e.stopPropagation()
     e.preventDefault()
-    ;(e.currentTarget as SVGRectElement).setPointerCapture(e.pointerId)
+    const el = e.currentTarget as SVGRectElement
+    if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId)
+    const parentSVG = el.ownerSVGElement
+    if (parentSVG && parentSVG.hasPointerCapture(e.pointerId)) parentSVG.releasePointerCapture(e.pointerId)
+
     resizeRef.current = {
       hid,
       startX: e.clientX, startY: e.clientY,
       origCoords: { x0: shape.x0, y0: shape.y0, x1: shape.x1, y1: shape.y1 },
     }
+    // hide the static React-rendered shape so only the imperative preview is visible
+    if (staticGRef.current) staticGRef.current.style.display = 'none'
+    // seed initial preview
+    if (previewGRef.current)
+      imperativeResizePreview(previewGRef.current, shape, resizeRef.current.origCoords, canvasZoomRef.current)
+
+    const onMove = (ev: PointerEvent) => {
+      if (!resizeRef.current || !previewGRef.current) return
+      const dx = (ev.clientX - resizeRef.current.startX) / canvasZoomRef.current
+      const dy = (ev.clientY - resizeRef.current.startY) / canvasZoomRef.current
+      imperativeResizePreview(previewGRef.current, shape,
+        applyHandle(resizeRef.current.hid, resizeRef.current.origCoords, dx, dy),
+        canvasZoomRef.current)
+    }
+    const onUp = (ev: PointerEvent) => {
+      if (!resizeRef.current) return
+      const dx = (ev.clientX - resizeRef.current.startX) / canvasZoomRef.current
+      const dy = (ev.clientY - resizeRef.current.startY) / canvasZoomRef.current
+      const next = applyHandle(resizeRef.current.hid, resizeRef.current.origCoords, dx, dy)
+      resizeRef.current = null
+      if (previewGRef.current) previewGRef.current.innerHTML = ''
+      if (staticGRef.current) staticGRef.current.style.display = ''  // restore static shape
+      getDrawLayerManager(pageId).patchShape(shape.id, next)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup',   onUp)
+      window.removeEventListener('pointercancel', onUp)
+    }
+    window.addEventListener('pointermove',   onMove)
+    window.addEventListener('pointerup',     onUp)
+    window.addEventListener('pointercancel', onUp)
   }
 
-  const onHandlePointerMove = (e: React.PointerEvent<SVGRectElement>) => {
-    if (!resizeRef.current) return
-    e.stopPropagation()
-    const dx = (e.clientX - resizeRef.current.startX) / canvasZoom
-    const dy = (e.clientY - resizeRef.current.startY) / canvasZoom
-    const next = applyHandle(resizeRef.current.hid, resizeRef.current.origCoords, dx, dy)
-    setResizePreview(next)
-  }
+  const onHandlePointerMove = (_e: React.PointerEvent<SVGRectElement>) => {}
+  const onHandlePointerUp   = (_e: React.PointerEvent<SVGRectElement>) => {}
 
-  const onHandlePointerUp = (e: React.PointerEvent<SVGRectElement>) => {
-    if (!resizeRef.current) return
-    e.stopPropagation()
-    const dx = (e.clientX - resizeRef.current.startX) / canvasZoom
-    const dy = (e.clientY - resizeRef.current.startY) / canvasZoom
-    const next = applyHandle(resizeRef.current.hid, resizeRef.current.origCoords, dx, dy)
-    resizeRef.current = null
-    setResizePreview(null)
-    getDrawLayerManager(pageId).patchShape(shape.id, next)
-  }
-
-  // resize preview があれば bbox をそちらから計算
-  const coords = resizePreview ?? { x0: shape.x0, y0: shape.y0, x1: shape.x1, y1: shape.y1 }
-  const rx0 = Math.min(coords.x0, coords.x1), ry0 = Math.min(coords.y0, coords.y1)
-  const rx1 = Math.max(coords.x0, coords.x1), ry1 = Math.max(coords.y0, coords.y1)
-
-  // resize 中は preview coords で shape を描き直す
-  const displayShape = resizePreview ? { ...shape, ...resizePreview } : shape
+  // s = 1/zoom — tldraw "--tl-scale" pattern: handles are fixed SCREEN pixel size
+  const s   = 1 / Math.max(0.1, canvasZoom)
+  const HPAD = PAD * s
+  const HCS  = 4.5 * s
+  const HEW  = 5   * s
+  const HEN  = 3   * s
+  const sw1  = 1   * s
+  const sw15 = 1.5 * s
 
   return (
     <>
+      {/* translateGRef: dedicated translate wrapper. React owns zero style props on
+          this node, so the reconciler will never diff-and-clear the transform we
+          write imperatively in applyTranslate() during drag. */}
+      <g ref={translateGRef} data-draw-shape-id={shape.id}>
       <g
         ref={gRef}
         data-shape-id={shape.id}
@@ -826,34 +887,34 @@ function NonDrawShape({ shape, isSel, PAD, minX, minY, maxX, maxY, canvasZoom, p
       >
         {/* 透明 hit area */}
         <rect
-          x={minX - PAD} y={minY - PAD}
-          width={maxX - minX + PAD * 2} height={maxY - minY + PAD * 2}
+          x={minX - HPAD} y={minY - HPAD}
+          width={maxX - minX + HPAD * 2} height={maxY - minY + HPAD * 2}
           fill="transparent" stroke="none"
         />
-        {/* shape 本体（resize 中は preview coords で描画）*/}
-        {renderShapeSVG(displayShape, 1)}
+        {/* Static shape body — hidden during resize, imperative preview takes over */}
+        <g ref={staticGRef}>{renderShapeSVG(shape, 1)}</g>
 
-        {/* 選択中 UI */}
+        {/* Resize preview layer — innerHTML only, React never touches during drag */}
+        <g ref={previewGRef} />
+
+        {/* 選択中 handles — static positions from original shape coords */}
         {isSel && (() => {
           const rot = (shape as any).rotation
-          const scx = (rx0 + rx1) / 2, scy = (ry0 + ry1) / 2
+          const scx = (minX + maxX) / 2, scy = (minY + maxY) / 2
           const selContent = (
           <>
-            {/* 選択枠 — subtle indigo, no dash */}
             <rect
-              x={rx0 - PAD} y={ry0 - PAD}
-              width={rx1 - rx0 + PAD * 2} height={ry1 - ry0 + PAD * 2}
-              fill="rgba(99,102,241,0.04)" stroke="#6366f1" strokeWidth={1} rx={4}
+              x={minX - HPAD} y={minY - HPAD}
+              width={maxX - minX + HPAD * 2} height={maxY - minY + HPAD * 2}
+              fill="rgba(99,102,241,0.04)" stroke="#6366f1" strokeWidth={sw1} rx={4 * s}
               pointerEvents="none"
             />
-            {/* resize handles（8点）— Figma style, no delete button */}
-            {handleDefs(rx0, ry0, rx1, ry1, PAD).map(h => {
+            {handleDefs(minX, minY, maxX, maxY, HPAD).map(h => {
               const isCorner = h.id === 'tl' || h.id === 'tr' || h.id === 'bl' || h.id === 'br'
               return isCorner ? (
-                <rect
-                  key={h.id}
-                  x={h.cx - 4.5} y={h.cy - 4.5} width={9} height={9} rx={2.5}
-                  fill="#fff" stroke="#6366f1" strokeWidth={1.5}
+                <rect key={h.id}
+                  x={h.cx - HCS} y={h.cy - HCS} width={HCS * 2} height={HCS * 2} rx={2.5 * s}
+                  fill="#fff" stroke="#6366f1" strokeWidth={sw15}
                   style={{ cursor: h.cursor, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.18))' }}
                   pointerEvents="all"
                   onPointerDown={e => onHandlePointerDown(e, h.id)}
@@ -862,14 +923,12 @@ function NonDrawShape({ shape, isSel, PAD, minX, minY, maxX, maxY, canvasZoom, p
                   onPointerCancel={onHandlePointerUp}
                 />
               ) : (
-                <rect
-                  key={h.id}
-                  x={h.id === 'tc' || h.id === 'bc' ? h.cx - 5 : h.cx - 3}
-                  y={h.id === 'ml' || h.id === 'mr' ? h.cy - 5 : h.cy - 3}
-                  width={h.id === 'tc' || h.id === 'bc' ? 10 : 6}
-                  height={h.id === 'ml' || h.id === 'mr' ? 10 : 6}
-                  rx={2}
-                  fill="#6366f1" stroke="none"
+                <rect key={h.id}
+                  x={h.id === 'tc' || h.id === 'bc' ? h.cx - HEW : h.cx - HEN}
+                  y={h.id === 'ml' || h.id === 'mr' ? h.cy - HEW : h.cy - HEN}
+                  width={h.id === 'tc' || h.id === 'bc' ? HEW * 2 : HEN * 2}
+                  height={h.id === 'ml' || h.id === 'mr' ? HEW * 2 : HEN * 2}
+                  rx={2 * s} fill="#6366f1" stroke="none"
                   style={{ cursor: h.cursor, opacity: 0.85 }}
                   pointerEvents="all"
                   onPointerDown={e => onHandlePointerDown(e, h.id)}
@@ -886,6 +945,7 @@ function NonDrawShape({ shape, isSel, PAD, minX, minY, maxX, maxY, canvasZoom, p
             : selContent
         })()}
       </g>
+      </g>{/* end translateGRef */}
       {/* Context menu portal — rendered outside SVG as HTML */}
       {ctxMenuPos && typeof document !== 'undefined' && ReactDOM.createPortal(
         <ShapeContextMenu
@@ -2030,7 +2090,6 @@ export function CanvasArea(s: ExportPageState) {
                         if ((e.target as SVGElement).hasAttribute('data-hid') ||
                             (e.target as SVGElement).closest?.('[data-hid]')) return
                         e.preventDefault(); e.stopPropagation()
-                        ;(e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId)
 
                         const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect()
                         const x = (e.clientX - rect.left) / canvasZoom
@@ -2038,6 +2097,8 @@ export function CanvasArea(s: ExportPageState) {
 
                         // ── 笔刷模式 ──────────────────────────────────────────
                         if (!sharedDrawState.shapeType) {
+                          // 笔刷需要 capture 保证笔迹连续，图形模式不 capture（避免页面内硬切）
+                          ;(e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId)
                           const mgr = getDrawLayerManager(page.id)
                           const pt = { x, y, pressure: e.pointerType === 'pen' ? Math.max(0.1, e.pressure) : 0.5, t: Date.now() }
                           drawDrawing.current = true
@@ -2111,9 +2172,9 @@ export function CanvasArea(s: ExportPageState) {
                         const g = shapeGesture.current
                         if (g.mode === 'moving' && g.dragStart && g.movingId) {
                           const dx = x - g.dragStart.x, dy = y - g.dragStart.y
-                          const mgr = getDrawLayerManager(page.id)
-                          const s = mgr.getShapes().find(sh => sh.id === g.movingId)
-                          if (s) setPreviewShape({ ...s, x0: s.x0 + dx, y0: s.y0 + dy, x1: s.x1 + dx, y1: s.y1 + dy })
+                          // 命令式 DOM 直接写 transform — 零 React re-render，消除页面内硬切
+                          const el = document.querySelector(`[data-draw-shape-id="${g.movingId}"]`) as SVGGElement | null
+                          if (el) el.style.transform = `translate(${dx}px,${dy}px)`
                           return
                         }
                         if (g.mode === 'drawing' && g.origin) {
@@ -2159,12 +2220,15 @@ export function CanvasArea(s: ExportPageState) {
 
                         if (g.mode === 'moving' && g.dragStart && g.movingId) {
                           const dx = x - g.dragStart.x, dy = y - g.dragStart.y
+                          // 重置命令式 transform，让 React 用新坐标接管
+                          const el = document.querySelector(`[data-draw-shape-id="${g.movingId}"]`) as SVGGElement | null
+                          if (el) el.style.transform = ''
                           if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
                             const s = mgr.getShapes().find(sh => sh.id === g.movingId)
                             if (s) mgr.patchShape(g.movingId, { x0: s.x0 + dx, y0: s.y0 + dy, x1: s.x1 + dx, y1: s.y1 + dy })
                           }
                           g.mode = 'none'; g.dragStart = null; g.movingId = null
-                          setPreviewShape(null); return
+                          return
                         }
 
                         if (g.mode === 'drawing' && g.origin) {
@@ -2202,13 +2266,11 @@ export function CanvasArea(s: ExportPageState) {
                       {/* 已保存的 shapes */}
                       {(pageShapes.get(page.id) ?? []).map(shape => {
                         const isSel = shape.id === getDrawLayerManager(page.id).getSelectedShapeId()
-                        // moving 中：用 previewShape 替代显示
-                        const displayShape = (isSel && previewShape && shapeGesture.current.mode === 'moving')
-                          ? previewShape : shape
+                        // moving 中由命令式 DOM transform 处理，React 始终用原始坐标
                         return (
                           <DrawModeShapeWrapper
                             key={shape.id}
-                            shape={displayShape}
+                            shape={shape}
                             isSel={isSel}
                             pageId={page.id}
                             canvasZoom={canvasZoom}
