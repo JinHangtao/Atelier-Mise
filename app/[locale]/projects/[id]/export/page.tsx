@@ -203,8 +203,23 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
   }
 
   const enterImmersive = React.useCallback(() => {
-    prevZoomRef.current = s.canvasZoom
-    prevPanRef.current  = s.canvasPan
+    // 从 panLayer DOM 读实际值，普通模式下 inline style 可能是空的
+    // 必须用 getComputedStyle，否则 prevPanRef 存的是 {0,0} 导致退出时视角跳回原点
+    const panLayerEl = s.panLayerRef?.current
+    if (panLayerEl) {
+      const ct = getComputedStyle(panLayerEl).transform
+      if (ct && ct !== 'none') {
+        const mat = new DOMMatrix(ct)
+        prevPanRef.current  = { x: mat.m41, y: mat.m42 }
+        prevZoomRef.current = mat.a
+      } else {
+        prevZoomRef.current = s.canvasZoom
+        prevPanRef.current  = s.canvasPan
+      }
+    } else {
+      prevZoomRef.current = s.canvasZoom
+      prevPanRef.current  = s.canvasPan
+    }
     setImmersive(true)
 
     setTimeout(() => {
@@ -214,7 +229,8 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
       const CANVAS_PAD_Y = 24
 
       const wrap = canvasWrapRef?.current
-      if (!wrap || !s.activePage) return
+      const panLayer = s.panLayerRef?.current
+      if (!wrap || !panLayer || !s.activePage) return
 
       const availW = wrap.offsetWidth
       const availH = wrap.offsetHeight
@@ -226,7 +242,15 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
       const zoomH = pgH ? (availH - 48) / pgH : zoomW
       const zoom  = +Math.min(zoomW, zoomH, 2).toFixed(2)
 
-      s.setCanvasZoom(zoom)
+      // 从 DOM 读实际 pan（inline style 或 computed），不用 React state 闭包旧值
+      const ct0 = getComputedStyle(panLayer).transform
+      const mat0 = (ct0 && ct0 !== 'none') ? new DOMMatrix(ct0) : null
+      const startPanX = mat0 ? mat0.m41 : s.canvasPan.x
+      const startPanY = mat0 ? mat0.m42 : s.canvasPan.y
+
+      // 先把 zoom 写入 DOM（带过渡），让 frame 缩放到位
+      panLayer.style.transition = 'transform 480ms cubic-bezier(0.4,0,0.2,1)'
+      panLayer.style.transform  = `translate(${startPanX}px,${startPanY}px) scale(${zoom})`
 
       setTimeout(() => {
         const frameEl = wrap.querySelector(`[data-page-id="${s.activePage!.id}"]`) as HTMLElement | null
@@ -237,14 +261,35 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
         const frameCenterY = frameRect.top  - wrapRect.top  + frameRect.height / 2
         const driftX = availW / 2 - frameCenterX
         const driftY = availH / 2 - frameCenterY
-        s.setCanvasPan(prev => ({ x: prev.x + driftX, y: prev.y + driftY }))
+        const targetPanX = startPanX + driftX
+        const targetPanY = startPanY + driftY
+        panLayer.style.transition = 'transform 320ms cubic-bezier(0.4,0,0.2,1)'
+        panLayer.style.transform  = `translate(${targetPanX}px,${targetPanY}px) scale(${zoom})`
+        setTimeout(() => {
+          s.setCanvasZoom(zoom)
+          s.setCanvasPan({ x: targetPanX, y: targetPanY })
+          panLayer.style.transition = 'none'
+        }, 340)
       }, 520)
     }, 380)
   }, [s, canvasWrapRef])
 
   const exitImmersive = React.useCallback(() => {
-    s.setCanvasZoom(prevZoomRef.current)
-    s.setCanvasPan(prevPanRef.current)
+    const panLayer = s.panLayerRef?.current
+    const targetZoom = prevZoomRef.current
+    const targetPan  = prevPanRef.current
+    if (panLayer) {
+      panLayer.style.transition = 'transform 400ms cubic-bezier(0.4,0,0.2,1)'
+      panLayer.style.transform  = `translate(${targetPan.x}px,${targetPan.y}px) scale(${targetZoom})`
+      setTimeout(() => {
+        s.setCanvasZoom(targetZoom)
+        s.setCanvasPan(targetPan)
+        panLayer.style.transition = 'none'
+      }, 420)
+    } else {
+      s.setCanvasZoom(targetZoom)
+      s.setCanvasPan(targetPan)
+    }
     setImmersive(false)
   }, [s])
 

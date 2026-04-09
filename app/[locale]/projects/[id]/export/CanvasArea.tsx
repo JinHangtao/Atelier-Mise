@@ -1163,24 +1163,8 @@ export function CanvasArea(s: ExportPageState) {
   // canvasZoom ref — event callbacks 闭包里用，不触发 re-mount
   const canvasZoomRef = React.useRef(canvasZoom)
   React.useEffect(() => { canvasZoomRef.current = canvasZoom }, [canvasZoom])
-
-  // ── 直接 DOM 操作 pan，避免 mousemove 触发 React re-render ────────────────
-  const panLayerRef  = React.useRef<HTMLDivElement>(null)
-  const livePan      = React.useRef({ x: canvasPan.x, y: canvasPan.y })
-  // liveZoom mirrors canvasZoom for DOM-direct transform — no setState on wheel
-  const liveZoom     = React.useRef(canvasZoom)
-  // 每次 canvasPan state 变化（zoom/immersive 等）同步 livePan
-  React.useEffect(() => { livePan.current = { x: canvasPan.x, y: canvasPan.y } }, [canvasPan])
-  // Sync liveZoom when canvasZoom state changes (e.g. toolbar +/- buttons)
-  React.useEffect(() => {
-    liveZoom.current = canvasZoom
-    canvasZoomRef.current = canvasZoom
-    if (panLayerRef.current) {
-      panLayerRef.current.style.transition = 'none'
-      panLayerRef.current.style.transform =
-        `translate(${livePan.current.x}px,${livePan.current.y}px) scale(${canvasZoom})`
-    }
-  }, [canvasZoom])
+  // Tracks mouse-drag pan position for settle on mouseUp (no livePan needed)
+  const _mousePanPos = React.useRef({ x: canvasPan.x, y: canvasPan.y })
 
   // ── 笔刷事件已迁移至 SVG overlay 的 onPointer 回调统一处理 ──────────────────
   // canvas 只负责渲染（pointerEvents: none），不再绑定任何事件。
@@ -1224,37 +1208,9 @@ export function CanvasArea(s: ExportPageState) {
     return () => window.removeEventListener('keydown', onKey)
   }, [isDrawMode, activePageId])
 
-  // ── 鼠标滚轮缩放（Ctrl/Meta + Wheel）────────────────────────────────────
-  // 必须用 addEventListener + passive:false，React 合成事件无法 preventDefault 滚动。
-  // draw 模式下 SVG overlay 捕获了所有 pointer 事件，但 wheel 事件仍会冒泡到 wrap，
-  // 所以绑在 canvasWrapRef 上即可在两种模式下都生效。
-  React.useEffect(() => {
-    const wrap = canvasWrapRef.current
-    if (!wrap) return
-    let rafId = 0
-    const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey && !e.metaKey) return
-      e.preventDefault()
-      e.stopPropagation()
-      const delta = e.deltaY > 0 ? -0.05 : 0.05
-      // 1. Update liveZoom ref immediately
-      liveZoom.current = Math.min(3, Math.max(0.3, +((liveZoom.current + delta).toFixed(2))))
-      // 2. Apply transform via DOM — zero React re-render
-      if (panLayerRef.current) {
-        panLayerRef.current.style.transition = 'none'
-        panLayerRef.current.style.transform =
-          `translate(${livePan.current.x}px,${livePan.current.y}px) scale(${liveZoom.current})`
-      }
-      // 3. Debounce setState so Rnd's scale prop and toolbar % settle once wheel stops
-      cancelAnimationFrame(rafId)
-      rafId = requestAnimationFrame(() => {
-        setCanvasZoom(liveZoom.current)
-        canvasZoomRef.current = liveZoom.current
-      })
-    }
-    wrap.addEventListener('wheel', onWheel, { passive: false })
-    return () => { wrap.removeEventListener('wheel', onWheel); cancelAnimationFrame(rafId) }
-  }, [canvasWrapRef, setCanvasZoom])
+  // ── panLayerRef: 由 useExportPage 统一管理，CanvasArea 直接读取 ──────────
+  // wheel 缩放/平移已在 useExportPage 里 DOM 直驱，此处不重复绑定。
+  const panLayerRef = (s as any).panLayerRef as React.RefObject<HTMLDivElement>
 
 
   return (
@@ -1291,7 +1247,13 @@ export function CanvasArea(s: ExportPageState) {
         }
         isPanningRef.current = true
         setPanningCursor(true)
-        panStart.current = { mx: e.clientX, my: e.clientY, px: canvasPan.x, py: canvasPan.y }
+        // 从 panLayer DOM 读实际 pan，避免闭包旧 canvasPan 导致第一次拖拽跳飞
+        const panLayerEl = panLayerRef.current
+        const liveTransform = panLayerEl?.style.transform ?? ''
+        const mat = liveTransform && liveTransform !== 'none' ? new DOMMatrix(liveTransform) : null
+        const livePx = mat ? mat.m41 : canvasPan.x
+        const livePy = mat ? mat.m42 : canvasPan.y
+        panStart.current = { mx: e.clientX, my: e.clientY, px: livePx, py: livePy }
         e.preventDefault()
       }}
       onMouseMove={e => {
@@ -1304,23 +1266,23 @@ export function CanvasArea(s: ExportPageState) {
         const MARGIN = 120
         const nx = Math.min(W - MARGIN, Math.max(-(W * 2), panStart.current.px + e.clientX - panStart.current.mx))
         const ny = Math.min(H - MARGIN, Math.max(-(H * 4), panStart.current.py + e.clientY - panStart.current.my))
-        // 直接操作 DOM，不触发 React re-render
-        livePan.current = { x: nx, y: ny }
+        // DOM 直驱，不触发 React re-render
         if (panLayerRef.current) {
           panLayerRef.current.style.transform = `translate(${nx}px,${ny}px) scale(${canvasZoomRef.current})`
         }
+        _mousePanPos.current = { x: nx, y: ny }
       }}
-      onMouseUp={() => {
-        isPanningRef.current = false
-        setPanningCursor(false)
-        // 松手时才同步回 React state（触发一次 re-render，坐标正确）
-        setCanvasPan({ x: livePan.current.x, y: livePan.current.y })
-      }}
+     onMouseUp={() => {
+  if (!isPanningRef.current) return  // ← 加这一行
+  isPanningRef.current = false
+  setPanningCursor(false)
+  setCanvasPan({ x: _mousePanPos.current.x, y: _mousePanPos.current.y })
+}}
       onMouseLeave={() => {
         if (!isPanningRef.current) return
         isPanningRef.current = false
         setPanningCursor(false)
-        setCanvasPan({ x: livePan.current.x, y: livePan.current.y })
+        setCanvasPan({ x: _mousePanPos.current.x, y: _mousePanPos.current.y })
       }}
     >
       {/* CSS for canvas/blocks */}
@@ -2392,7 +2354,22 @@ export function CanvasArea(s: ExportPageState) {
                   {/* ── Rnd blocks ── */}
                   <div className="rnd-canvas" style={{ position: 'relative', width: 860, ...(pgHeight ? { minHeight: pgHeight } : { minHeight: 600 }), pointerEvents: 'auto' }}>
                     {pgBlocks.map((block) => {
-                      const pos = block.pixelPos ?? { x: 0, y: 0, w: contentWidth, h: 200 }
+                      // ── Default sizes per block type (PPT spAutoFit style) ──
+                      // 宽度给一个合理的起始值，高度足够容纳一行内容即可，
+                      // 用户编辑后会通过 auto-height 逻辑自动撑开。
+                      const BLOCK_DEFAULT_SIZE: Record<string, { w: number; h: number }> = {
+                        title:          { w: 500, h: 72  },
+                        note:           { w: 500, h: 100 },
+                        custom:         { w: 500, h: 100 },
+                        milestone:      { w: 420, h: 160 },
+                        'school-profile': { w: 340, h: 140 },
+                        table:          { w: contentWidth, h: 200 },
+                        image:          { w: 400, h: 300 },
+                        'image-row':    { w: contentWidth, h: 220 },
+                        sticky:         { w: 220, h: 220 },
+                      }
+                      const defaultSize = BLOCK_DEFAULT_SIZE[block.type] ?? { w: 400, h: 120 }
+                      const pos = block.pixelPos ?? { x: 20, y: 20, ...defaultSize }
                       const stickyBoxShadow = block.type === 'sticky' ? (() => {
                         const sh = (block as any).stickyShadow ?? 12
                         const sp = (block as any).stickySpread ?? 0
@@ -2470,12 +2447,33 @@ export function CanvasArea(s: ExportPageState) {
                             clearSnapLines(page.id); clearSizeHint(page.id)
                             const blockBelongsHere = page.blocks.some(b => b.id === block.id)
                             if (!blockBelongsHere) return
-                            updatePageBlocks(page.id, prev => prev.map(b => b.id === block.id ? { ...b, pixelPos: { x: position.x, y: position.y, w: parseInt(ref.style.width), h: parseInt(ref.style.height) } } : b))
+                            const newW = parseInt(ref.style.width)
+                            const newH = parseInt(ref.style.height)
+                            // 如果只改了宽度（高度几乎没变），重置 userResizedH，
+                            // 让 auto-height 基于新宽度重新计算一次高度。
+                            const widthChanged = Math.abs(newW - pos.w) > 2
+                            const heightChanged = Math.abs(newH - pos.h) > 2
+                            const shouldResetAutoH = widthChanged && !heightChanged && TEXT_BLOCK_TYPES.includes(block.type)
+                            updatePageBlocks(page.id, prev => prev.map(b => b.id === block.id
+                              ? {
+                                  ...b,
+                                  pixelPos: { x: position.x, y: position.y, w: newW, h: newH },
+                                  // 用户拖了高度 → 锁定；只拖了宽度 → 解锁让内容重新适配
+                                  userResizedH: heightChanged ? true : (shouldResetAutoH ? false : (b as any).userResizedH),
+                                }
+                              : b
+                            ))
                           }}
                           dragHandleClassName="block-card"
                           cancel=".no-drag"
                           scale={canvasZoom}
-                          minWidth={120} minHeight={60}
+                          minWidth={block.type === 'sticky' ? 120 : 160}
+                          minHeight={
+                            block.type === 'title' ? 36 :
+                            block.type === 'sticky' ? 80 :
+                            block.type === 'image' ? 60 :
+                            48
+                          }
                           enableResizing={editingBlockId !== block.id}
                           disableDragging={editingBlockId === block.id}
                           lockAspectRatio={false}
@@ -2695,16 +2693,57 @@ export function CanvasArea(s: ExportPageState) {
                               ) : (
                                 /* ── Block display mode ── */
                                 <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
-                                  {(block.type === 'title' || block.type === 'note' || block.type === 'custom') && (
-                                    <TextBlockContent
-                                      block={block}
-                                      isEditing={editingBlockId === block.id}
-                                      projectTitle={block.type === 'title' ? project?.title : undefined}
-                                      projectDescription={block.type === 'title' ? project?.description : undefined}
-                                      onSave={(id, patch) => patchBlock(id, patch)}
-                                      onStopEditing={() => setEditingBlockId(null)}
-                                    />
-                                  )}
+                                  {(block.type === 'title' || block.type === 'note' || block.type === 'custom') && (() => {
+                                    // ── Auto-height ref (PPT "Resize shape to fit text") ──────────
+                                    // ResizeObserver 监听内容真实高度，自动 patch pixelPos.h。
+                                    // 仅在非编辑态（display mode）执行，避免编辑中跳动。
+                                    // 使用 callback ref，每次 block 挂载都重新绑定。
+                                    const autoHeightRef = (el: HTMLDivElement | null) => {
+                                      if (!el) return
+                                      // 用户手动拖拽过高度的 block，不再自动覆盖
+                                      if ((block as any).userResizedH) return
+                                      // 节流：同一帧只触发一次
+                                      let rafId = 0
+                                      const ro = new ResizeObserver(() => {
+                                        cancelAnimationFrame(rafId)
+                                        rafId = requestAnimationFrame(() => {
+                                          if ((block as any).userResizedH) { ro.disconnect(); return }
+                                          const naturalH = el.scrollHeight
+                                          if (!naturalH || naturalH < 20) return
+                                          // 加 12px 上下内边距（PPT 默认 ~10px top+bottom）
+                                          const targetH = naturalH + 12
+                                          const currentH = block.pixelPos?.h ?? 0
+                                          // 只在差距 > 2px 时才写，避免无限循环
+                                          if (Math.abs(targetH - currentH) > 2) {
+                                            patchBlock(block.id, {
+                                              pixelPos: block.pixelPos
+                                                ? { ...block.pixelPos, h: targetH }
+                                                : { x: 20, y: 20, w: 500, h: targetH },
+                                            })
+                                          }
+                                        })
+                                      })
+                                      ro.observe(el)
+                                      // React 不提供 cleanup for callback refs，用 el.__roCleanup 存储
+                                      ;(el as any).__roCleanup?.()
+                                      ;(el as any).__roCleanup = () => { ro.disconnect(); cancelAnimationFrame(rafId) }
+                                    }
+                                    return (
+                                      <div
+                                        ref={editingBlockId === block.id ? undefined : autoHeightRef}
+                                        style={{ width: '100%' }}
+                                      >
+                                        <TextBlockContent
+                                          block={block}
+                                          isEditing={editingBlockId === block.id}
+                                          projectTitle={block.type === 'title' ? project?.title : undefined}
+                                          projectDescription={block.type === 'title' ? project?.description : undefined}
+                                          onSave={(id, patch) => patchBlock(id, patch)}
+                                          onStopEditing={() => setEditingBlockId(null)}
+                                        />
+                                      </div>
+                                    )
+                                  })()}
                                   {block.type === 'image' && (() => {
                                     const isImgPanning = editingBlockId === block.id
                                     const tx    = block.imgOffsetX ?? 0

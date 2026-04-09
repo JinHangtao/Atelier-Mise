@@ -156,12 +156,18 @@ export function RightPanel(s: ExportPageState) {
                 {isZh ? '插入' : 'Insert'}
               </span>
               <button
-                onClick={() => {
-                  const trimmed = quickText.trim()
-                  if (!trimmed) return
-                  trimmed.split('\n').filter(l => l.trim()).forEach(line => addBlock('text' as any, line.trim()))
-                  setQuickText('')
-                }}
+              onClick={() => {
+  const trimmed = quickText.trim()
+  console.log('[QuickInsert] clicked, trimmed:', JSON.stringify(trimmed))
+  console.log('[QuickInsert] addBlock fn:', typeof addBlock)
+  if (!trimmed) { console.log('[QuickInsert] early return — empty'); return }
+  trimmed.split('\n').filter(l => l.trim()).forEach(line => {
+    console.log('[QuickInsert] calling addBlock with:', JSON.stringify(line.trim()))
+    addBlock('note', line.trim())
+  })
+  console.log('[QuickInsert] done, clearing text')
+  setQuickText('')
+}}
                 disabled={!quickText.trim()}
                 style={{
                   padding: '3px 10px', borderRadius: '6px', border: 'none', cursor: quickText.trim() ? 'pointer' : 'default',
@@ -187,7 +193,7 @@ export function RightPanel(s: ExportPageState) {
                   e.preventDefault()
                   const trimmed = quickText.trim()
                   if (!trimmed) return
-                  trimmed.split('\n').filter(l => l.trim()).forEach(line => addBlock('text' as any, line.trim()))
+                  trimmed.split('\n').filter(l => l.trim()).forEach(line => addBlock('note', line.trim()))
                   setQuickText('')
                 }
               }}

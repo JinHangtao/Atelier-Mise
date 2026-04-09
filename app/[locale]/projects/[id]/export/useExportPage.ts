@@ -155,7 +155,7 @@ export function useExportPage() {
   const panStart        = useRef({ mx: 0, my: 0, px: 0, py: 0 })
   const [canvasZoom, setCanvasZoom]         = useState(1)
   const canvasZoomRef = useRef(1)  // ref 镜像，让拖拽回调不依赖闭包旧值
-  useEffect(() => { canvasZoomRef.current = canvasZoom }, [canvasZoom])
+  useEffect(() => { canvasZoomRef.current = canvasZoom; liveZoom.current = canvasZoom }, [canvasZoom])
   const [canvasPan,  setCanvasPan]          = useState({ x: 0, y: 0 })
   const [canvasWrapWidth, setCanvasWrapWidth] = useState(900)
   const [panningCursor,   setPanningCursor]   = useState(false)
@@ -168,48 +168,79 @@ export function useExportPage() {
   const toolbarDragStart = useRef<{ mx: number; my: number; ex: number; ey: number } | null>(null)
   const toolbarRef       = useRef<HTMLDivElement | null>(null)
 
-  // Wheel listener
+  // ── Live refs for DOM-direct pan/zoom (zero setState during wheel) ──────────
+  const panLayerRef = useRef<HTMLDivElement | null>(null)
+  const livePan     = useRef({ x: 0, y: 0 })
+  const liveZoom    = useRef(1)
+
+  // Keep live refs in sync when state changes from non-wheel sources
+  useEffect(() => { livePan.current = { x: canvasPan.x, y: canvasPan.y } }, [canvasPan])
+  useEffect(() => { liveZoom.current = canvasZoom }, [canvasZoom])
+
+  const applyTransform = useCallback((pan: { x: number; y: number }, zoom: number, transition = 'none') => {
+    if (panLayerRef.current) {
+      panLayerRef.current.style.transition = transition
+      panLayerRef.current.style.transform  = `translate(${pan.x}px,${pan.y}px) scale(${zoom})`
+    }
+  }, [])
+
+  // Wheel listener — DOM-direct, zero setState during scroll, debounce settle on idle
   useEffect(() => {
     let el: HTMLDivElement | null = null
+    let settleTimer = 0
     const MIN_ZOOM = 0.3, MAX_ZOOM = 3
+
+    const settle = () => {
+      // 平滑落定：给最后一帧加短暂过渡，消除"两帧跳变"感
+      applyTransform(livePan.current, liveZoom.current, 'transform 120ms cubic-bezier(0.25,0.46,0.45,0.94)')
+      setCanvasZoom(liveZoom.current)
+      setCanvasPan({ x: livePan.current.x, y: livePan.current.y })
+    }
+
     const handler = (e: WheelEvent) => {
       const wrap = canvasWrapRef.current
       if (!wrap) return
+      e.preventDefault()
       const W = wrap.offsetWidth
       const H = wrap.offsetHeight
       const MARGIN = 120
+
       if (e.ctrlKey || e.metaKey) {
-        e.preventDefault()
-        const wrapRect = wrap.getBoundingClientRect()
-        const mouseX = e.clientX - wrapRect.left
-        const mouseY = e.clientY - wrapRect.top
-        setCanvasZoom(prevZoom => {
-          const isPinch     = Math.abs(e.deltaY) < 50 && e.deltaMode === 0
-          const scaleDelta  = isPinch ? -(e.deltaY * 0.008) : (e.deltaY > 0 ? -0.09 : 0.09)
-          const newZoom     = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prevZoom + scaleDelta))
-          const ratio       = newZoom / prevZoom
-          setCanvasPan(p => ({
-            x: Math.min(W - MARGIN, Math.max(-(W * 2), mouseX - (mouseX - p.x) * ratio)),
-            y: Math.min(H - MARGIN, Math.max(-(H * 4), mouseY - (mouseY - p.y) * ratio)),
-          }))
-          return +newZoom.toFixed(4)
-        })
+        const wrapRect   = wrap.getBoundingClientRect()
+        const mouseX     = e.clientX - wrapRect.left
+        const mouseY     = e.clientY - wrapRect.top
+        const isPinch    = Math.abs(e.deltaY) < 50 && e.deltaMode === 0
+        const rawDelta   = e.deltaMode === 1 ? e.deltaY * 0.12 : e.deltaY
+        const scaleDelta = isPinch ? -(rawDelta * 0.008) : (rawDelta > 0 ? -0.09 : 0.09)
+        const prevZoom   = liveZoom.current
+        const newZoom    = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prevZoom + scaleDelta))
+        const ratio      = newZoom / prevZoom
+        liveZoom.current = +newZoom.toFixed(4)
+        livePan.current  = {
+          x: Math.min(W - MARGIN, Math.max(-(W * 2), mouseX - (mouseX - livePan.current.x) * ratio)),
+          y: Math.min(H - MARGIN, Math.max(-(H * 4), mouseY - (mouseY - livePan.current.y) * ratio)),
+        }
+        applyTransform(livePan.current, liveZoom.current)
       } else if (e.shiftKey) {
-        e.preventDefault()
-        const dx = e.deltaY !== 0 ? e.deltaY : e.deltaX
-        setCanvasPan(p => ({
-          x: Math.min(W - MARGIN, Math.max(-(W * 2), p.x - dx)),
-          y: p.y,
-        }))
+        const dx = (e.deltaY !== 0 ? e.deltaY : e.deltaX) * (e.deltaMode === 1 ? 20 : 1)
+        livePan.current = {
+          x: Math.min(W - MARGIN, Math.max(-(W * 2), livePan.current.x - dx)),
+          y: livePan.current.y,
+        }
+        applyTransform(livePan.current, liveZoom.current)
       } else {
-        e.preventDefault()
         const mult = e.deltaMode === 1 ? 20 : 1
-        setCanvasPan(p => ({
-          x: p.x,
-          y: Math.min(H - MARGIN, Math.max(-(H * 4), p.y - e.deltaY * mult)),
-        }))
+        livePan.current = {
+          x: livePan.current.x,
+          y: Math.min(H - MARGIN, Math.max(-(H * 4), livePan.current.y - e.deltaY * mult)),
+        }
+        applyTransform(livePan.current, liveZoom.current)
       }
+
+      clearTimeout(settleTimer)
+      settleTimer = window.setTimeout(settle, 150)
     }
+
     const tryBind = () => {
       const target = canvasWrapRef.current
       if (target && target !== el) {
@@ -220,8 +251,8 @@ export function useExportPage() {
     }
     tryBind()
     const raf = requestAnimationFrame(tryBind)
-    return () => { cancelAnimationFrame(raf); if (el) el.removeEventListener('wheel', handler) }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    return () => { cancelAnimationFrame(raf); if (el) el.removeEventListener('wheel', handler); clearTimeout(settleTimer) }
+  }, [applyTransform]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ResizeObserver
   useEffect(() => {
@@ -262,12 +293,20 @@ export function useExportPage() {
   const activePage = pages.find(p => p.id === activePageId) ?? pages[0]
 
   const updatePageBlocks = useCallback((pageId: string, updater: Block[] | ((b: Block[]) => Block[])) => {
-    setPages(prev => prev.map(p => {
-      if (p.id !== pageId) return p
-      const next = typeof updater === 'function' ? updater(p.blocks) : updater
-      return { ...p, blocks: next }
-    }))
-  }, [setPages])
+    setPagesRaw(prev => {
+      const next = prev.map(p => {
+        if (p.id !== pageId) return p
+        const nextBlocks = typeof updater === 'function' ? updater(p.blocks) : updater
+        return { ...p, blocks: nextBlocks }
+      })
+      if (!isUndoing.current) {
+        undoStack.current = [...undoStack.current.slice(-49), prev]
+        redoStack.current = []
+      }
+      pagesRef.current = next
+      return next
+    })
+  }, [setPagesRaw])
 
   const setBlocks = useCallback((updater: Block[] | ((b: Block[]) => Block[])) => {
     updatePageBlocks(activePageId, updater)
@@ -514,14 +553,13 @@ export function useExportPage() {
 
   // ── Block CRUD ──
   const addBlock = (type: BlockType, content: string, caption?: string, images?: string[]) => {
-    setBlocks(b => {
-      const maxY = b.reduce((acc, bl) => {
-        const pos = bl.pixelPos
-        return pos ? Math.max(acc, pos.y + pos.h) : acc
-      }, 0)
+    console.log('[addBlock] ENTRY', activePage?.id, activePage?.isCover)
+    const targetPage = activePage
+    if (!targetPage) return
+    updatePageBlocks(targetPage.id, b => {
       const cw       = contentWidth
       const defaultH = type === 'image' || type === 'image-row' ? Math.round(cw * 0.5625) : type === 'title' ? Math.round(cw * 0.3) : type === 'table' ? 160 : Math.round(cw * 0.2)
-      return [...b, { id: generateId(), type, content, caption, images, pixelPos: { x: 0, y: maxY, w: cw, h: defaultH }, ...(type === 'table' ? { tableData: { rows: [[{text:'标题A',align:'left',bold:true},{text:'标题B',align:'left',bold:true},{text:'标题C',align:'left',bold:true}],[{text:'',align:'left'},{text:'',align:'left'},{text:'',align:'left'}],[{text:'',align:'left'},{text:'',align:'left'},{text:'',align:'left'}]], colWidths:[0.333,0.333,0.334], headerRow:true, headerCol:false, borderColor:'rgba(26,26,26,0.12)', fontSize:13, fontFamily:'Inter, DM Sans, sans-serif', cellPadding:10 } } : {}) }]
+      return [...b, { id: generateId(), type, content, caption, images, pixelPos: { x: 20, y: 20, w: cw, h: defaultH }, ...(type === 'table' ? { tableData: { rows: [[{text:'标题A',align:'left',bold:true},{text:'标题B',align:'left',bold:true},{text:'标题C',align:'left',bold:true}],[{text:'',align:'left'},{text:'',align:'left'},{text:'',align:'left'}],[{text:'',align:'left'},{text:'',align:'left'},{text:'',align:'left'}]], colWidths:[0.333,0.333,0.334], headerRow:true, headerCol:false, borderColor:'rgba(26,26,26,0.12)', fontSize:13, fontFamily:'Inter, DM Sans, sans-serif', cellPadding:10 } } : {}) }]
     })
   }
 
@@ -1039,7 +1077,7 @@ srcCanvases.forEach((src, idx) => {
     canvasWrapRef, isPanningRef, panStart,
     canvasZoom, setCanvasZoom, canvasPan, setCanvasPan,
     canvasWrapWidth, panningCursor, setPanningCursor, shiftHeld,
-    contentWidth,
+    contentWidth, panLayerRef,
     // toolbar
     toolbarRef, toolbarAnchor, setToolbarAnchor,
     toolbarDragging, setToolbarDragging,
