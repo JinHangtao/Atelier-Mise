@@ -8,6 +8,13 @@ interface Block {
   content?: string
   images?: string[]
   pixelPos?: { x: number; y: number; w: number; h: number } | null
+  fontSize?: number
+  fontWeight?: string
+  fontStyle?: string
+  color?: string
+  align?: string
+  opacity?: number
+  borderRadius?: number
   [key: string]: any
 }
 
@@ -25,6 +32,48 @@ interface MobileBottomSheetProps {
   onEditImage?: (id: string) => void
   onStartEdit?: (block: Block) => void
   onRemoveBg?: (id: string, content: string) => void
+  onPatchBlock?: (id: string, patch: Partial<Block>) => void
+}
+
+// ── Shared sheet primitives ────────────────────────────────────────────────
+function SheetHandle({
+  onTouchStart, onTouchMove, onTouchEnd,
+}: {
+  onTouchStart: (e: React.TouchEvent) => void
+  onTouchMove: (e: React.TouchEvent) => void
+  onTouchEnd: () => void
+}) {
+  return (
+    <div
+      style={{ padding: '12px 0 4px', display: 'flex', justifyContent: 'center', flexShrink: 0, cursor: 'grab' }}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+    >
+      <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(26,26,26,0.15)' }} />
+    </div>
+  )
+}
+
+function useDragToDismiss(onClose: () => void) {
+  const dragRef = React.useRef<{ startY: number } | null>(null)
+  const [dragOffset, setDragOffset] = React.useState(0)
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    dragRef.current = { startY: e.touches[0].clientY }
+  }
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (!dragRef.current) return
+    const dy = e.touches[0].clientY - dragRef.current.startY
+    if (dy > 0) setDragOffset(dy)
+  }
+  const onTouchEnd = () => {
+    if (dragOffset > 80) onClose()
+    else setDragOffset(0)
+    dragRef.current = null
+  }
+
+  return { dragOffset, isDragging: !!dragRef.current, onTouchStart, onTouchMove, onTouchEnd }
 }
 
 // ── MobileBottomSheet ──────────────────────────────────────────────────────
@@ -42,38 +91,16 @@ export function MobileBottomSheet({
   onEditImage,
   onStartEdit,
   onRemoveBg,
+  onPatchBlock,
 }: MobileBottomSheetProps) {
   const isVisible = !!block
-  const dragRef = React.useRef<{ startY: number; currentY: number } | null>(null)
+  const drag = useDragToDismiss(onClose)
   const sheetRef = React.useRef<HTMLDivElement>(null)
-  const [dragOffset, setDragOffset] = React.useState(0)
 
-  // Reset drag offset when block changes
-  React.useEffect(() => {
-    setDragOffset(0)
-  }, [block?.id])
+  React.useEffect(() => { /* reset handled by useDragToDismiss */ }, [block?.id])
 
-  // Close on backdrop tap
-  const handleBackdrop = (e: React.TouchEvent | React.MouseEvent) => {
+  const handleBackdrop = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) onClose()
-  }
-
-  // Drag-to-dismiss handle
-  const onHandleTouchStart = (e: React.TouchEvent) => {
-    dragRef.current = { startY: e.touches[0].clientY, currentY: e.touches[0].clientY }
-  }
-  const onHandleTouchMove = (e: React.TouchEvent) => {
-    if (!dragRef.current) return
-    const dy = e.touches[0].clientY - dragRef.current.startY
-    if (dy > 0) setDragOffset(dy)
-  }
-  const onHandleTouchEnd = () => {
-    if (dragOffset > 80) {
-      onClose()
-    } else {
-      setDragOffset(0)
-    }
-    dragRef.current = null
   }
 
   const blockTypeLabel = (type: string) => {
@@ -96,8 +123,8 @@ export function MobileBottomSheet({
   if (!block) return null
 
   const [typeIcon, typeLabel] = blockTypeLabel(block.type)
+  const sheetTransform = isVisible ? `translateY(${drag.dragOffset}px)` : 'translateY(100%)'
 
-  // Row button component
   const Row = ({
     icon, label, sub, onClick, danger, disabled,
   }: {
@@ -118,15 +145,9 @@ export function MobileBottomSheet({
       onTouchStart={e => { if (!disabled) (e.currentTarget.style.background = danger ? 'rgba(220,60,60,0.06)' : 'rgba(26,26,26,0.04)') }}
       onTouchEnd={e => { (e.currentTarget.style.background = 'transparent') }}
     >
-      <span style={{
-        fontSize: 20, width: 32, textAlign: 'center', flexShrink: 0,
-        color: danger ? '#dc3c3c' : '#444',
-      }}>{icon}</span>
+      <span style={{ fontSize: 20, width: 32, textAlign: 'center', flexShrink: 0, color: danger ? '#dc3c3c' : '#444' }}>{icon}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: '0.9rem', fontWeight: 500, color: danger ? '#c03030' : '#1a1a1a',
-          fontFamily: 'Inter, DM Sans, sans-serif',
-        }}>{label}</div>
+        <div style={{ fontSize: '0.9rem', fontWeight: 500, color: danger ? '#c03030' : '#1a1a1a', fontFamily: 'Inter, DM Sans, sans-serif' }}>{label}</div>
         {sub && <div style={{ fontSize: '0.7rem', color: '#aaa', marginTop: 1 }}>{sub}</div>}
       </div>
     </button>
@@ -136,9 +157,149 @@ export function MobileBottomSheet({
     <div style={{ height: 1, background: 'rgba(26,26,26,0.06)', margin: '4px 0' }} />
   )
 
-  const sheetTransform = isVisible
-    ? `translateY(${dragOffset}px)`
-    : 'translateY(100%)'
+  const SectionLabel = ({ text }: { text: string }) => (
+    <div style={{ padding: '8px 20px 4px' }}>
+      <div style={{ fontSize: '0.58rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: '#c4c4c0', fontWeight: 600 }}>
+        {text}
+      </div>
+    </div>
+  )
+
+  // ── Text properties section ────────────────────────────────────────────
+  const TextProps = () => {
+    if (!isTextBlock || !onPatchBlock || !block) return null
+    const fontSize = block.fontSize ?? 16
+    const isBold = block.fontWeight === 'bold' || block.fontWeight === '700'
+    const isItalic = block.fontStyle === 'italic'
+    const color = block.color ?? '#1a1a1a'
+    const align = block.align ?? 'left'
+
+    const ToggleBtn = ({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) => (
+      <button
+        onClick={onClick}
+        style={{
+          flex: 1, height: 36, border: `1.5px solid ${active ? '#1a1a1a' : 'rgba(26,26,26,0.12)'}`,
+          borderRadius: 8, background: active ? '#1a1a1a' : 'transparent',
+          color: active ? '#fff' : '#888', fontSize: '0.82rem', fontWeight: 600,
+          cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+          fontFamily: 'Inter, DM Sans, sans-serif',
+        }}
+      >{label}</button>
+    )
+
+    const COLORS = ['#1a1a1a', '#ffffff', '#c03030', '#2563eb', '#16a34a', '#b45309', '#7c3aed', '#888888']
+
+    return (
+      <>
+        <Divider />
+        <SectionLabel text={isZh ? '文字设置' : 'Text'} />
+
+        {/* Font size */}
+        <div style={{ padding: '6px 20px 10px', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: '0.75rem', color: '#888', fontFamily: 'Inter, DM Sans, sans-serif', width: 56, flexShrink: 0 }}>
+            {isZh ? '字号' : 'Size'}
+          </span>
+          <button
+            onClick={() => onPatchBlock(block.id, { fontSize: Math.max(8, fontSize - 2) })}
+            style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid rgba(26,26,26,0.12)', background: 'transparent', fontSize: '1rem', color: '#555', cursor: 'pointer' }}
+          >−</button>
+          <span style={{ fontSize: '0.88rem', fontWeight: 600, color: '#1a1a1a', minWidth: 28, textAlign: 'center', fontFamily: 'Space Mono, monospace' }}>
+            {fontSize}
+          </span>
+          <button
+            onClick={() => onPatchBlock(block.id, { fontSize: Math.min(120, fontSize + 2) })}
+            style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid rgba(26,26,26,0.12)', background: 'transparent', fontSize: '1rem', color: '#555', cursor: 'pointer' }}
+          >+</button>
+        </div>
+
+        {/* Bold / Italic / Align */}
+        <div style={{ padding: '0 20px 10px', display: 'flex', gap: 6 }}>
+          <ToggleBtn active={isBold} label="B" onClick={() => onPatchBlock(block.id, { fontWeight: isBold ? 'normal' : 'bold' })} />
+          <ToggleBtn active={isItalic} label="I" onClick={() => onPatchBlock(block.id, { fontStyle: isItalic ? 'normal' : 'italic' })} />
+          <ToggleBtn active={align === 'left'} label="≡←" onClick={() => onPatchBlock(block.id, { align: 'left' })} />
+          <ToggleBtn active={align === 'center'} label="≡" onClick={() => onPatchBlock(block.id, { align: 'center' })} />
+          <ToggleBtn active={align === 'right'} label="≡→" onClick={() => onPatchBlock(block.id, { align: 'right' })} />
+        </div>
+
+        {/* Color swatches */}
+        <div style={{ padding: '0 20px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: '0.75rem', color: '#888', fontFamily: 'Inter, DM Sans, sans-serif', width: 56, flexShrink: 0 }}>
+            {isZh ? '颜色' : 'Color'}
+          </span>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {COLORS.map(c => (
+              <button
+                key={c}
+                onClick={() => onPatchBlock(block.id, { color: c })}
+                style={{
+                  width: 24, height: 24, borderRadius: '50%',
+                  background: c,
+                  border: color === c ? '2px solid #1a1a1a' : '1.5px solid rgba(26,26,26,0.15)',
+                  cursor: 'pointer', flexShrink: 0,
+                  outline: color === c ? '2px solid rgba(26,26,26,0.2)' : 'none',
+                  outlineOffset: 1,
+                }}
+              />
+            ))}
+            {/* Custom color picker */}
+            <label style={{ position: 'relative', width: 24, height: 24, cursor: 'pointer', flexShrink: 0 }}>
+              <div style={{
+                width: 24, height: 24, borderRadius: '50%',
+                background: 'conic-gradient(red, yellow, lime, aqua, blue, magenta, red)',
+                border: '1.5px solid rgba(26,26,26,0.15)',
+              }} />
+              <input type="color" value={color} onChange={e => onPatchBlock(block.id, { color: e.target.value })}
+                style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer' }} />
+            </label>
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  // ── Image properties section ───────────────────────────────────────────
+  const ImageProps = () => {
+    if (!isImageBlock || !onPatchBlock || !block) return null
+    const opacity = block.opacity ?? 1
+    const borderRadius = block.borderRadius ?? 0
+
+    return (
+      <>
+        <Divider />
+        <SectionLabel text={isZh ? '图片设置' : 'Image'} />
+
+        {/* Opacity */}
+        <div style={{ padding: '6px 20px 10px', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: '0.75rem', color: '#888', fontFamily: 'Inter, DM Sans, sans-serif', width: 56, flexShrink: 0 }}>
+            {isZh ? '透明度' : 'Opacity'}
+          </span>
+          <input
+            type="range" min={0} max={1} step={0.05} value={opacity}
+            onChange={e => onPatchBlock(block.id, { opacity: parseFloat(e.target.value) })}
+            style={{ flex: 1, accentColor: '#1a1a1a' }}
+          />
+          <span style={{ fontSize: '0.75rem', color: '#888', fontFamily: 'Space Mono, monospace', width: 36, textAlign: 'right' }}>
+            {Math.round(opacity * 100)}%
+          </span>
+        </div>
+
+        {/* Border radius */}
+        <div style={{ padding: '0 20px 12px', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: '0.75rem', color: '#888', fontFamily: 'Inter, DM Sans, sans-serif', width: 56, flexShrink: 0 }}>
+            {isZh ? '圆角' : 'Radius'}
+          </span>
+          <input
+            type="range" min={0} max={48} step={2} value={borderRadius}
+            onChange={e => onPatchBlock(block.id, { borderRadius: parseInt(e.target.value) })}
+            style={{ flex: 1, accentColor: '#1a1a1a' }}
+          />
+          <span style={{ fontSize: '0.75rem', color: '#888', fontFamily: 'Space Mono, monospace', width: 36, textAlign: 'right' }}>
+            {borderRadius}px
+          </span>
+        </div>
+      </>
+    )
+  }
 
   return (
     <>
@@ -164,7 +325,7 @@ export function MobileBottomSheet({
           borderRadius: '20px 20px 0 0',
           boxShadow: '0 -4px 40px rgba(0,0,0,0.18)',
           transform: sheetTransform,
-          transition: dragRef.current ? 'none' : 'transform 0.36s cubic-bezier(0.34,1.05,0.64,1)',
+          transition: drag.isDragging ? 'none' : 'transform 0.36s cubic-bezier(0.34,1.05,0.64,1)',
           maxHeight: '82vh',
           display: 'flex', flexDirection: 'column',
           overflowY: 'auto',
@@ -172,15 +333,7 @@ export function MobileBottomSheet({
           paddingBottom: 'env(safe-area-inset-bottom)',
         }}
       >
-        {/* Drag handle */}
-        <div
-          style={{ padding: '12px 0 4px', display: 'flex', justifyContent: 'center', flexShrink: 0, cursor: 'grab' }}
-          onTouchStart={onHandleTouchStart}
-          onTouchMove={onHandleTouchMove}
-          onTouchEnd={onHandleTouchEnd}
-        >
-          <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(26,26,26,0.15)' }} />
-        </div>
+        <SheetHandle onTouchStart={drag.onTouchStart} onTouchMove={drag.onTouchMove} onTouchEnd={drag.onTouchEnd} />
 
         {/* Header */}
         <div style={{
@@ -191,27 +344,17 @@ export function MobileBottomSheet({
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 20 }}>{typeIcon}</span>
             <div>
-              <div style={{
-                fontSize: '0.88rem', fontWeight: 700, color: '#1a1a1a',
-                fontFamily: 'Inter, DM Sans, sans-serif',
-              }}>{typeLabel}</div>
+              <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#1a1a1a', fontFamily: 'Inter, DM Sans, sans-serif' }}>{typeLabel}</div>
               {block.content && (
-                <div style={{
-                  fontSize: '0.68rem', color: '#aaa', marginTop: 1,
-                  maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>{block.content}</div>
+                <div style={{ fontSize: '0.68rem', color: '#aaa', marginTop: 1, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {block.content}
+                </div>
               )}
             </div>
           </div>
           <button
             onClick={onClose}
-            style={{
-              width: 30, height: 30, borderRadius: '50%',
-              background: 'rgba(26,26,26,0.07)', border: 'none',
-              fontSize: 16, color: '#888', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              flexShrink: 0,
-            }}
+            style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(26,26,26,0.07)', border: 'none', fontSize: 16, color: '#888', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
           >×</button>
         </div>
 
@@ -235,19 +378,19 @@ export function MobileBottomSheet({
             </>
           )}
 
+          {/* Properties — shown inline without closing sheet */}
+          <TextProps />
+          <ImageProps />
+
           {/* Universal */}
+          <Divider />
           <Row icon="⎘" label={isZh ? '复制元素' : 'Duplicate'} onClick={() => onDuplicate(block.id)} />
 
           <Divider />
 
           {/* Layer controls */}
-          <div style={{ padding: '8px 20px 4px' }}>
-            <div style={{ fontSize: '0.58rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: '#c4c4c0', fontWeight: 600, marginBottom: 4 }}>
-              {isZh ? '层级' : 'Layer order'}
-            </div>
-          </div>
+          <SectionLabel text={isZh ? '层级' : 'Layer order'} />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
-            {/* 2-col grid for layer ops */}
             {[
               { icon: '⇑', label: isZh ? '置顶' : 'To front', onClick: () => onBringToFront(block.id) },
               { icon: '↑', label: isZh ? '上移' : 'Forward', onClick: () => onBringForward(block.id) },
@@ -283,7 +426,6 @@ export function MobileBottomSheet({
             danger
           />
 
-          {/* Safe area spacer */}
           <div style={{ height: 8 }} />
         </div>
       </div>
@@ -291,8 +433,117 @@ export function MobileBottomSheet({
   )
 }
 
+// ── MobileAddSheet ─────────────────────────────────────────────────────────
+// 点 + FAB 弹出：选择要添加的元素类型
+interface MobileAddSheetProps {
+  isOpen: boolean
+  isZh: boolean
+  onClose: () => void
+  onAddText: () => void
+  onAddTitle: () => void
+  onAddImage: () => void
+}
+
+export function MobileAddSheet({
+  isOpen, isZh, onClose, onAddText, onAddTitle, onAddImage,
+}: MobileAddSheetProps) {
+  const drag = useDragToDismiss(onClose)
+
+  const handleBackdrop = (e: React.MouseEvent) => {
+    if (e.target === e.currentTarget) onClose()
+  }
+
+  const Item = ({ icon, label, sub, onClick }: { icon: string; label: string; sub: string; onClick: () => void }) => (
+    <button
+      onClick={() => { onClick(); onClose() }}
+      style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        gap: 6, padding: '16px 8px',
+        border: '1.5px solid rgba(26,26,26,0.1)', borderRadius: 14,
+        background: 'transparent', cursor: 'pointer',
+        WebkitTapHighlightColor: 'transparent',
+        transition: 'background 0.1s, border-color 0.1s',
+        flex: 1,
+      }}
+      onTouchStart={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.04)'; e.currentTarget.style.borderColor = 'rgba(26,26,26,0.25)' }}
+      onTouchEnd={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'rgba(26,26,26,0.1)' }}
+    >
+      <span style={{ fontSize: 28 }}>{icon}</span>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#1a1a1a', fontFamily: 'Inter, DM Sans, sans-serif' }}>{label}</div>
+        <div style={{ fontSize: '0.65rem', color: '#aaa', marginTop: 2 }}>{sub}</div>
+      </div>
+    </button>
+  )
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        onClick={handleBackdrop}
+        style={{
+          position: 'fixed', inset: 0, zIndex: 1200,
+          background: isOpen ? 'rgba(0,0,0,0.25)' : 'transparent',
+          backdropFilter: isOpen ? 'blur(2px)' : 'none',
+          WebkitBackdropFilter: isOpen ? 'blur(2px)' : 'none',
+          transition: 'background 0.24s ease',
+          pointerEvents: isOpen ? 'auto' : 'none',
+        }}
+      />
+
+      {/* Sheet */}
+      <div style={{
+        position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 1201,
+        background: '#fff',
+        borderRadius: '20px 20px 0 0',
+        boxShadow: '0 -4px 40px rgba(0,0,0,0.18)',
+        transform: isOpen ? `translateY(${drag.dragOffset}px)` : 'translateY(100%)',
+        transition: drag.isDragging ? 'none' : 'transform 0.32s cubic-bezier(0.34,1.05,0.64,1)',
+        paddingBottom: 'env(safe-area-inset-bottom)',
+      }}>
+        <SheetHandle onTouchStart={drag.onTouchStart} onTouchMove={drag.onTouchMove} onTouchEnd={drag.onTouchEnd} />
+
+        {/* Header */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '4px 20px 16px',
+        }}>
+          <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#1a1a1a', fontFamily: 'Inter, DM Sans, sans-serif' }}>
+            {isZh ? '添加元素' : 'Add element'}
+          </div>
+          <button
+            onClick={onClose}
+            style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(26,26,26,0.07)', border: 'none', fontSize: 16, color: '#888', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >×</button>
+        </div>
+
+        {/* Items grid */}
+        <div style={{ display: 'flex', gap: 10, padding: '0 20px 20px' }}>
+          <Item
+            icon="✦"
+            label={isZh ? '标题' : 'Title'}
+            sub={isZh ? '大标题文字' : 'Heading text'}
+            onClick={onAddTitle}
+          />
+          <Item
+            icon="✎"
+            label={isZh ? '文字' : 'Text'}
+            sub={isZh ? '正文段落' : 'Body text'}
+            onClick={onAddText}
+          />
+          <Item
+            icon="🖼"
+            label={isZh ? '图片' : 'Image'}
+            sub={isZh ? '从相册选择' : 'From photos'}
+            onClick={onAddImage}
+          />
+        </div>
+      </div>
+    </>
+  )
+}
+
 // ── MobileBottomBar ────────────────────────────────────────────────────────
-// 固定在画布底部的小工具条：zoom控制 + 页码
 interface MobileBottomBarProps {
   zoom: number
   onZoomIn: () => void
@@ -301,11 +552,13 @@ interface MobileBottomBarProps {
   currentPage: number
   totalPages: number
   isZh: boolean
+  onAdd: () => void   // ← 新增
 }
 
 export function MobileBottomBar({
   zoom, onZoomIn, onZoomOut, onZoomFit,
   currentPage, totalPages, isZh,
+  onAdd,
 }: MobileBottomBarProps) {
   const Btn = ({ label, onPress, wide }: { label: string; onPress: () => void; wide?: boolean }) => (
     <button
@@ -346,13 +599,25 @@ export function MobileBottomBar({
       </div>
 
       {/* Page indicator */}
-      <div style={{
-        fontSize: '0.7rem', color: '#888',
-        fontFamily: 'Space Mono, monospace',
-        letterSpacing: '0.05em',
-      }}>
+      <div style={{ fontSize: '0.7rem', color: '#888', fontFamily: 'Space Mono, monospace', letterSpacing: '0.05em' }}>
         {isZh ? `第 ${currentPage} / ${totalPages} 页` : `${currentPage} / ${totalPages}`}
       </div>
+
+      {/* Add FAB */}
+      <button
+        onClick={onAdd}
+        style={{
+          width: 40, height: 40, borderRadius: '50%',
+          background: '#1a1a1a', border: 'none',
+          color: '#fff', fontSize: '1.4rem', lineHeight: 1,
+          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 2px 12px rgba(0,0,0,0.22)',
+          WebkitTapHighlightColor: 'transparent',
+          flexShrink: 0,
+        }}
+        onTouchStart={e => { e.currentTarget.style.transform = 'scale(0.92)' }}
+        onTouchEnd={e => { e.currentTarget.style.transform = 'scale(1)' }}
+      >＋</button>
     </div>
   )
 }

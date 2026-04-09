@@ -569,69 +569,6 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
           {saveStatus === 'idle' && <span style={{ fontSize: '0.65rem', color: '#d0d0cc', letterSpacing: '0.1em', fontFamily: 'Inter, DM Sans, sans-serif' }}>{pages.length} PAGES · {allBlocksForExport.length} BLOCKS</span>}
         </div>
 
-{/* .sensei 导出弹窗 */}
-{canvasExportOpen && (
-  <div
-    onClick={e => { if (e.target === e.currentTarget) setCanvasExportOpen(false) }}
-    style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.28)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-  >
-    <div style={{ background: '#fff', borderRadius: 18, padding: '28px 32px', width: 360, boxShadow: '0 16px 48px rgba(0,0,0,0.16)', display: 'flex', flexDirection: 'column', gap: 20, fontFamily: 'Inter, DM Sans, sans-serif' }}>
-      <div>
-        <p style={{ fontSize: '0.6rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: '#bbb', fontWeight: 600, margin: '0 0 6px' }}>{isZh ? '保存为项目文件' : 'Save project file'}</p>
-        <p style={{ fontSize: '1rem', fontWeight: 700, color: '#1a1a1a', margin: 0 }}>{isZh ? '导出 .sensei' : 'Export .sensei'}</p>
-      </div>
-
-      <div>
-        <p style={{ fontSize: '0.72rem', color: '#888', marginBottom: 8 }}>{isZh ? '文件名' : 'Filename'}</p>
-        <div style={{ display: 'flex', alignItems: 'center', border: '1.5px solid rgba(26,26,26,0.12)', borderRadius: 10, overflow: 'hidden' }}>
-          <input
-            value={canvasFilename}
-            onChange={e => setCanvasFilename(e.target.value)}
-            autoFocus
-            style={{ flex: 1, border: 'none', outline: 'none', padding: '10px 14px', fontSize: '0.85rem', color: '#1a1a1a', fontFamily: 'inherit', background: 'transparent' }}
-            placeholder="untitled"
-          />
-          <span style={{ padding: '10px 14px', fontSize: '0.75rem', color: '#aaa', borderLeft: '1px solid rgba(26,26,26,0.08)', background: '#fafafa' }}>.sensei</span>
-        </div>
-      </div>
-
-      <div style={{ background: '#f7f7f5', borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {[
-          { label: isZh ? '页面数' : 'Pages', value: `${pages.length}` },
-          { label: isZh ? '元素数' : 'Blocks', value: `${allBlocksForExport.length}` },
-          { label: isZh ? '格式' : 'Format', value: 'ZIP · 懒加载资源' },
-        ].map(({ label, value }) => (
-          <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
-            <span style={{ color: '#aaa' }}>{label}</span>
-            <span style={{ color: '#1a1a1a', fontWeight: 500 }}>{value}</span>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ display: 'flex', gap: 10 }}>
-        <button onClick={() => setCanvasExportOpen(false)}
-          style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid rgba(26,26,26,0.1)', background: 'transparent', fontSize: '0.82rem', color: '#888', cursor: 'pointer', fontFamily: 'inherit' }}>
-          {isZh ? '取消' : 'Cancel'}
-        </button>
-        <button
-          onClick={async () => {
-            setCanvasExportOpen(false)
-            const PAGE_WIDTH = 860
-            const pagesWithDimensions = pages.map(p => ({
-              ...p,
-              width: PAGE_WIDTH,
-              height: pageHeight(p.aspect ?? 'free', PAGE_WIDTH) ?? PAGE_WIDTH,
-            }))
-            await exportCanvasFile(project, pagesWithDimensions, canvasFilename || project.title)
-          }}
-          style={{ flex: 2, padding: '11px 0', borderRadius: 10, border: 'none', background: '#1a1a1a', fontSize: '0.82rem', color: '#fff', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}>
-          {isZh ? '下载 .sensei ↓' : 'Download .sensei ↓'}
-        </button>
-      </div>
-    </div>
-  </div>
-)}
-
         {/* Actions */}
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
                    {!isMobile && <button onClick={undo} disabled={undoStack.current.length === 0} title={isZh ? '撤销 (⌘Z)' : 'Undo (⌘Z)'} style={{ background: 'transparent', border: '1px solid rgba(26,26,26,0.1)', padding: '7px 12px', borderRadius: '8px', fontSize: '0.82rem', cursor: undoStack.current.length === 0 ? 'not-allowed' : 'pointer', color: undoStack.current.length === 0 ? '#ddd' : '#888', transition: 'all 0.12s' }}>↩</button>}
@@ -683,7 +620,65 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
         </div>
       </nav>
 
-
+      {/* .sensei 导出弹窗 */}
+      {canvasExportOpen && (
+        <div
+          onClick={e => { if (e.target === e.currentTarget) setCanvasExportOpen(false) }}
+          style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.28)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <div style={{ background: '#fff', borderRadius: 18, padding: '28px 32px', width: 360, boxShadow: '0 16px 48px rgba(0,0,0,0.16)', display: 'flex', flexDirection: 'column', gap: 20, fontFamily: 'Inter, DM Sans, sans-serif' }}>
+            <div>
+              <p style={{ fontSize: '0.6rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: '#bbb', fontWeight: 600, margin: '0 0 6px' }}>{isZh ? '保存为项目文件' : 'Save project file'}</p>
+              <p style={{ fontSize: '1rem', fontWeight: 700, color: '#1a1a1a', margin: 0 }}>{isZh ? '导出 .sensei' : 'Export .sensei'}</p>
+            </div>
+            <div>
+              <p style={{ fontSize: '0.72rem', color: '#888', marginBottom: 8 }}>{isZh ? '文件名' : 'Filename'}</p>
+              <div style={{ display: 'flex', alignItems: 'center', border: '1.5px solid rgba(26,26,26,0.12)', borderRadius: 10, overflow: 'hidden' }}>
+                <input
+                  value={canvasFilename}
+                  onChange={e => setCanvasFilename(e.target.value)}
+                  autoFocus
+                  style={{ flex: 1, border: 'none', outline: 'none', padding: '10px 14px', fontSize: '0.85rem', color: '#1a1a1a', fontFamily: 'inherit', background: 'transparent' }}
+                  placeholder="untitled"
+                />
+                <span style={{ padding: '10px 14px', fontSize: '0.75rem', color: '#aaa', borderLeft: '1px solid rgba(26,26,26,0.08)', background: '#fafafa' }}>.sensei</span>
+              </div>
+            </div>
+            <div style={{ background: '#f7f7f5', borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {[
+                { label: isZh ? '页面数' : 'Pages', value: `${pages.length}` },
+                { label: isZh ? '元素数' : 'Blocks', value: `${allBlocksForExport.length}` },
+                { label: isZh ? '格式' : 'Format', value: 'ZIP · 懒加载资源' },
+              ].map(({ label, value }) => (
+                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                  <span style={{ color: '#aaa' }}>{label}</span>
+                  <span style={{ color: '#1a1a1a', fontWeight: 500 }}>{value}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setCanvasExportOpen(false)}
+                style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid rgba(26,26,26,0.1)', background: 'transparent', fontSize: '0.82rem', color: '#888', cursor: 'pointer', fontFamily: 'inherit' }}>
+                {isZh ? '取消' : 'Cancel'}
+              </button>
+              <button
+                onClick={async () => {
+                  setCanvasExportOpen(false)
+                  const PAGE_WIDTH = 860
+                  const pagesWithDimensions = pages.map(p => ({
+                    ...p,
+                    width: PAGE_WIDTH,
+                    height: pageHeight(p.aspect ?? 'free', PAGE_WIDTH) ?? PAGE_WIDTH,
+                  }))
+                  await exportCanvasFile(project, pagesWithDimensions, canvasFilename || project.title)
+                }}
+                style={{ flex: 2, padding: '11px 0', borderRadius: 10, border: 'none', background: '#1a1a1a', fontSize: '0.82rem', color: '#fff', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}>
+                {isZh ? '下载 .sensei ↓' : 'Download .sensei ↓'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Main layout ── */}
       {isMobile ? (
