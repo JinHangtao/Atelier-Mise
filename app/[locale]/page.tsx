@@ -1,7 +1,7 @@
 'use client'
 import { useTranslations } from 'next-intl'
 import { useRouter, usePathname } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import Link from 'next/link'
 
 export default function Home() {
@@ -10,7 +10,48 @@ export default function Home() {
   const pathname = usePathname()
   const [mounted, setMounted] = useState(false)
 
+  // 卡片引用数组（用于 tilt 效果）
+  const cardRefs = useRef<(HTMLAnchorElement | null)[]>([])
+
   useEffect(() => { setMounted(true) }, [])
+
+  // Tilt 效果：为四个卡片绑定鼠标跟随旋转
+  useEffect(() => {
+    const cards = cardRefs.current.filter(Boolean) as HTMLAnchorElement[]
+
+    const handleMouseMove = (e: MouseEvent, card: HTMLAnchorElement) => {
+      const rect = card.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      const centerX = rect.width / 2
+      const centerY = rect.height / 2
+      const rotateX = ((y - centerY) / centerY) * -4 // -4deg ~ 4deg
+      const rotateY = ((x - centerX) / centerX) * 4
+      card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale(1.02) translateZ(10px)`
+    }
+
+    const handleMouseLeave = (card: HTMLAnchorElement) => {
+      card.style.transform = ''
+    }
+
+    cards.forEach(card => {
+      const onMove = (e: MouseEvent) => handleMouseMove(e, card)
+      const onLeave = () => handleMouseLeave(card)
+      card.addEventListener('mousemove', onMove as any)
+      card.addEventListener('mouseleave', onLeave as any)
+      // 保存清理函数
+      ;(card as any)._cleanup = () => {
+        card.removeEventListener('mousemove', onMove as any)
+        card.removeEventListener('mouseleave', onLeave as any)
+      }
+    })
+
+    return () => {
+      cards.forEach(card => {
+        if ((card as any)._cleanup) (card as any)._cleanup()
+      })
+    }
+  }, [])
 
   const isZh = pathname.startsWith('/zh')
   const locale = isZh ? 'zh' : 'en'
@@ -105,10 +146,11 @@ export default function Home() {
           backdrop-filter: blur(12px);
           -webkit-backdrop-filter: blur(12px);
           text-decoration: none;
-          transition: transform 0.2s, box-shadow 0.2s, border-left-color 0.2s;
+          transition: transform 0.2s ease-out, box-shadow 0.2s, border-left-color 0.2s;
+          will-change: transform;
         }
         .feature-card:hover {
-          transform: translateY(-3px);
+          /* transform 由 tilt 动态控制，此处仅保留阴影和边框变化 */
           box-shadow: 0 8px 32px rgba(0,0,0,0.07);
           border-left-color: rgba(26,26,26,0.55);
         }
@@ -190,11 +232,49 @@ export default function Home() {
             >
               {t('hero.cta')}
             </Link>
-            <a href="https://github.com/JinHangtao/portfolio-sensei" target="_blank" rel="noopener noreferrer"
-              style={{ background: 'rgba(255,255,255,0.7)', color: '#1a1a1a', border: '1px solid rgba(26,26,26,0.14)', padding: '12px 28px', borderRadius: '14px', fontFamily: 'Space Mono, monospace', fontSize: '0.58rem', letterSpacing: '0.16em', textTransform: 'uppercase', fontWeight: 400, cursor: 'pointer', backdropFilter: 'blur(8px)', textDecoration: 'none', display: 'inline-block', transition: 'all 0.15s' }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.95)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.7)'; e.currentTarget.style.transform = 'translateY(0)' }}
+            <a
+              href="https://github.com/JinHangtao/portfolio-sensei"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                background: 'rgba(255,255,255,0.7)',
+                color: '#1a1a1a',
+                border: '1px solid rgba(26,26,26,0.14)',
+                padding: '12px 28px',
+                borderRadius: '14px',
+                fontFamily: 'Space Mono, monospace',
+                fontSize: '0.58rem',
+                letterSpacing: '0.16em',
+                textTransform: 'uppercase',
+                fontWeight: 400,
+                cursor: 'pointer',
+                backdropFilter: 'blur(8px)',
+                textDecoration: 'none',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                transition: 'all 0.15s'
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.95)';
+                e.currentTarget.style.transform = 'translateY(-1px)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.7)';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
             >
+              {/* GitHub 图标 SVG */}
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                style={{ color: '#1a1a1a', flexShrink: 0 }}
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57C20.565 21.795 24 17.31 24 12c0-6.63-5.37-12-12-12z" />
+              </svg>
               {t('hero.github')}
             </a>
           </div>
@@ -223,7 +303,13 @@ export default function Home() {
             { key: 'ai' },
             { key: 'export' },
           ] as const).map(({ key }, i) => (
-            <Link key={key} href={`/${locale}/${key === 'ai' ? 'ai-tools' : key === 'export' ? 'projects' : key}`} className="feature-card">
+            <Link
+              key={key}
+              href={`/${locale}/${key === 'ai' ? 'ai-tools' : key === 'export' ? 'projects' : key}`}
+              className="feature-card"
+              ref={(el) => { cardRefs.current[i] = el }}
+              style={{ transition: 'transform 0.2s ease-out, box-shadow 0.2s, border-left-color 0.2s' }}
+            >
               <span className="font-mono" style={{ fontSize: '0.52rem', color: '#b8b8b4', letterSpacing: '0.2em' }}>
                 0{i + 1}
               </span>

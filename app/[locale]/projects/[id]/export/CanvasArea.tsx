@@ -286,34 +286,170 @@ function renderSelectionHandles(shape: DrawnShape, onDelete: () => void): React.
   )
 }
 
+// ── buildShapeSVGString ───────────────────────────────────────────────────────
+// Pure-string SVG — used for zero-React imperative resize preview.
+function buildShapeSVGString(shape: DrawnShape, x0: number, y0: number, x1: number, y1: number): string {
+  const stroke = (shape.color ?? '#333333').replace(/#/g,'%23')
+  const fill   = shape.shapeFill ? stroke : 'none'
+  const sw     = shape.shapeStroke ?? 2
+  const alpha  = shape.alpha ?? 1
+  const cx=(x0+x1)/2, cy=(y0+y1)/2, rx=Math.abs(x1-x0)/2, ry=Math.abs(y1-y0)/2
+  const base = `stroke="${stroke}" fill="${fill}" stroke-width="${sw}" opacity="${alpha}" stroke-linecap="round" stroke-linejoin="round"`
+  switch (shape.shapeType) {
+    case 'rect':    return `<rect x="${Math.min(x0,x1)}" y="${Math.min(y0,y1)}" width="${Math.abs(x1-x0)}" height="${Math.abs(y1-y0)}" ${base}/>`
+    case 'ellipse': return `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" ${base}/>`
+    case 'line':    return `<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" ${base} fill="none"/>`
+    case 'arrow': {
+      const angle=Math.atan2(y1-y0,x1-x0), hs=Math.max(sw*3,8)
+      const ax1=x1-Math.cos(angle-Math.PI/6)*hs, ay1=y1-Math.sin(angle-Math.PI/6)*hs
+      const ax2=x1-Math.cos(angle+Math.PI/6)*hs, ay2=y1-Math.sin(angle+Math.PI/6)*hs
+      return `<g opacity="${alpha}"><line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/><polyline points="${ax1},${ay1} ${x1},${y1} ${ax2},${ay2}" stroke="${stroke}" stroke-width="${sw}" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>`
+    }
+    case 'triangle': return `<polygon points="${cx},${Math.min(y0,y1)} ${Math.min(x0,x1)},${Math.max(y0,y1)} ${Math.max(x0,x1)},${Math.max(y0,y1)}" ${base}/>`
+    case 'polygon': {
+      const sides=Math.max(3,shape.shapeSides??5)
+      const pts=Array.from({length:sides},(_,i)=>{const a=(i/sides)*Math.PI*2-Math.PI/2;return `${cx+Math.cos(a)*rx},${cy+Math.sin(a)*ry}`}).join(' ')
+      return `<polygon points="${pts}" ${base}/>`
+    }
+    case 'star': {
+      const pts=Array.from({length:10},(_,i)=>{const a=(i/10)*Math.PI*2-Math.PI/2;const r=i%2===0?Math.max(rx,ry):Math.max(rx,ry)*0.4;return `${cx+Math.cos(a)*r},${cy+Math.sin(a)*r}`}).join(' ')
+      return `<polygon points="${pts}" ${base}/>`
+    }
+    default: return ''
+  }
+}
+
+function imperativeResizePreview(
+  previewG: SVGGElement, shape: DrawnShape,
+  coords: {x0:number;y0:number;x1:number;y1:number}, PAD: number
+) {
+  const {x0,y0,x1,y1}=coords
+  const rx0=Math.min(x0,x1),ry0=Math.min(y0,y1),rx1=Math.max(x0,x1),ry1=Math.max(y0,y1)
+  const mx=(rx0+rx1)/2, my=(ry0+ry1)/2
+  const rot=(shape as any).rotation
+  const shapeSvg=buildShapeSVGString(shape,x0,y0,x1,y1)
+  const shapeWrapped=rot?`<g transform="rotate(${rot},${(x0+x1)/2},${(y0+y1)/2})">${shapeSvg}</g>`:shapeSvg
+  const selSvg=`<rect x="${rx0-PAD}" y="${ry0-PAD}" width="${rx1-rx0+PAD*2}" height="${ry1-ry0+PAD*2}" fill="rgba(99,102,241,0.04)" stroke="%236366f1" stroke-width="1" rx="4" pointer-events="none"/>`
+  const hPos:{[k:string]:{cx:number,cy:number}}={
+    tl:{cx:rx0-PAD,cy:ry0-PAD},tc:{cx:mx,cy:ry0-PAD},tr:{cx:rx1+PAD,cy:ry0-PAD},
+    ml:{cx:rx0-PAD,cy:my},mr:{cx:rx1+PAD,cy:my},
+    bl:{cx:rx0-PAD,cy:ry1+PAD},bc:{cx:mx,cy:ry1+PAD},br:{cx:rx1+PAD,cy:ry1+PAD},
+  }
+  const handlesSvg=['tl','tc','tr','ml','mr','bl','bc','br'].map(hid=>{
+    const {cx,cy}=hPos[hid], isCorner=['tl','tr','bl','br'].includes(hid)
+    return isCorner
+      ? `<rect x="${cx-4.5}" y="${cy-4.5}" width="9" height="9" rx="2.5" fill="white" stroke="%236366f1" stroke-width="1.5" pointer-events="none"/>`
+      : `<rect x="${hid==='tc'||hid==='bc'?cx-5:cx-3}" y="${hid==='ml'||hid==='mr'?cy-5:cy-3}" width="${hid==='tc'||hid==='bc'?10:6}" height="${hid==='ml'||hid==='mr'?10:6}" rx="2" fill="%236366f1" pointer-events="none" opacity="0.85"/>`
+  }).join('')
+  previewG.innerHTML = shapeWrapped + selSvg + handlesSvg
+}
+
 // ── DrawModeShapeWrapper ──────────────────────────────────────────────────────
-// draw 模式下的 shape 渲染 + 右键弹窗，与非 draw 模式的 ShapeContextMenu 完全统一
-function DrawModeShapeWrapper({ shape, isSel, pageId, onDelete }: {
-  shape: DrawnShape; isSel: boolean; pageId: string; onDelete: () => void
+// Resize is 100% imperative (innerHTML) — zero React renders during drag = 60fps.
+// KEY: on handle pointerdown we call releasePointerCapture on the parent SVG so
+// the draw-mode SVG's setPointerCapture doesn't steal our window-level pointermove.
+function DrawModeShapeWrapper({ shape, isSel, pageId, onDelete, canvasZoom }: {
+  shape: DrawnShape; isSel: boolean; pageId: string; onDelete: () => void; canvasZoom: number
 }) {
   const [ctxMenuPos, setCtxMenuPos] = React.useState<{ x: number; y: number } | null>(null)
+  const previewGRef = React.useRef<SVGGElement>(null)
+  const resizeRef   = React.useRef<{
+    hid: HandleId; startX: number; startY: number
+    origCoords: {x0:number;y0:number;x1:number;y1:number}
+  } | null>(null)
+  const PAD = 10
+
+  const startResize = (e: React.PointerEvent<SVGRectElement>, hid: HandleId) => {
+    e.stopPropagation(); e.preventDefault()
+
+    // ── Release any existing pointer capture on the parent SVG ──────────────
+    // The draw-mode SVG calls setPointerCapture on pointerdown. If we don't
+    // release it here, all subsequent pointermove events are redirected to that
+    // SVG and our window-level listener fires late / throttled.
+    const parentSVG = (e.currentTarget as SVGRectElement).ownerSVGElement
+    if (parentSVG && parentSVG.hasPointerCapture(e.pointerId)) {
+      parentSVG.releasePointerCapture(e.pointerId)
+    }
+
+    resizeRef.current = { hid, startX: e.clientX, startY: e.clientY,
+      origCoords: { x0: shape.x0, y0: shape.y0, x1: shape.x1, y1: shape.y1 } }
+
+    if (previewGRef.current)
+      imperativeResizePreview(previewGRef.current, shape, resizeRef.current.origCoords, PAD)
+
+    const onMove = (ev: PointerEvent) => {
+      if (!resizeRef.current || !previewGRef.current) return
+      const dx = (ev.clientX - resizeRef.current.startX) / canvasZoom
+      const dy = (ev.clientY - resizeRef.current.startY) / canvasZoom
+      imperativeResizePreview(previewGRef.current, shape,
+        applyHandle(resizeRef.current.hid, resizeRef.current.origCoords, dx, dy), PAD)
+    }
+    const onUp = (ev: PointerEvent) => {
+      if (!resizeRef.current) return
+      const dx = (ev.clientX - resizeRef.current.startX) / canvasZoom
+      const dy = (ev.clientY - resizeRef.current.startY) / canvasZoom
+      const next = applyHandle(resizeRef.current.hid, resizeRef.current.origCoords, dx, dy)
+      resizeRef.current = null
+      if (previewGRef.current) previewGRef.current.innerHTML = ''
+      getDrawLayerManager(pageId).patchShape(shape.id, next)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup',   onUp)
+      window.removeEventListener('pointercancel', onUp)
+    }
+    window.addEventListener('pointermove',   onMove)
+    window.addEventListener('pointerup',     onUp)
+    window.addEventListener('pointercancel', onUp)
+  }
+
+  const minX=Math.min(shape.x0,shape.x1), minY=Math.min(shape.y0,shape.y1)
+  const maxX=Math.max(shape.x0,shape.x1), maxY=Math.max(shape.y0,shape.y1)
+  const mx=(minX+maxX)/2, my=(minY+maxY)/2
+
   return (
     <>
       <g
         style={{ pointerEvents: 'all', cursor: CURSOR_MOVE }}
-        onContextMenu={e => {
-          e.preventDefault()
-          e.stopPropagation()
-          setCtxMenuPos({ x: e.clientX, y: e.clientY })
-        }}
+        onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setCtxMenuPos({ x: e.clientX, y: e.clientY }) }}
       >
-        {renderShapeSVG(shape, 1)}
-        {isSel && renderSelectionHandles(shape, onDelete)}
+        {/* Static shape rendered by React */}
+        <g>{renderShapeSVG(shape, 1)}</g>
+
+        {/* Resize preview — innerHTML only, React never touches this node */}
+        <g ref={previewGRef} />
+
+        {isSel && (
+          <g>
+            <rect x={minX-PAD} y={minY-PAD} width={maxX-minX+PAD*2} height={maxY-minY+PAD*2}
+              fill="rgba(99,102,241,0.04)" stroke="#6366f1" strokeWidth={1} rx={4} pointerEvents="none" />
+            {([
+              {id:'tl',cx:minX-PAD,cy:minY-PAD,c:true},{id:'tc',cx:mx,      cy:minY-PAD,c:false},
+              {id:'tr',cx:maxX+PAD,cy:minY-PAD,c:true},{id:'ml',cx:minX-PAD,cy:my,      c:false},
+              {id:'mr',cx:maxX+PAD,cy:my,      c:false},{id:'bl',cx:minX-PAD,cy:maxY+PAD,c:true},
+              {id:'bc',cx:mx,      cy:maxY+PAD,c:false},{id:'br',cx:maxX+PAD,cy:maxY+PAD,c:true},
+            ] as Array<{id:string,cx:number,cy:number,c:boolean}>).map(h => h.c ? (
+              <rect key={h.id}
+                x={h.cx-4.5} y={h.cy-4.5} width={9} height={9} rx={2.5}
+                fill="#fff" stroke="#6366f1" strokeWidth={1.5}
+                style={{cursor:HANDLE_CURSOR_MAP[h.id==='tl'||h.id==='br'?'nwse-resize':'nesw-resize']??'nwse-resize',filter:'drop-shadow(0 1px 2px rgba(0,0,0,0.18))'}}
+                pointerEvents="all"
+                onPointerDown={e => startResize(e, h.id as HandleId)}
+              />
+            ) : (
+              <rect key={h.id}
+                x={h.id==='tc'||h.id==='bc'?h.cx-5:h.cx-3} y={h.id==='ml'||h.id==='mr'?h.cy-5:h.cy-3}
+                width={h.id==='tc'||h.id==='bc'?10:6} height={h.id==='ml'||h.id==='mr'?10:6}
+                rx={2} fill="#6366f1" stroke="none"
+                style={{cursor:HANDLE_CURSOR_MAP[h.id==='ml'||h.id==='mr'?'ew-resize':'ns-resize']??'ew-resize',opacity:0.85}}
+                pointerEvents="all"
+                onPointerDown={e => startResize(e, h.id as HandleId)}
+              />
+            ))}
+          </g>
+        )}
       </g>
       {ctxMenuPos && typeof document !== 'undefined' && ReactDOM.createPortal(
-        <ShapeContextMenu
-          shape={shape}
-          screenX={ctxMenuPos.x}
-          screenY={ctxMenuPos.y}
-          pageId={pageId}
-          onClose={() => setCtxMenuPos(null)}
-          onDelete={onDelete}
-        />,
+        <ShapeContextMenu shape={shape} screenX={ctxMenuPos.x} screenY={ctxMenuPos.y}
+          pageId={pageId} onClose={() => setCtxMenuPos(null)} onDelete={onDelete} />,
         document.body
       )}
     </>
@@ -1890,6 +2026,9 @@ export function CanvasArea(s: ExportPageState) {
                         if (e.pointerType === 'touch' && !e.isPrimary) return
                         // If the click landed inside a context menu portal, don't intercept it
                         if ((e.target as HTMLElement).closest?.('[data-shape-context-menu]')) return
+                        // Resize handles release capture themselves — don't capture here if on a handle
+                        if ((e.target as SVGElement).hasAttribute('data-hid') ||
+                            (e.target as SVGElement).closest?.('[data-hid]')) return
                         e.preventDefault(); e.stopPropagation()
                         ;(e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId)
 
@@ -2072,6 +2211,7 @@ export function CanvasArea(s: ExportPageState) {
                             shape={displayShape}
                             isSel={isSel}
                             pageId={page.id}
+                            canvasZoom={canvasZoom}
                             onDelete={() => getDrawLayerManager(page.id).deleteShape(shape.id)}
                           />
                         )
