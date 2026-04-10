@@ -42,8 +42,9 @@ export function RightPanel(s: ExportPageState) {
   } = s
 
   const {
-    gridState, setActiveGrid, updateColumn, updateBaseline, updateModular,
-    gridEditMode, setGridEditMode,
+    gridState,
+    addLayer, removeLayer, updateLayer, toggleLayer, clearPage,
+    setEditingLayer, setDraftType,
   } = s as any
 
   // ── 快速插入文字 state ──
@@ -775,17 +776,24 @@ export function RightPanel(s: ExportPageState) {
           <div style={{ height: '1px', background: 'rgba(26,26,26,0.06)', marginBottom: '24px' }} />
 
           {/* ── Grid System ── */}
-          {gridState && (() => {
-            const active: string | null = gridState.activeType
-            const GRIDS = [
-              { key: 'modular',  labelZh: '模块网格', labelEn: 'Modular',  descZh: '行列交叉单元格',  descEn: 'Row × column cells' },
-              { key: 'column',   labelZh: '列网格',   labelEn: 'Column',   descZh: '内容对齐到列',    descEn: 'Align to columns' },
-              { key: 'baseline', labelZh: '基线网格', labelEn: 'Baseline', descZh: '文字行高对齐',    descEn: 'Typography rhythm' },
+          {gridState && activePageId && (() => {
+            const pageId: string = activePageId
+            const layers: any[] = gridState.pages?.[pageId] ?? []
+            const editingId: string | null = gridState.editingLayerId
+            const draftType: string = gridState.draftType ?? 'column'
+            const editingLayer = layers.find((l: any) => l.id === editingId) ?? null
+
+            const GRID_TYPES = [
+              { key: 'column',   labelZh: '列网格',   labelEn: 'Column',   descZh: '对齐到列',      descEn: 'Align columns' },
+              { key: 'baseline', labelZh: '基线网格', labelEn: 'Baseline', descZh: '文字行高',      descEn: 'Type rhythm' },
+              { key: 'table',    labelZh: '表格参考', labelEn: 'Table',    descZh: '行列参考线',    descEn: 'Row/col guide' },
             ] as const
+
+            const lb: React.CSSProperties = { fontSize: '0.55rem', color: '#b0b0ac', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em', width: 54, flexShrink: 0 }
 
             const sliderRow = (label: string, value: number, min: number, max: number, onChange: (v: number) => void, step = 1) => (
               <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '0.55rem', color: '#b0b0ac', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em', width: 54, flexShrink: 0 }}>{label}</span>
+                <span style={lb}>{label}</span>
                 <input type="range" min={min} max={max} step={step} value={value}
                   onChange={e => onChange(Number(e.target.value))}
                   style={{ flex: 1, accentColor: '#1a1a1a', height: 2 }} />
@@ -793,163 +801,210 @@ export function RightPanel(s: ExportPageState) {
               </div>
             )
 
+            const typeIcon = (key: string, isOn: boolean) => {
+              if (key === 'column') return (
+                <svg width="20" height="14" viewBox="0 0 20 14">
+                  {[0,1,2,3].map(i => <rect key={i} x={i*5+0.5} y={0} width={4} height={14} rx={1} fill={isOn ? '#1a1a1a' : '#d0d0cc'} fillOpacity={isOn ? 0.18 : 1} stroke={isOn ? '#1a1a1a' : '#c8c8c4'} strokeWidth={0.5} />)}
+                </svg>
+              )
+              if (key === 'baseline') return (
+                <svg width="20" height="14" viewBox="0 0 20 14">
+                  {[0,1,2,3,4].map(i => <line key={i} x1={0} y1={i*3+1.5} x2={20} y2={i*3+1.5} stroke={isOn ? '#1a1a1a' : '#c8c8c4'} strokeWidth={0.75} />)}
+                </svg>
+              )
+              // table
+              return (
+                <svg width="20" height="14" viewBox="0 0 20 14">
+                  <rect x={0.5} y={0.5} width={19} height={3.5} rx={0.8} fill={isOn ? '#1a1a1a' : '#d0d0cc'} fillOpacity={isOn ? 0.25 : 1} stroke={isOn ? '#1a1a1a' : '#c8c8c4'} strokeWidth={0.5} />
+                  {[0,1].map(r => [0,1,2].map(c => <rect key={`${r}${c}`} x={c*6.5+0.5} y={r*4.5+5} width={5.5} height={3.5} rx={0.5} fill={isOn ? '#1a1a1a' : '#e8e8e4'} fillOpacity={isOn ? 0.1 : 1} stroke={isOn ? '#1a1a1a' : '#d0d0cc'} strokeWidth={0.5} />))}
+                </svg>
+              )
+            }
+
+            const layerTypeColor: Record<string, string> = {
+              column:   'rgba(99,102,241,0.7)',
+              baseline: 'rgba(16,185,129,0.7)',
+              table:    'rgba(245,158,11,0.7)',
+            }
+
             return (
               <div style={{ marginBottom: '24px' }}>
-                {/* Section header */}
+                {/* Header */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
                   <p style={{ fontSize: '0.65rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b0b0ac', fontFamily: 'Inter, DM Sans, sans-serif' }}>
-                    {isZh ? '网格' : 'Grid'}
+                    {isZh ? '网格' : 'Grid'}{layers.length > 0 && <span style={{ color: '#d0d0cc', marginLeft: 4 }}>({layers.length})</span>}
                   </p>
-                  {active && (
-                    <button
-                      onClick={() => setActiveGrid(active)}
-                      style={{ fontSize: '0.55rem', color: '#bbb', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Inter, sans-serif', letterSpacing: '0.06em', padding: 0, transition: 'color 0.12s' }}
+                  {layers.length > 0 && (
+                    <button onClick={() => clearPage(pageId)}
+                      style={{ fontSize: '0.55rem', color: '#ccc', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'Inter, sans-serif', letterSpacing: '0.06em', padding: 0, transition: 'color 0.12s' }}
                       onMouseEnter={e => (e.currentTarget.style.color = '#e05c5c')}
-                      onMouseLeave={e => (e.currentTarget.style.color = '#bbb')}
-                    >{isZh ? '关闭 ×' : 'Off ×'}</button>
+                      onMouseLeave={e => (e.currentTarget.style.color = '#ccc')}
+                    >{isZh ? '清空 ×' : 'Clear ×'}</button>
                   )}
                 </div>
 
-                {/* Type selector — 3 cards */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '5px', marginBottom: active ? '12px' : 0 }}>
-                  {GRIDS.map(g => {
-                    const isOn = active === g.key
-                    return (
-                      <button key={g.key} onClick={() => setActiveGrid(g.key)}
-                        style={{
-                          padding: '9px 6px 8px',
-                          border: `1px solid ${isOn ? 'rgba(26,26,26,0.4)' : 'rgba(26,26,26,0.09)'}`,
-                          borderRadius: '8px',
-                          background: isOn ? 'rgba(26,26,26,0.05)' : 'transparent',
-                          cursor: 'pointer', textAlign: 'center',
-                          transition: 'all 0.12s',
-                        }}
-                        onMouseEnter={e => { if (!isOn) e.currentTarget.style.background = 'rgba(26,26,26,0.03)' }}
-                        onMouseLeave={e => { if (!isOn) e.currentTarget.style.background = 'transparent' }}
-                      >
-                        {/* Mini grid icon */}
-                        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '5px' }}>
-                          {g.key === 'column' && (
-                            <svg width="22" height="16" viewBox="0 0 22 16">
-                              {[0,1,2,3].map(i => <rect key={i} x={i*5.5+0.5} y={0} width={4} height={16} rx={1} fill={isOn ? '#1a1a1a' : '#d0d0cc'} fillOpacity={isOn ? 0.18 : 1} stroke={isOn ? '#1a1a1a' : '#c8c8c4'} strokeWidth={0.5} />)}
-                            </svg>
-                          )}
-                          {g.key === 'baseline' && (
-                            <svg width="22" height="16" viewBox="0 0 22 16">
-                              {[0,1,2,3,4,5].map(i => <line key={i} x1={0} y1={i*2.8+1.4} x2={22} y2={i*2.8+1.4} stroke={isOn ? '#1a1a1a' : '#c8c8c4'} strokeWidth={0.75} />)}
-                            </svg>
-                          )}
-                          {g.key === 'modular' && (
-                            <svg width="22" height="16" viewBox="0 0 22 16">
-                              {[0,1,2].map(r => [0,1,2].map(c => <rect key={`${r}${c}`} x={c*7.5+0.5} y={r*5.5+0.5} width={6} height={4.5} rx={0.8} fill={isOn ? '#1a1a1a' : '#d0d0cc'} fillOpacity={isOn ? 0.15 : 1} stroke={isOn ? '#1a1a1a' : '#c8c8c4'} strokeWidth={0.5} />))}
-                            </svg>
+                {/* Existing layers list */}
+                {layers.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }}>
+                    {layers.map((layer: any) => {
+                      const isEditing = editingId === layer.id
+                      const accent = layerTypeColor[layer.type] ?? '#888'
+                      const typeLabel = GRID_TYPES.find(g => g.key === layer.type)
+                      return (
+                        <div key={layer.id}>
+                          {/* Layer row */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 10px', borderRadius: '8px', border: `1px solid ${isEditing ? 'rgba(26,26,26,0.2)' : 'rgba(26,26,26,0.07)'}`, background: isEditing ? 'rgba(26,26,26,0.03)' : 'transparent', transition: 'all 0.12s' }}>
+                            {/* Visibility dot */}
+                            <button onClick={() => toggleLayer(pageId, layer.id)}
+                              title={layer.visible ? (isZh ? '隐藏' : 'Hide') : (isZh ? '显示' : 'Show')}
+                              style={{ width: 8, height: 8, borderRadius: '50%', border: 'none', padding: 0, flexShrink: 0, cursor: 'pointer', background: layer.visible ? accent : 'rgba(26,26,26,0.15)', transition: 'background 0.15s' }} />
+                            {/* Type badge */}
+                            <span style={{ fontSize: '0.58rem', fontFamily: 'Space Mono, monospace', color: layer.visible ? '#555' : '#bbb', flex: 1, letterSpacing: '0.04em' }}>
+                              {isZh ? typeLabel?.labelZh : typeLabel?.labelEn}
+                              {layer.type === 'column' && <span style={{ color: '#bbb' }}> ·{layer.columns}col</span>}
+                              {layer.type === 'baseline' && <span style={{ color: '#bbb' }}> ·{layer.lineHeight}px</span>}
+                              {layer.type === 'table' && <span style={{ color: '#bbb' }}> ·{layer.rows}×{layer.columns}</span>}
+                            </span>
+                            {/* Edit toggle */}
+                            <button onClick={() => setEditingLayer(isEditing ? null : layer.id)}
+                              style={{ fontSize: '0.55rem', color: isEditing ? '#1a1a1a' : '#bbb', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', fontFamily: 'Space Mono, monospace', transition: 'color 0.12s' }}>
+                              {isEditing ? '▲' : '▼'}
+                            </button>
+                            {/* Delete */}
+                            <button onClick={() => removeLayer(pageId, layer.id)}
+                              style={{ fontSize: '0.65rem', color: '#ccc', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', lineHeight: 1, transition: 'color 0.12s' }}
+                              onMouseEnter={e => (e.currentTarget.style.color = '#e05c5c')}
+                              onMouseLeave={e => (e.currentTarget.style.color = '#ccc')}>×</button>
+                          </div>
+
+                          {/* Inline editor for this layer */}
+                          {isEditing && (
+                            <div style={{ padding: '10px 12px', background: 'rgba(26,26,26,0.025)', borderRadius: '0 0 8px 8px', border: '1px solid rgba(26,26,26,0.07)', borderTop: 'none', display: 'flex', flexDirection: 'column', gap: '9px' }}>
+                              {layer.type === 'column' && (<>
+                                {sliderRow(isZh ? '列数' : 'Cols',   layer.columns,     1,    24,  v => updateLayer(pageId, layer.id, { columns: v }))}
+                                {sliderRow(isZh ? '间距' : 'Gutter', layer.gutter,      0,    80,  v => updateLayer(pageId, layer.id, { gutter: v }))}
+                                {sliderRow(isZh ? '边距' : 'Margin', layer.margin,      0,    120, v => updateLayer(pageId, layer.id, { margin: v }))}
+                                {sliderRow(isZh ? '线宽' : 'Stroke', layer.strokeWidth, 0.25, 4,   v => updateLayer(pageId, layer.id, { strokeWidth: v }), 0.25)}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span style={lb}>{isZh ? '颜色' : 'Color'}</span>
+                                  <input type="color"
+                                    value={'#' + (layer.color.match(/\d+/g) ?? ['99','102','241']).slice(0,3).map((n: string) => parseInt(n).toString(16).padStart(2,'0')).join('')}
+                                    onChange={e => { const h = e.target.value; const r=parseInt(h.slice(1,3),16),g2=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16); updateLayer(pageId, layer.id, { color: `rgba(${r},${g2},${b},0.15)` }) }}
+                                    style={{ width: 22, height: 22, border: '1px solid rgba(26,26,26,0.12)', borderRadius: '5px', cursor: 'pointer', background: 'none', padding: 0 }} />
+                                </div>
+                              </>)}
+                              {layer.type === 'baseline' && (<>
+                                {sliderRow(isZh ? '行高' : 'Height', layer.lineHeight,  2,    64,  v => updateLayer(pageId, layer.id, { lineHeight: v }))}
+                                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                  {[4,6,8,10,12,16,20,24].map((v: number) => (
+                                    <button key={v} onClick={() => updateLayer(pageId, layer.id, { lineHeight: v })}
+                                      style={{ padding: '2px 6px', borderRadius: '5px', border: `1px solid ${layer.lineHeight === v ? 'rgba(26,26,26,0.4)' : 'rgba(26,26,26,0.1)'}`, background: layer.lineHeight === v ? 'rgba(26,26,26,0.07)' : 'transparent', color: layer.lineHeight === v ? '#1a1a1a' : '#aaa', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.58rem', transition: 'all 0.1s' }}>{v}</button>
+                                  ))}
+                                </div>
+                                {sliderRow(isZh ? '线宽' : 'Stroke', layer.strokeWidth, 0.25, 4,   v => updateLayer(pageId, layer.id, { strokeWidth: v }), 0.25)}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span style={lb}>{isZh ? '颜色' : 'Color'}</span>
+                                  <input type="color"
+                                    value={'#' + (layer.color.match(/\d+/g) ?? ['16','185','129']).slice(0,3).map((n: string) => parseInt(n).toString(16).padStart(2,'0')).join('')}
+                                    onChange={e => { const h = e.target.value; const r=parseInt(h.slice(1,3),16),g2=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16); updateLayer(pageId, layer.id, { color: `rgba(${r},${g2},${b},0.2)` }) }}
+                                    style={{ width: 22, height: 22, border: '1px solid rgba(26,26,26,0.12)', borderRadius: '5px', cursor: 'pointer', background: 'none', padding: 0 }} />
+                                </div>
+                              </>)}
+                              {layer.type === 'table' && (<>
+                                {sliderRow(isZh ? '行数' : 'Rows',   layer.rows,        1,    20,  v => updateLayer(pageId, layer.id, { rows: v }))}
+                                {sliderRow(isZh ? '列数' : 'Cols',   layer.columns,     1,    24,  v => updateLayer(pageId, layer.id, { columns: v }))}
+                                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                  {([{r:2,c:2},{r:3,c:3},{r:4,c:4},{r:3,c:4},{r:5,c:5},{r:6,c:3}] as const).map(({r,c}) => {
+                                    const on = layer.rows===r && layer.columns===c
+                                    return <button key={`${r}x${c}`} onClick={() => updateLayer(pageId, layer.id, { rows: r, columns: c })}
+                                      style={{ padding:'2px 7px', borderRadius:'5px', border:`1px solid ${on?'rgba(26,26,26,0.4)':'rgba(26,26,26,0.1)'}`, background:on?'rgba(26,26,26,0.07)':'transparent', color:on?'#1a1a1a':'#aaa', cursor:'pointer', fontFamily:'Space Mono, monospace', fontSize:'0.58rem', transition:'all 0.1s' }}>{r}×{c}</button>
+                                  })}
+                                </div>
+                                {sliderRow(isZh ? '线宽' : 'Stroke', layer.strokeWidth, 0.25, 4,   v => updateLayer(pageId, layer.id, { strokeWidth: v }), 0.25)}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span style={lb}>{isZh ? '颜色' : 'Color'}</span>
+                                  <input type="color"
+                                    value={'#' + (layer.color.match(/\d+/g) ?? ['99','102','241']).slice(0,3).map((n: string) => parseInt(n).toString(16).padStart(2,'0')).join('')}
+                                    onChange={e => { const h = e.target.value; const r=parseInt(h.slice(1,3),16),g2=parseInt(h.slice(3,5),16),b=parseInt(h.slice(5,7),16); updateLayer(pageId, layer.id, { color: `rgba(${r},${g2},${b},0.25)` }) }}
+                                    style={{ width: 22, height: 22, border: '1px solid rgba(26,26,26,0.12)', borderRadius: '5px', cursor: 'pointer', background: 'none', padding: 0 }} />
+                                  {[{rgba:'rgba(99,102,241,0.25)',hex:'#6366f1'},{rgba:'rgba(16,185,129,0.25)',hex:'#10b981'},{rgba:'rgba(245,158,11,0.25)',hex:'#f59e0b'},{rgba:'rgba(239,68,68,0.25)',hex:'#ef4444'},{rgba:'rgba(26,26,26,0.15)',hex:'#1a1a1a'}].map(({rgba,hex}) => (
+                                    <button key={hex} onClick={() => updateLayer(pageId, layer.id, { color: rgba })}
+                                      style={{ width:16, height:16, borderRadius:'50%', border: layer.color===rgba?'2px solid #1a1a1a':'1px solid rgba(26,26,26,0.12)', background:hex, cursor:'pointer', padding:0, flexShrink:0, transition:'transform 0.1s', transform:layer.color===rgba?'scale(1.25)':'scale(1)' }} />
+                                  ))}
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                  <span style={{ fontSize: '0.55rem', color: '#b0b0ac', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em' }}>{isZh ? '表头行' : 'Header row'}</span>
+                                  <button onClick={() => updateLayer(pageId, layer.id, { showHeader: !layer.showHeader })}
+                                    style={{ padding:'3px 10px', borderRadius:'6px', border:`1px solid ${layer.showHeader?'rgba(26,26,26,0.4)':'rgba(26,26,26,0.1)'}`, background:layer.showHeader?'rgba(26,26,26,0.07)':'transparent', color:layer.showHeader?'#1a1a1a':'#aaa', cursor:'pointer', fontFamily:'Space Mono, monospace', fontSize:'0.58rem', transition:'all 0.12s' }}>
+                                    {layer.showHeader?(isZh?'开 ●':'ON ●'):(isZh?'关 ○':'OFF ○')}
+                                  </button>
+                                </div>
+                                <div style={{ height: '1px', background: 'rgba(26,26,26,0.07)' }} />
+                                <button
+                                  onClick={() => {
+                                    const initData = {
+                                      rows: Array.from({ length: layer.rows }, (_: unknown, ri: number) => ({
+                                        cells: Array.from({ length: layer.columns }, () => ({ content: ri===0 && layer.showHeader ? (isZh?'标题':'Header') : '' }))
+                                      })),
+                                      colWidths: Array.from({ length: layer.columns }, () => Math.floor(800 / layer.columns)),
+                                      headerRow: layer.showHeader,
+                                    }
+                                    addBlock('table', '', { tableData: initData, pixelPos: { x: 30, y: 30, w: 800, h: layer.rows * 40 + 8 } } as any)
+                                  }}
+                                  style={{ padding:'8px 0', borderRadius:'7px', border:'none', background:'#1a1a1a', cursor:'pointer', fontSize:'0.72rem', fontFamily:'Inter, DM Sans, sans-serif', color:'#f7f7f5', fontWeight:500, letterSpacing:'0.04em', transition:'background 0.12s' }}
+                                  onMouseEnter={e => (e.currentTarget.style.background = '#333')}
+                                  onMouseLeave={e => (e.currentTarget.style.background = '#1a1a1a')}
+                                >
+                                  {isZh ? `插入 ${layer.rows} × ${layer.columns} 表格 ↵` : `Insert ${layer.rows} × ${layer.columns} table ↵`}
+                                </button>
+                              </>)}
+                            </div>
                           )}
                         </div>
-                        <span style={{ fontSize: '0.58rem', fontFamily: 'Inter, DM Sans, sans-serif', color: isOn ? '#1a1a1a' : '#aaa', fontWeight: isOn ? 600 : 400, letterSpacing: '0.04em', display: 'block', lineHeight: 1.2 }}>
-                          {isZh ? g.labelZh : g.labelEn}
-                        </span>
-                        <span style={{ fontSize: '0.5rem', fontFamily: 'Inter, DM Sans, sans-serif', color: isOn ? '#888' : '#ccc', display: 'block', marginTop: '2px', lineHeight: 1.2, letterSpacing: '0.02em' }}>
-                          {isZh ? g.descZh : g.descEn}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-
-                {/* ── Column controls ── */}
-                {active === 'column' && (
-                  <div style={{ padding: '12px 13px', background: 'rgba(26,26,26,0.03)', borderRadius: '9px', border: '1px solid rgba(26,26,26,0.07)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {sliderRow(isZh ? '列数' : 'Cols', gridState.column.columns, 1, 24, v => updateColumn({ columns: v }))}
-                    {sliderRow(isZh ? '间距' : 'Gutter', gridState.column.gutter, 0, 80, v => updateColumn({ gutter: v }))}
-                    {sliderRow(isZh ? '边距' : 'Margin', gridState.column.margin, 0, 120, v => updateColumn({ margin: v }))}
-                    {sliderRow(isZh ? '线宽' : 'Stroke', gridState.column.strokeWidth ?? 0.5, 0.25, 4, v => updateColumn({ strokeWidth: v }), 0.25)}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-                      <span style={{ fontSize: '0.55rem', color: '#b0b0ac', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em', width: 54, flexShrink: 0 }}>{isZh ? '颜色' : 'Color'}</span>
-                      <input type="color"
-                        value={'#' + (gridState.column.color.match(/\d+/g) ?? ['99','102','241']).slice(0,3).map((n: string) => parseInt(n).toString(16).padStart(2,'0')).join('')}
-                        onChange={e => { const h = e.target.value; const r = parseInt(h.slice(1,3),16); const g2 = parseInt(h.slice(3,5),16); const b = parseInt(h.slice(5,7),16); updateColumn({ color: `rgba(${r},${g2},${b},0.15)` }) }}
-                        style={{ width: 22, height: 22, border: '1px solid rgba(26,26,26,0.12)', borderRadius: '5px', cursor: 'pointer', background: 'none', padding: 0, flexShrink: 0 }} />
-                    </div>
+                      )
+                    })}
                   </div>
                 )}
 
-                {/* ── Baseline controls ── */}
-                {active === 'baseline' && (
-                  <div style={{ padding: '12px 13px', background: 'rgba(26,26,26,0.03)', borderRadius: '9px', border: '1px solid rgba(26,26,26,0.07)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {sliderRow(isZh ? '行高' : 'Height', gridState.baseline.lineHeight, 2, 64, v => updateBaseline({ lineHeight: v }))}
-                    <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-                      {[4,6,8,10,12,16,20,24].map(v => (
-                        <button key={v} onClick={() => updateBaseline({ lineHeight: v })}
-                          style={{ padding: '3px 7px', borderRadius: '5px', border: `1px solid ${gridState.baseline.lineHeight === v ? 'rgba(26,26,26,0.4)' : 'rgba(26,26,26,0.1)'}`, background: gridState.baseline.lineHeight === v ? 'rgba(26,26,26,0.07)' : 'transparent', color: gridState.baseline.lineHeight === v ? '#1a1a1a' : '#aaa', cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.58rem', transition: 'all 0.1s' }}>
-                          {v}
+                {/* Add new layer section */}
+                <div style={{ padding: '10px 12px', background: 'rgba(26,26,26,0.025)', borderRadius: '9px', border: '1px dashed rgba(26,26,26,0.1)' }}>
+                  <p style={{ fontSize: '0.52rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#c0c0bc', fontFamily: 'Inter, DM Sans, sans-serif', marginBottom: '8px' }}>
+                    {isZh ? '添加网格层' : 'Add layer'}
+                  </p>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px', marginBottom: '8px' }}>
+                    {GRID_TYPES.map(g => {
+                      const isSelected = draftType === g.key
+                      return (
+                        <button key={g.key} onClick={() => setDraftType(g.key as any)}
+                          style={{ padding: '7px 4px 6px', border: `1px solid ${isSelected ? 'rgba(26,26,26,0.35)' : 'rgba(26,26,26,0.08)'}`, borderRadius: '7px', background: isSelected ? 'rgba(26,26,26,0.05)' : 'transparent', cursor: 'pointer', textAlign: 'center', transition: 'all 0.12s' }}
+                          onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(26,26,26,0.03)' }}
+                          onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent' }}>
+                          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '4px' }}>{typeIcon(g.key, isSelected)}</div>
+                          <span style={{ fontSize: '0.55rem', fontFamily: 'Inter, DM Sans, sans-serif', color: isSelected ? '#1a1a1a' : '#aaa', fontWeight: isSelected ? 600 : 400, display: 'block' }}>
+                            {isZh ? g.labelZh : g.labelEn}
+                          </span>
                         </button>
-                      ))}
-                    </div>
-                    {sliderRow(isZh ? '线宽' : 'Stroke', gridState.baseline.strokeWidth ?? 0.75, 0.25, 4, v => updateBaseline({ strokeWidth: v }), 0.25)}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '0.55rem', color: '#b0b0ac', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em', width: 54, flexShrink: 0 }}>{isZh ? '颜色' : 'Color'}</span>
-                      <input type="color"
-                        value={'#' + (gridState.baseline.color.match(/\d+/g) ?? ['16','185','129']).slice(0,3).map((n: string) => parseInt(n).toString(16).padStart(2,'0')).join('')}
-                        onChange={e => { const h = e.target.value; const r = parseInt(h.slice(1,3),16); const g2 = parseInt(h.slice(3,5),16); const b = parseInt(h.slice(5,7),16); updateBaseline({ color: `rgba(${r},${g2},${b},0.2)` }) }}
-                        style={{ width: 22, height: 22, border: '1px solid rgba(26,26,26,0.12)', borderRadius: '5px', cursor: 'pointer', background: 'none', padding: 0, flexShrink: 0 }} />
-                    </div>
+                      )
+                    })}
                   </div>
-                )}
-
-                {/* ── Modular controls ── */}
-                {active === 'modular' && (
-                  <div style={{ padding: '12px 13px', background: 'rgba(26,26,26,0.03)', borderRadius: '9px', border: '1px solid rgba(26,26,26,0.07)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {/* 编辑模式开关 */}
-                    <button
-                      onClick={() => setGridEditMode?.(!gridEditMode)}
-                      style={{ width: '100%', padding: '8px 12px', borderRadius: '7px', cursor: 'pointer', border: `1px solid ${gridEditMode ? 'rgba(196,160,68,0.6)' : 'rgba(26,26,26,0.1)'}`, background: gridEditMode ? 'rgba(196,160,68,0.1)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: 'Inter, DM Sans, sans-serif', transition: 'all 0.12s' }}>
-                      <span style={{ fontSize: '0.72rem', color: gridEditMode ? '#c4a044' : '#888' }}>{isZh ? '✎ 编辑网格文字' : '✎ Edit grid text'}</span>
-                      <span style={{ fontSize: '0.65rem', color: gridEditMode ? '#c4a044' : '#bbb', fontFamily: 'Space Mono, monospace' }}>{gridEditMode ? (isZh ? '开 ●' : 'ON ●') : (isZh ? '关 ○' : 'OFF ○')}</span>
-                    </button>
-                    {gridEditMode && <p style={{ fontSize: '0.6rem', color: '#aaa', fontFamily: 'Inter, DM Sans, sans-serif', lineHeight: 1.5 }}>{isZh ? '点格子打字 · 拖空白处移动网格 · 左侧调字号' : 'Click cell to type · Drag to move grid · Font size below'}</p>}
-                    {sliderRow(isZh ? '列数' : 'Cols', gridState.modular.columns, 1, 24, v => updateModular({ columns: v }))}
-                    {sliderRow(isZh ? '行数' : 'Rows', gridState.modular.rows, 1, 32, v => updateModular({ rows: v }))}
-                    {sliderRow(isZh ? '列间距' : 'Col gap', gridState.modular.columnGutter, 0, 40, v => updateModular({ columnGutter: v }))}
-                    {sliderRow(isZh ? '行间距' : 'Row gap', gridState.modular.rowGutter, 0, 40, v => updateModular({ rowGutter: v }))}
-                    {sliderRow(isZh ? '边距' : 'Margin', gridState.modular.margin, 0, 100, v => updateModular({ margin: v }))}
-                    {sliderRow(isZh ? '线宽' : 'Stroke', gridState.modular.strokeWidth ?? 0.5, 0.25, 4, v => updateModular({ strokeWidth: v }), 0.25)}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '0.55rem', color: '#b0b0ac', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em', width: 54, flexShrink: 0 }}>{isZh ? '颜色' : 'Color'}</span>
-                      <input type="color"
-                        value={'#' + (gridState.modular.color.match(/\d+/g) ?? ['245','158','11']).slice(0,3).map((n: string) => parseInt(n).toString(16).padStart(2,'0')).join('')}
-                        onChange={e => { const h = e.target.value; const r = parseInt(h.slice(1,3),16); const g2 = parseInt(h.slice(3,5),16); const b = parseInt(h.slice(5,7),16); updateModular({ color: `rgba(${r},${g2},${b},0.15)` }) }}
-                        style={{ width: 22, height: 22, border: '1px solid rgba(26,26,26,0.12)', borderRadius: '5px', cursor: 'pointer', background: 'none', padding: 0, flexShrink: 0 }} />
-                    </div>
-                    {/* 格子文字设置 */}
-                    {sliderRow(isZh ? '文字大小' : 'Text size', gridState.modular.cellFontSize ?? 13, 8, 32, v => updateModular({ cellFontSize: v }))}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '0.55rem', color: '#b0b0ac', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em', width: 54, flexShrink: 0 }}>{isZh ? '文字色' : 'Text'}</span>
-                      <input type="color"
-                        value={gridState.modular.cellColor ?? '#1a1a1a'}
-                        onChange={e => updateModular({ cellColor: e.target.value })}
-                        style={{ width: 22, height: 22, border: '1px solid rgba(26,26,26,0.12)', borderRadius: '5px', cursor: 'pointer', background: 'none', padding: 0, flexShrink: 0 }} />
-                      <span style={{ fontSize: '0.58rem', color: '#bbb', fontFamily: 'Space Mono, monospace' }}>{gridState.modular.cellColor ?? '#1a1a1a'}</span>
-                    </div>
-                  </div>
-                )}
+                  <button
+                    onClick={() => addLayer(pageId, draftType as any)}
+                    style={{ width: '100%', padding: '7px 0', borderRadius: '7px', border: '1px solid rgba(26,26,26,0.15)', background: 'rgba(26,26,26,0.05)', cursor: 'pointer', fontSize: '0.7rem', fontFamily: 'Inter, DM Sans, sans-serif', color: '#1a1a1a', fontWeight: 500, transition: 'background 0.12s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.09)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.05)')}
+                  >
+                    <span style={{ fontSize: '0.9rem', lineHeight: 1 }}>+</span>
+                    {isZh ? `添加${GRID_TYPES.find(g=>g.key===draftType)?.labelZh ?? ''}层` : `Add ${GRID_TYPES.find(g=>g.key===draftType)?.labelEn ?? ''} layer`}
+                  </button>
+                </div>
               </div>
             )
           })()}
 
-
-
-          {/* Add Table block + Sticky + Emoji */}
+          {/* Add Sticky + Emoji */}
           <div style={{ height: '1px', background: 'rgba(26,26,26,0.06)', marginBottom: '16px' }} />
           <div style={{ marginBottom: '20px' }}>
             <p style={{ fontSize: '0.65rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b0b0ac', marginBottom: '10px', fontFamily: 'Inter, DM Sans, sans-serif' }}>{isZh ? '添加块' : 'Add Block'}</p>
-            <div onClick={() => addBlock('table', '')}
-              className="_rp-addblock"
-              style={{ padding: '9px 13px', border: '1px solid rgba(26,26,26,0.08)', borderRadius: '8px', marginBottom: '6px', cursor: 'pointer', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.82rem', color: '#666', lineHeight: 1.55, transition: 'background 0.12s', display: 'flex', alignItems: 'center', gap: '8px' }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.03)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-              <span style={{ fontSize: '1rem', color: '#bbb' }}>⊞</span>
-              {isZh ? '表格' : 'Table'}
-            </div>
             {/* Sticky note */}
             <div
               className="_rp-addblock"

@@ -1,89 +1,162 @@
 import { useCallback, useReducer } from 'react'
 import {
   GridSystemState,
-  GridType,
-  ColumnGridConfig,
-  BaselineGridConfig,
-  ModularGridConfig,
+  GridLayer,
+  GridLayerType,
   DEFAULT_GRID_STATE,
+  makeDefaultLayer,
 } from './gridTypes'
 
+// ─── Tiny ID generator ────────────────────────────────────────────────────
+let _seq = 0
+function genId() { return `gl_${Date.now()}_${++_seq}` }
+
+// ─── Actions ─────────────────────────────────────────────────────────────
+
 type GridAction =
-  | { type: 'SET_ACTIVE'; payload: GridType | null }
-  | { type: 'UPDATE_COLUMN'; payload: Partial<ColumnGridConfig> }
-  | { type: 'UPDATE_BASELINE'; payload: Partial<BaselineGridConfig> }
-  | { type: 'UPDATE_MODULAR'; payload: Partial<ModularGridConfig> }
-  | { type: 'UPDATE_MODULAR_CELL'; payload: { index: number; text: string; align?: 'left' | 'center' | 'right' } }
+  | { type: 'ADD_LAYER';    pageId: string; layerType: GridLayerType }
+  | { type: 'REMOVE_LAYER'; pageId: string; layerId: string }
+  | { type: 'UPDATE_LAYER'; pageId: string; layerId: string; patch: Partial<GridLayer> }
+  | { type: 'TOGGLE_LAYER'; pageId: string; layerId: string }
+  | { type: 'REORDER_LAYERS'; pageId: string; layers: GridLayer[] }
+  | { type: 'CLEAR_PAGE';   pageId: string }
+  | { type: 'SET_EDITING';  layerId: string | null }
+  | { type: 'SET_DRAFT_TYPE'; draftType: GridLayerType }
   | { type: 'RESET' }
+
+// ─── Reducer ─────────────────────────────────────────────────────────────
+
+function getPageLayers(state: GridSystemState, pageId: string): GridLayer[] {
+  return state.pages[pageId] ?? []
+}
 
 function gridReducer(state: GridSystemState, action: GridAction): GridSystemState {
   switch (action.type) {
-    case 'SET_ACTIVE':
-      return { ...state, activeType: action.payload }
-    case 'UPDATE_COLUMN':
-      return { ...state, column: { ...state.column, ...action.payload } }
-    case 'UPDATE_BASELINE':
-      return { ...state, baseline: { ...state.baseline, ...action.payload } }
-    case 'UPDATE_MODULAR':
-      return { ...state, modular: { ...state.modular, ...action.payload } }
-    case 'UPDATE_MODULAR_CELL': {
-      const texts = [...(state.modular.cellTexts ?? [])]
-      const aligns = [...(state.modular.cellAligns ?? [])]
-      texts[action.payload.index] = action.payload.text
-      if (action.payload.align !== undefined) aligns[action.payload.index] = action.payload.align
-      return { ...state, modular: { ...state.modular, cellTexts: texts, cellAligns: aligns } }
+
+    case 'ADD_LAYER': {
+      const id = genId()
+      const newLayer = makeDefaultLayer(action.layerType, id)
+      const existing = getPageLayers(state, action.pageId)
+      return {
+        ...state,
+        pages: {
+          ...state.pages,
+          [action.pageId]: [...existing, newLayer],
+        },
+        editingLayerId: id,
+      }
     }
+
+    case 'REMOVE_LAYER': {
+      const layers = getPageLayers(state, action.pageId).filter(l => l.id !== action.layerId)
+      const editingLayerId = state.editingLayerId === action.layerId ? null : state.editingLayerId
+      return {
+        ...state,
+        pages: { ...state.pages, [action.pageId]: layers },
+        editingLayerId,
+      }
+    }
+
+    case 'UPDATE_LAYER': {
+      const layers = getPageLayers(state, action.pageId).map(l =>
+        l.id === action.layerId ? { ...l, ...action.patch } as GridLayer : l
+      )
+      return {
+        ...state,
+        pages: { ...state.pages, [action.pageId]: layers },
+      }
+    }
+
+    case 'TOGGLE_LAYER': {
+      const layers = getPageLayers(state, action.pageId).map(l =>
+        l.id === action.layerId ? { ...l, visible: !l.visible } : l
+      )
+      return {
+        ...state,
+        pages: { ...state.pages, [action.pageId]: layers },
+      }
+    }
+
+    case 'REORDER_LAYERS': {
+      return {
+        ...state,
+        pages: { ...state.pages, [action.pageId]: action.layers },
+      }
+    }
+
+    case 'CLEAR_PAGE': {
+      const { [action.pageId]: _, ...rest } = state.pages
+      return { ...state, pages: rest, editingLayerId: null }
+    }
+
+    case 'SET_EDITING':
+      return { ...state, editingLayerId: action.layerId }
+
+    case 'SET_DRAFT_TYPE':
+      return { ...state, draftType: action.draftType }
+
     case 'RESET':
       return DEFAULT_GRID_STATE
+
     default:
       return state
   }
 }
 
-// ─── Hook ─────────────────────────────────────────────────────────────────────
+// ─── Hook ─────────────────────────────────────────────────────────────────
 
 export function useGridSystem() {
   const [state, dispatch] = useReducer(gridReducer, DEFAULT_GRID_STATE)
 
-  /** 切换网格类型；再次点击同类型则关闭 */
-  const setActiveGrid = useCallback((type: GridType) => {
-    dispatch({
-      type: 'SET_ACTIVE',
-      payload: state.activeType === type ? null : type,
-    })
-  }, [state.activeType])
-
-  /** 完全关闭网格 */
-  const hideGrid = useCallback(() => {
-    dispatch({ type: 'SET_ACTIVE', payload: null })
+  const addLayer = useCallback((pageId: string, layerType: GridLayerType) => {
+    dispatch({ type: 'ADD_LAYER', pageId, layerType })
   }, [])
 
-  const updateColumn = useCallback((patch: Partial<ColumnGridConfig>) => {
-    dispatch({ type: 'UPDATE_COLUMN', payload: patch })
+  const removeLayer = useCallback((pageId: string, layerId: string) => {
+    dispatch({ type: 'REMOVE_LAYER', pageId, layerId })
   }, [])
 
-  const updateBaseline = useCallback((patch: Partial<BaselineGridConfig>) => {
-    dispatch({ type: 'UPDATE_BASELINE', payload: patch })
+  const updateLayer = useCallback((pageId: string, layerId: string, patch: Partial<GridLayer>) => {
+    dispatch({ type: 'UPDATE_LAYER', pageId, layerId, patch })
   }, [])
 
-  const updateModular = useCallback((patch: Partial<ModularGridConfig>) => {
-    dispatch({ type: 'UPDATE_MODULAR', payload: patch })
+  const toggleLayer = useCallback((pageId: string, layerId: string) => {
+    dispatch({ type: 'TOGGLE_LAYER', pageId, layerId })
   }, [])
 
-  const updateModularCell = useCallback((index: number, text: string, align?: 'left' | 'center' | 'right') => {
-    dispatch({ type: 'UPDATE_MODULAR_CELL', payload: { index, text, align } })
+  const reorderLayers = useCallback((pageId: string, layers: GridLayer[]) => {
+    dispatch({ type: 'REORDER_LAYERS', pageId, layers })
   }, [])
+
+  const clearPage = useCallback((pageId: string) => {
+    dispatch({ type: 'CLEAR_PAGE', pageId })
+  }, [])
+
+  const setEditingLayer = useCallback((layerId: string | null) => {
+    dispatch({ type: 'SET_EDITING', layerId })
+  }, [])
+
+  const setDraftType = useCallback((draftType: GridLayerType) => {
+    dispatch({ type: 'SET_DRAFT_TYPE', draftType })
+  }, [])
+
+  const getPageLayers = useCallback((pageId: string): GridLayer[] => {
+    return state.pages[pageId] ?? []
+  }, [state.pages])
 
   const reset = useCallback(() => dispatch({ type: 'RESET' }), [])
 
   return {
     gridState: state,
-    setActiveGrid,
-    hideGrid,
-    updateColumn,
-    updateBaseline,
-    updateModular,
-    updateModularCell,
+    addLayer,
+    removeLayer,
+    updateLayer,
+    toggleLayer,
+    reorderLayers,
+    clearPage,
+    setEditingLayer,
+    setDraftType,
+    getPageLayers,
     reset,
   }
 }

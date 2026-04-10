@@ -90,6 +90,8 @@ export function useExportPage() {
     const loaded = migrateOrLoad(id)
     return loaded[0]?.id ?? ''
   })
+  const activePageIdRef = useRef<string>('')
+  activePageIdRef.current = activePageId  // render 期间同步更新，无需 useEffect
 
 // ── Undo / Redo ──
   const undoStack  = useRef<Page[][]>([])
@@ -552,16 +554,20 @@ export function useExportPage() {
   }
 
   // ── Block CRUD ──
-  const addBlock = (type: BlockType, content: string, caption?: string, images?: string[]) => {
-    console.log('[addBlock] ENTRY', activePage?.id, activePage?.isCover)
-    const targetPage = activePage
+  const addBlock = useCallback((type: BlockType, content: string, caption?: string, images?: string[]) => {
+    const currentPageId = activePageIdRef.current || activePageId
+    const targetPage = pagesRef.current.find(p => p.id === currentPageId) ?? pagesRef.current[0]
     if (!targetPage) return
     updatePageBlocks(targetPage.id, b => {
-      const cw       = contentWidth
+      const cw       = 860
       const defaultH = type === 'image' || type === 'image-row' ? Math.round(cw * 0.5625) : type === 'title' ? Math.round(cw * 0.3) : type === 'table' ? 160 : Math.round(cw * 0.2)
-      return [...b, { id: generateId(), type, content, caption, images, pixelPos: { x: 20, y: 20, w: cw, h: defaultH }, ...(type === 'table' ? { tableData: { rows: [[{text:'标题A',align:'left',bold:true},{text:'标题B',align:'left',bold:true},{text:'标题C',align:'left',bold:true}],[{text:'',align:'left'},{text:'',align:'left'},{text:'',align:'left'}],[{text:'',align:'left'},{text:'',align:'left'},{text:'',align:'left'}]], colWidths:[0.333,0.333,0.334], headerRow:true, headerCol:false, borderColor:'rgba(26,26,26,0.12)', fontSize:13, fontFamily:'Inter, DM Sans, sans-serif', cellPadding:10 } } : {}) }]
+      // 自动计算 y 位置：放在现有所有 blocks 的最下方，避免叠加
+      const autoY = b.length > 0
+        ? b.reduce((max, bl) => Math.max(max, (bl.pixelPos?.y ?? 0) + (bl.pixelPos?.h ?? 0)), 0) + 20
+        : 20
+      return [...b, { id: generateId(), type, content, caption, images, pixelPos: { x: 20, y: autoY, w: cw, h: defaultH }, ...(type === 'table' ? { tableData: { rows: [[{text:'标题A',align:'left',bold:true},{text:'标题B',align:'left',bold:true},{text:'标题C',align:'left',bold:true}],[{text:'',align:'left'},{text:'',align:'left'},{text:'',align:'left'}],[{text:'',align:'left'},{text:'',align:'left'},{text:'',align:'left'}]], colWidths:[0.333,0.333,0.334], headerRow:true, headerCol:false, borderColor:'rgba(26,26,26,0.12)', fontSize:13, fontFamily:'Inter, DM Sans, sans-serif', cellPadding:10 } } : {}) }]
     })
-  }
+  }, [updatePageBlocks])  // activePageId 通过 ref 读取，无需列为依赖
 
   const addBlockAt = (type: BlockType, content: string, pxX: number, pxY: number, caption?: string, images?: string[]) => {
     const cw       = contentWidth

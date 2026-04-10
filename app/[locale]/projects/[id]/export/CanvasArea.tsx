@@ -1,5 +1,6 @@
 'use client'
 import React from 'react'
+import { GridLayerOverlay } from './GridOverlay'
 import ReactDOM from 'react-dom'
 import { Rnd } from 'react-rnd'
 import { Block, School } from '../../../../../lib/exportStyles'
@@ -474,6 +475,63 @@ function DrawModeShapeWrapper({ shape, isSel, pageId, onDelete, canvasZoom }: {
   )
 }
 
+// ── SmartPositionedMenu ──────────────────────────────────────────────────────
+// 自动钳位：useLayoutEffect 同步量尺寸，翻转策略保证菜单永远完整显示在视口内
+function SmartPositionedMenu({
+  screenX, screenY, onClose, style, children,
+}: {
+  screenX: number; screenY: number; onClose: () => void
+  style?: React.CSSProperties; children: React.ReactNode
+}) {
+  const ref = React.useRef<HTMLDivElement>(null)
+  const [pos, setPos] = React.useState({ x: screenX, y: screenY })
+  const [visible, setVisible] = React.useState(false)
+
+  React.useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler, true)
+    return () => document.removeEventListener('mousedown', handler, true)
+  }, [onClose])
+
+  React.useLayoutEffect(() => {
+    if (!ref.current) return
+    const { width, height } = ref.current.getBoundingClientRect()
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    const M = 8
+    const x = screenX + width  + M > vw ? screenX - width  : screenX
+    const y = screenY + height + M > vh ? screenY - height : screenY
+    setPos({
+      x: Math.max(M, Math.min(x, vw - width  - M)),
+      y: Math.max(M, Math.min(y, vh - height - M)),
+    })
+    setVisible(true)
+  }, [screenX, screenY])
+
+  return (
+    <div
+      ref={ref}
+      data-shape-context-menu="true"
+      onClick={e => e.stopPropagation()}
+      onMouseDown={e => { e.stopPropagation(); e.preventDefault() }}
+      onPointerDown={e => { e.stopPropagation(); e.preventDefault() }}
+      onContextMenu={e => e.preventDefault()}
+      style={{
+        position: 'fixed',
+        left: pos.x, top: pos.y,
+        zIndex: 9999,
+        opacity: visible ? 1 : 0,
+        transition: visible ? 'opacity 0.08s ease' : 'none',
+        ...style,
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
 // ── ShapeContextMenu ─────────────────────────────────────────────────────────
 // Design ref: shadcn/ui ContextMenu + tldraw StylePanel
 // White bg, razor-thin border, 28px row height, dot color swatches
@@ -493,26 +551,7 @@ interface ShapeContextMenuProps {
 }
 
 function ShapeContextMenu({ shape, screenX, screenY, pageId, onClose, onDelete }: ShapeContextMenuProps) {
-  const ref = React.useRef<HTMLDivElement>(null)
   const [localRotation, setLocalRotation] = React.useState<number>((shape as any).rotation ?? 0)
-  const [pos, setPos] = React.useState({ x: screenX + 4, y: screenY + 4 })
-
-  React.useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
-    }
-    document.addEventListener('mousedown', handler, true)
-    return () => document.removeEventListener('mousedown', handler, true)
-  }, [onClose])
-
-  React.useEffect(() => {
-    if (!ref.current) return
-    const { width, height } = ref.current.getBoundingClientRect()
-    setPos({
-      x: Math.min(screenX + 4, window.innerWidth - width - 8),
-      y: Math.min(screenY + 4, window.innerHeight - height - 8),
-    })
-  }, [screenX, screenY])
 
   const patch = (fields: Partial<DrawnShape & { rotation: number }>) =>
     getDrawLayerManager(pageId).patchShape(shape.id, fields as any)
@@ -524,39 +563,38 @@ function ShapeContextMenu({ shape, screenX, screenY, pageId, onClose, onDelete }
   const ff = 'Inter, DM Sans, -apple-system, sans-serif'
   const rowBase: React.CSSProperties = {
     display: 'flex', alignItems: 'center', gap: 8,
-    height: 28, padding: '0 8px', borderRadius: 5,
+    height: 30, padding: '0 10px', borderRadius: 7,
     fontSize: 13, fontFamily: ff,
     background: 'none', border: 'none',
     width: '100%', textAlign: 'left',
-    cursor: 'pointer', color: '#18181b',
+    cursor: 'pointer', color: 'rgba(0,0,0,0.85)',
     transition: 'background 0.08s',
     flexShrink: 0,
   }
   const sectionLabel: React.CSSProperties = {
-    fontSize: 11, fontFamily: ff, fontWeight: 500,
-    color: '#a1a1aa', letterSpacing: '0.04em',
-    padding: '0 8px', height: 24,
+    fontSize: 10.5, fontFamily: ff, fontWeight: 600,
+    color: 'rgba(0,0,0,0.36)', letterSpacing: '0.07em', textTransform: 'uppercase',
+    padding: '0 10px', height: 26,
     display: 'flex', alignItems: 'center',
   }
   const sep: React.CSSProperties = {
-    height: 1, background: '#f4f4f5', margin: '3px 0',
+    height: 1, background: 'rgba(0,0,0,0.07)', margin: '3px 6px',
   }
 
   return (
-    <div
-      ref={ref}
-      data-shape-context-menu="true"
-      onMouseDown={e => { e.stopPropagation(); e.preventDefault() }}
-      onPointerDown={e => { e.stopPropagation(); e.preventDefault() }}
+    <SmartPositionedMenu
+      screenX={screenX}
+      screenY={screenY}
+      onClose={onClose}
       style={{
-        position: 'fixed', left: pos.x, top: pos.y, zIndex: 9999,
-        // White surface — clean, professional, contrasts well against canvas
-        background: '#ffffff',
-        border: '1px solid #e4e4e7',
-        borderRadius: 8,
-        boxShadow: '0 4px 6px -1px rgba(0,0,0,0.08), 0 10px 24px -4px rgba(0,0,0,0.12)',
-        width: 208, fontFamily: ff,
-        padding: '4px 0',
+        background: 'rgba(248,248,252,0.82)',
+        backdropFilter: 'blur(28px) saturate(200%)',
+        WebkitBackdropFilter: 'blur(28px) saturate(200%)',
+        border: '1px solid rgba(0,0,0,0.06)',
+        borderRadius: 12,
+        boxShadow: '0 4px 24px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.08)',
+        width: 220, fontFamily: ff,
+        padding: '5px 0',
         userSelect: 'none',
         overflow: 'hidden',
       }}
@@ -596,7 +634,7 @@ function ShapeContextMenu({ shape, screenX, screenY, pageId, onClose, onDelete }
       <button
         onPointerDown={e => { e.stopPropagation(); e.preventDefault(); patch({ shapeFill: !hasFill }) }}
         style={{ ...rowBase, justifyContent: 'space-between' }}
-        onMouseEnter={e => (e.currentTarget.style.background = '#f4f4f5')}
+        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.05)')}
         onMouseLeave={e => (e.currentTarget.style.background = 'none')}
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -609,7 +647,7 @@ function ShapeContextMenu({ shape, screenX, screenY, pageId, onClose, onDelete }
           Fill
         </span>
         <span style={{
-          fontSize: 11.5, color: hasFill ? '#18181b' : '#a1a1aa',
+          fontSize: 11.5, color: hasFill ? 'rgba(0,0,0,0.80)' : 'rgba(0,0,0,0.28)',
           fontWeight: hasFill ? 500 : 400,
         }}>{hasFill ? 'On' : 'Off'}</span>
       </button>
@@ -619,16 +657,16 @@ function ShapeContextMenu({ shape, screenX, screenY, pageId, onClose, onDelete }
       {/* ── Rotation ── */}
       <div style={{ padding: '4px 8px 6px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 28 }}>
-          <span style={{ fontSize: 13, color: '#18181b', fontFamily: ff, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 13, color: 'rgba(0,0,0,0.80)', fontFamily: ff, display: 'flex', alignItems: 'center', gap: 6 }}>
             <svg width={13} height={13} viewBox="0 0 16 16" fill="none">
-              <path d="M13.5 5A6 6 0 1 0 14 8" stroke="#71717a" strokeWidth={1.5} strokeLinecap="round"/>
-              <path d="M14 2v3.5H10.5" stroke="#71717a" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M13.5 5A6 6 0 1 0 14 8" stroke="rgba(0,0,0,0.35)" strokeWidth={1.5} strokeLinecap="round"/>
+              <path d="M14 2v3.5H10.5" stroke="rgba(0,0,0,0.35)" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
             Rotate
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{
-              fontSize: 12, color: '#71717a', fontVariantNumeric: 'tabular-nums',
+              fontSize: 12, color: 'rgba(0,0,0,0.40)', fontVariantNumeric: 'tabular-nums',
               minWidth: 32, textAlign: 'right', fontFamily: ff,
             }}>{localRotation}°</span>
             <button
@@ -637,12 +675,12 @@ function ShapeContextMenu({ shape, screenX, screenY, pageId, onClose, onDelete }
               style={{
                 width: 22, height: 22, borderRadius: 5, display: 'flex',
                 alignItems: 'center', justifyContent: 'center',
-                background: 'none', border: '1px solid #e4e4e7',
-                color: '#71717a', cursor: 'pointer', fontSize: 13, outline: 'none',
+                background: 'rgba(0,0,0,0.04)', border: '1px solid rgba(0,0,0,0.10)',
+                color: 'rgba(0,0,0,0.40)', cursor: 'pointer', fontSize: 13, outline: 'none',
                 transition: 'border-color 0.1s, background 0.1s',
               }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#f4f4f5'; e.currentTarget.style.borderColor = '#d4d4d8' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.borderColor = '#e4e4e7' }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.08)'; e.currentTarget.style.borderColor = 'rgba(0,0,0,0.15)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.04)'; e.currentTarget.style.borderColor = 'rgba(0,0,0,0.10)' }}
             >↺</button>
           </div>
         </div>
@@ -656,7 +694,7 @@ function ShapeContextMenu({ shape, screenX, screenY, pageId, onClose, onDelete }
             setLocalRotation(v)
             patch({ rotation: v } as any)
           }}
-          style={{ width: '100%', accentColor: '#18181b', cursor: 'pointer', display: 'block', marginTop: 4 }}
+          style={{ width: '100%', accentColor: 'rgba(0,0,0,0.55)', cursor: 'pointer', display: 'block', marginTop: 4 }}
         />
       </div>
 
@@ -665,17 +703,17 @@ function ShapeContextMenu({ shape, screenX, screenY, pageId, onClose, onDelete }
       {/* ── Delete ── */}
       <button
         onPointerDown={e => { e.stopPropagation(); e.preventDefault(); onDelete(); onClose() }}
-        style={{ ...rowBase, color: '#dc2626' }}
-        onMouseEnter={e => (e.currentTarget.style.background = '#fef2f2')}
+        style={{ ...rowBase, color: 'rgba(255,59,48,0.90)' }}
+        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,59,48,0.10)')}
         onMouseLeave={e => (e.currentTarget.style.background = 'none')}
       >
         <svg width={13} height={13} viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
           <path d="M3 4h10M6 4V2.5a.5.5 0 01.5-.5h3a.5.5 0 01.5.5V4M5 4l.5 9h5l.5-9"
-            stroke="#dc2626" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+            stroke="rgba(255,59,48,0.90)" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
         Delete
       </button>
-    </div>
+    </SmartPositionedMenu>
   )
 }
 
@@ -1499,6 +1537,8 @@ export function CanvasArea(s: ExportPageState) {
         // Suppress synthetic mousedown fired by browser after long-press touchend
         if (suppressNextMouseDownRef.current) { suppressNextMouseDownRef.current = false; return }
         const target = e.target as HTMLElement
+        // grid overlay 内部拖拽，不触发画布 pan
+        if (target.closest('[data-grid-overlay]')) return
         if (target.closest('.rnd-block') || target.closest('button') || target.closest('input') || target.closest('textarea')) return
         if (e.button !== 0) return
         // sticky 编辑中点空白：先保存内容再 preventDefault（preventDefault 会阻止 blur 触发）
@@ -1963,10 +2003,22 @@ export function CanvasArea(s: ExportPageState) {
       >
         {/* Right-click context menu */}
         {ctxMenu && (
-          <div
-            style={{ position: 'fixed', top: ctxMenu.y, left: ctxMenu.x, zIndex: 999, background: '#fff', border: '1px solid rgba(26,26,26,0.1)', borderRadius: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)', padding: '6px', minWidth: '180px', fontFamily: 'Inter, DM Sans, sans-serif', animation: 'fadeIn 0.12s ease' }}
-            onClick={e => e.stopPropagation()}
-            onContextMenu={e => e.preventDefault()}
+          <SmartPositionedMenu
+            screenX={ctxMenu.x}
+            screenY={ctxMenu.y}
+            onClose={() => setCtxMenu(null)}
+            style={{
+              background: 'rgba(248,248,252,0.82)',
+              backdropFilter: 'blur(28px) saturate(200%)',
+              WebkitBackdropFilter: 'blur(28px) saturate(200%)',
+              border: '1px solid rgba(0,0,0,0.06)',
+              borderRadius: 12,
+              boxShadow: '0 4px 24px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.08)',
+              minWidth: 200,
+              padding: '5px 0',
+              fontFamily: 'Inter, DM Sans, sans-serif',
+              overflow: 'hidden',
+            }}
           >
             {ctxMenu.blockId ? (
               (() => {
@@ -1976,19 +2028,19 @@ export function CanvasArea(s: ExportPageState) {
                   <button
                     onClick={() => { onClick(); setCtxMenu(null) }}
                     style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', border: 'none', background: 'transparent', borderRadius: '7px', cursor: 'pointer', textAlign: 'left', transition: 'background 0.1s' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = danger ? 'rgba(220,80,80,0.07)' : 'rgba(26,26,26,0.05)')}
+                    onMouseEnter={e => (e.currentTarget.style.background = danger ? 'rgba(255,59,48,0.10)' : 'rgba(0,0,0,0.05)')}
                     onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                   >
-                    <span style={{ fontSize: '0.88rem', width: '20px', textAlign: 'center', color: danger ? '#e05c5c' : '#888', flexShrink: 0 }}>{icon}</span>
+                    <span style={{ fontSize: '0.88rem', width: '20px', textAlign: 'center', color: danger ? 'rgba(255,59,48,0.80)' : 'rgba(0,0,0,0.38)', flexShrink: 0 }}>{icon}</span>
                     <div>
-                      <div style={{ fontSize: '0.8rem', color: danger ? '#c04040' : '#1a1a1a', fontWeight: 500 }}>{label}</div>
-                      <div style={{ fontSize: '0.65rem', color: '#bbb', marginTop: '1px' }}>{sub}</div>
+                      <div style={{ fontSize: '0.8rem', color: danger ? 'rgba(255,59,48,0.90)' : 'rgba(0,0,0,0.85)', fontWeight: 500 }}>{label}</div>
+                      <div style={{ fontSize: '0.65rem', color: 'rgba(0,0,0,0.36)', marginTop: '1px' }}>{sub}</div>
                     </div>
                   </button>
                 )
                 return (
                   <>
-                    <div style={{ padding: '4px 10px 8px', fontSize: '0.58rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#c4c4c0', fontWeight: 600 }}>
+                    <div style={{ padding: '4px 10px 8px', fontSize: '0.58rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(0,0,0,0.36)', fontWeight: 600 }}>
                       {bTarget ? bTarget.type : (isZh ? '块操作' : 'Block')}
                     </div>
                     {bTarget && bTarget.type === 'image' && (
@@ -2027,13 +2079,13 @@ export function CanvasArea(s: ExportPageState) {
                           imgEl.src = bTarget.content
                         })}
                         {menuBtn('✂', isZh ? '智能抠图' : 'Remove background', isZh ? 'AI 去除背景' : 'AI-powered', () => { removeBackground(bid!, bTarget.content) })}
-                        <div style={{ height: '1px', background: 'rgba(26,26,26,0.07)', margin: '4px 0' }} />
+                        <div style={{ height: '1px', background: 'rgba(0,0,0,0.07)', margin: '4px 6px' }} />
                       </>
                     )}
                     {bTarget && TEXT_BLOCK_TYPES.includes(bTarget.type) && (
                       <>
                         {menuBtn('✎', isZh ? '编辑内容' : 'Edit content', isZh ? '双击也可以' : 'Or double-click', () => { startEdit(bTarget) })}
-                        <div style={{ height: '1px', background: 'rgba(26,26,26,0.07)', margin: '4px 0' }} />
+                        <div style={{ height: '1px', background: 'rgba(0,0,0,0.07)', margin: '4px 6px' }} />
                       </>
                     )}
                     {menuBtn('⎘', isZh ? '复制块' : 'Duplicate', isZh ? '⌘D' : '⌘D', () => {
@@ -2045,7 +2097,7 @@ export function CanvasArea(s: ExportPageState) {
                         return [...prev, clone]
                       })
                     })}
-                    <div style={{ height: '1px', background: 'rgba(26,26,26,0.07)', margin: '4px 0' }} />
+                    <div style={{ height: '1px', background: 'rgba(0,0,0,0.07)', margin: '4px 6px' }} />
                     {menuBtn('↑', isZh ? '上移一层' : 'Bring forward', '⌘]', () => {
                       updatePageBlocks(activePageId, prev => {
                         const idx = prev.findIndex(b => b.id === bid)
@@ -2074,7 +2126,7 @@ export function CanvasArea(s: ExportPageState) {
                         const arr = [...prev]; const [item] = arr.splice(idx, 1); arr.unshift(item); return arr
                       })
                     })}
-                    <div style={{ height: '1px', background: 'rgba(26,26,26,0.07)', margin: '4px 0' }} />
+                    <div style={{ height: '1px', background: 'rgba(0,0,0,0.07)', margin: '4px 6px' }} />
                     {menuBtn('✕', isZh ? '删除' : 'Delete', isZh ? 'Delete键' : 'Delete key', () => {
                       updatePageBlocks(activePageId, prev => prev.filter(b => b.id !== bid))
                       setSelectedBlockId(null)
@@ -2084,7 +2136,7 @@ export function CanvasArea(s: ExportPageState) {
               })()
             ) : (
               <>
-                <div style={{ padding: '4px 10px 8px', fontSize: '0.58rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#c4c4c0', fontWeight: 600 }}>
+                <div style={{ padding: '4px 10px 8px', fontSize: '0.58rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(0,0,0,0.36)', fontWeight: 600 }}>
                   {isZh ? '插入块' : 'Insert Block'}
                 </div>
                 {[
@@ -2099,32 +2151,32 @@ export function CanvasArea(s: ExportPageState) {
                       setCtxMenu(null)
                     }}
                     style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', border: 'none', background: 'transparent', borderRadius: '7px', cursor: 'pointer', textAlign: 'left', transition: 'background 0.1s' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.05)')}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.05)')}
                     onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                   >
-                    <span style={{ fontSize: '0.9rem', width: '20px', textAlign: 'center', color: '#888', flexShrink: 0 }}>{item.icon}</span>
+                    <span style={{ fontSize: '0.9rem', width: '20px', textAlign: 'center', color: 'rgba(0,0,0,0.38)', flexShrink: 0 }}>{item.icon}</span>
                     <div>
-                      <div style={{ fontSize: '0.8rem', color: '#1a1a1a', fontWeight: 500 }}>{item.label}</div>
-                      <div style={{ fontSize: '0.65rem', color: '#bbb', marginTop: '1px' }}>{item.sub}</div>
+                      <div style={{ fontSize: '0.8rem', color: 'rgba(0,0,0,0.85)', fontWeight: 500 }}>{item.label}</div>
+                      <div style={{ fontSize: '0.65rem', color: 'rgba(0,0,0,0.36)', marginTop: '1px' }}>{item.sub}</div>
                     </div>
                   </button>
                 ))}
-                <div style={{ height: '1px', background: 'rgba(26,26,26,0.07)', margin: '4px 0' }} />
+                <div style={{ height: '1px', background: 'rgba(0,0,0,0.07)', margin: '4px 6px' }} />
                 <button
                   onClick={() => ctxImageInputRef.current?.click()}
                   style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', border: 'none', background: 'transparent', borderRadius: '7px', cursor: 'pointer', textAlign: 'left', transition: 'background 0.1s' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.05)')}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.05)')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 >
-                  <span style={{ fontSize: '0.9rem', width: '20px', textAlign: 'center', color: '#888', flexShrink: 0 }}>🖼</span>
+                  <span style={{ fontSize: '0.9rem', width: '20px', textAlign: 'center', color: 'rgba(0,0,0,0.38)', flexShrink: 0 }}>🖼</span>
                   <div>
-                    <div style={{ fontSize: '0.8rem', color: '#1a1a1a', fontWeight: 500 }}>{isZh ? '插入图片' : 'Image'}</div>
-                    <div style={{ fontSize: '0.65rem', color: '#bbb', marginTop: '1px' }}>{isZh ? '从本地上传' : 'Upload from device'}</div>
+                    <div style={{ fontSize: '0.8rem', color: 'rgba(0,0,0,0.85)', fontWeight: 500 }}>{isZh ? '插入图片' : 'Image'}</div>
+                    <div style={{ fontSize: '0.65rem', color: 'rgba(0,0,0,0.36)', marginTop: '1px' }}>{isZh ? '从本地上传' : 'Upload from device'}</div>
                   </div>
                 </button>
               </>
             )}
-          </div>
+          </SmartPositionedMenu>
         )}
 
         <input ref={ctxImageInputRef} type="file" accept="image/*" style={{ display: 'none' }}
@@ -2612,142 +2664,19 @@ export function CanvasArea(s: ExportPageState) {
                     />
                   )}
 
-                  {/* ── Grid System overlay — 仅当前活跃页 ── */}
-                  {gridState?.activeType && isActivePg && (() => {
-                    const gs = gridState
-                    const W = contentWidth
-                    const H = pgHeight ?? 600
-
-                    if (gs.activeType === 'column') {
-                      const { columns, gutter, margin, color, strokeWidth } = gs.column
-                      const available = W - margin * 2 - gutter * (columns - 1)
-                      const colW = available / columns
-                      const cols = Array.from({ length: columns }, (_, i) => margin + i * (colW + gutter))
-                      const lineColor = color.replace(/[\d.]+\)$/, '0.55)')
-                      return (
-                        <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 5 }} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
-                          {cols.map((x, i) => (
-                            <rect key={i} x={x} y={0} width={colW} height={H} fill={color} />
-                          ))}
-                          {cols.map((x, i) => (
-                            <line key={`l${i}`} x1={x} y1={0} x2={x} y2={H} stroke={lineColor} strokeWidth={strokeWidth} />
-                          ))}
-                          <line x1={cols[cols.length-1]+colW} y1={0} x2={cols[cols.length-1]+colW} y2={H} stroke={lineColor} strokeWidth={strokeWidth} />
-                        </svg>
-                      )
-                    }
-
-                    if (gs.activeType === 'baseline') {
-                      const { lineHeight, color, strokeWidth } = gs.baseline
-                      const lines = Array.from({ length: Math.ceil(H / lineHeight) }, (_, i) => i * lineHeight)
-                      return (
-                        <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 5 }} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
-                          {lines.map(y => (
-                            <line key={y} x1={0} y1={y} x2={W} y2={y} stroke={color} strokeWidth={strokeWidth} />
-                          ))}
-                        </svg>
-                      )
-                    }
-
-                    if (gs.activeType === 'modular') {
-                      const { columns, rows, columnGutter, rowGutter, margin, color, strokeWidth, cellTexts, cellAligns, cellFontSize, cellColor } = gs.modular
-                      const offsetX: number = (gs.modular as any).offsetX ?? 0
-                      const offsetY: number = (gs.modular as any).offsetY ?? 0
-                      const updateModular = (s as any).updateModular as ((p: any) => void) | undefined
-                      const updateCell = (s as any).updateModularCell as ((i: number, t: string) => void) | undefined
-                      const updateCellAlign = (s as any).updateModularCell as ((i: number, t: string, a: 'left'|'center'|'right') => void) | undefined
-
-                      const cellW = (W - margin * 2 - columnGutter * (columns - 1)) / columns
-                      const cellH = (H - margin * 2 - rowGutter * (rows - 1)) / rows
-                      const cells = Array.from({ length: rows }, (_, r) =>
-                        Array.from({ length: columns }, (_, c) => ({
-                          x: offsetX + margin + c * (cellW + columnGutter),
-                          y: offsetY + margin + r * (cellH + rowGutter),
-                          index: r * columns + c,
-                        }))
-                      ).flat()
-                      const borderColor = color.replace(/[\d.]+\)$/, '0.45)')
-
-                      // 拖动整个网格
-                      const gridDragRef = { startX: 0, startY: 0, startOX: 0, startOY: 0, active: false }
-                      const onGridMouseDown = (e: React.MouseEvent) => {
-                        if ((e.target as HTMLElement).isContentEditable) return
-                        if ((e.target as HTMLElement).tagName === 'BUTTON') return
-                        e.preventDefault()
-                        e.stopPropagation()
-                        gridDragRef.active = true
-                        gridDragRef.startX = e.clientX
-                        gridDragRef.startY = e.clientY
-                        gridDragRef.startOX = offsetX
-                        gridDragRef.startOY = offsetY
-                        const onMove = (ev: MouseEvent) => {
-                          if (!gridDragRef.active) return
-                          updateModular?.({ offsetX: gridDragRef.startOX + ev.clientX - gridDragRef.startX, offsetY: gridDragRef.startOY + ev.clientY - gridDragRef.startY })
-                        }
-                        const onUp = () => { gridDragRef.active = false; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
-                        window.addEventListener('mousemove', onMove)
-                        window.addEventListener('mouseup', onUp)
+                  {/* ── Grid System overlay — per-page multi-layer ── */}
+                  {gridState && (
+                    <GridLayerOverlay
+                      gridState={gridState as any}
+                      pageId={page.id}
+                      canvasWidth={contentWidth}
+                      canvasHeight={pgHeight ?? 600}
+                      canvasZoom={canvasZoom}
+                      updateLayer={(layerId: string, patch: any) =>
+                        (s as any).updateLayer(page.id, layerId, patch)
                       }
-
-                      return (
-                        <div
-                          style={{ position: 'absolute', inset: 0, zIndex: 5, cursor: gridEditMode ? 'text' : 'grab', pointerEvents: 'auto' }}
-                          onMouseDown={onGridMouseDown}
-                        >
-                          {/* SVG 背景层 */}
-                          <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
-                            {cells.map(({ x, y }, i) => (
-                              <rect key={i} x={x} y={y} width={cellW} height={cellH} fill={color} stroke={borderColor} strokeWidth={strokeWidth} />
-                            ))}
-                          </svg>
-                          {/* HTML 文字层 */}
-                          {cells.map(({ x, y, index }) => {
-                            const text  = cellTexts?.[index] ?? ''
-                            const align = (cellAligns?.[index] ?? 'left') as 'left' | 'center' | 'right'
-                            return (
-                              <div key={index} style={{ position: 'absolute', left: x, top: y, width: cellW, minHeight: cellH, boxSizing: 'border-box', zIndex: 6 }}>
-                                {/* 对齐工具栏 */}
-                                {gridEditMode && (
-                                  <div className="grid-cell-toolbar" style={{ position: 'absolute', top: -26, left: 0, display: 'none', gap: 2, background: 'rgba(26,26,26,0.82)', borderRadius: 5, padding: '2px 4px', zIndex: 20, pointerEvents: 'auto' }}>
-                                    {(['left', 'center', 'right'] as const).map(a => (
-                                      <button key={a} onMouseDown={e => { e.preventDefault(); updateCellAlign?.(index, text, a) }}
-                                        style={{ width: 20, height: 20, border: 'none', borderRadius: 3, cursor: 'pointer', background: align === a ? 'rgba(255,255,255,0.22)' : 'transparent', color: '#fff', fontSize: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        {a === 'left' ? '←' : a === 'center' ? '↔' : '→'}
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-                                <div
-                                  contentEditable="false"
-                                  suppressContentEditableWarning
-                                  onFocus={e => {
-                                    const el = e.currentTarget as HTMLDivElement
-                                    const tb = el.previousSibling as HTMLElement
-                                    if (tb) tb.style.display = 'flex'
-                                    // 点击格子外部时 blur 退出编辑
-                                    const onOutsideClick = (ev: MouseEvent) => {
-                                      if (!el.contains(ev.target as Node)) {
-                                        el.blur()
-                                        document.removeEventListener('mousedown', onOutsideClick, true)
-                                      }
-                                    }
-                                    document.addEventListener('mousedown', onOutsideClick, true)
-                                  }}
-                                  onBlur={e => { const el = e.target as HTMLDivElement; el.contentEditable = 'false'; el.style.boxShadow = 'none'; el.style.cursor = 'default'; const tb = (e.currentTarget.previousSibling as HTMLElement); if (tb) tb.style.display = 'none'; updateCell?.(index, el.innerText) }}
-                                  onDoubleClick={e => { e.stopPropagation(); const el = e.currentTarget as HTMLDivElement; el.contentEditable = 'true'; el.style.boxShadow = 'inset 0 0 0 1px rgba(196,160,68,0.5)'; el.style.cursor = 'text'; el.focus(); const range = document.createRange(); range.selectNodeContents(el); const sel = window.getSelection(); sel?.removeAllRanges(); sel?.addRange(range) }}
-                                  onMouseDown={e => { if ((e.currentTarget as HTMLDivElement).contentEditable === 'true') e.stopPropagation() }}
-                                  onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'z') e.stopPropagation(); if (e.key === 'Escape') (e.target as HTMLDivElement).blur() }}
-                                  ref={el => { if (el && document.activeElement !== el && el.innerText !== text) el.innerText = text }}
-                                  style={{ display: 'block', width: '100%', minHeight: cellH, padding: '6px 8px', boxSizing: 'border-box', outline: 'none', fontSize: cellFontSize ?? 13, lineHeight: 1.6, color: cellColor ?? '#1a1a1a', textAlign: align, whiteSpace: 'pre-wrap', wordBreak: 'break-word', cursor: 'default', background: 'transparent', caretColor: cellColor ?? '#1a1a1a', pointerEvents: 'auto' }}
-                                />
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )
-                    }
-                    return null
-                  })()}
+                    />
+                  )}
 
                   {/* ── Rnd blocks ── */}
                   <div className="rnd-canvas" style={{ position: 'relative', width: 860, ...(pgHeight ? { minHeight: pgHeight } : { minHeight: 600 }), pointerEvents: 'auto' }}>
@@ -3243,7 +3172,7 @@ export function CanvasArea(s: ExportPageState) {
                                           </div>
                                         ))}
                                       </div>
-                                      {block.caption && <p style={{ fontSize: '0.78rem', color: '#bbb', marginTop: '7px', fontStyle: 'italic', fontFamily: 'Inter, DM Sans, sans-serif' }}>{block.caption}</p>}
+                                      {block.caption && <p style={{ fontSize: '0.78rem', color: 'rgba(0,0,0,0.36)', marginTop: '7px', fontStyle: 'italic', fontFamily: 'Inter, DM Sans, sans-serif' }}>{block.caption}</p>}
                                     </div>
                                   )}
                                   {block.type === 'milestone' && (
@@ -3260,7 +3189,7 @@ export function CanvasArea(s: ExportPageState) {
                                   )}
                                   {block.type === 'school-profile' && (() => {
                                     const school = schools.find(sc => sc.id === block.content)
-                                    if (!school) return <p style={{ fontSize: '0.82rem', color: '#bbb', fontFamily: 'Inter, DM Sans, sans-serif' }}>School not found</p>
+                                    if (!school) return <p style={{ fontSize: '0.82rem', color: 'rgba(0,0,0,0.36)', fontFamily: 'Inter, DM Sans, sans-serif' }}>School not found</p>
                                     const displayName = isZh ? (school.nameZh || school.name) : school.name
                                     const displayDept = isZh ? (school.departmentZh || school.department) : school.department
                                     return (
