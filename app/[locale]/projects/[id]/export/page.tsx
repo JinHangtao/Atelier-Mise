@@ -373,7 +373,7 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
         html, body { overscroll-behavior: none !important; }
       `}</style>
       {/* Export HTML Dialog */}
-      <ExportHtmlDialog open={exportDialogOpen} config={htmlExportConfig} onChange={setHtmlExportConfig} onConfirm={() => { setExportDialogOpen(false); doExportHTML(htmlExportConfig) }} onCancel={() => setExportDialogOpen(false)} isZh={isZh} onAdd={() => s.setCtxMenu({ x: window.innerWidth / 2, y: window.innerHeight / 2, gridX: 0, gridY: 0 })}/>
+      <ExportHtmlDialog open={exportDialogOpen} config={htmlExportConfig} onChange={setHtmlExportConfig} onConfirm={() => { setExportDialogOpen(false); doExportHTML(htmlExportConfig) }} onCancel={() => setExportDialogOpen(false)} isZh={isZh}/>
 
       {/* Image Editor overlay */}
       {imageEditorUrl !== null && imageEditorIdx !== null && (
