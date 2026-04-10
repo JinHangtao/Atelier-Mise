@@ -184,9 +184,9 @@ export function ExportHtmlDialog({
       style={{
         position: 'fixed', inset: 0, zIndex: 9999,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(6px)',
-        WebkitBackdropFilter: 'blur(6px)',
+        background: 'rgba(0,0,0,0.35)',
+        backdropFilter: 'blur(20px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
       }}
       onClick={e => { if (e.target === e.currentTarget) onCancel() }}
     >
@@ -196,9 +196,12 @@ export function ExportHtmlDialog({
           maxHeight: '90vh',
           display: 'flex',
           flexDirection: 'column',
-          background: '#fff',
+          background: 'rgba(248,248,252,0.88)',
+          backdropFilter: 'blur(32px) saturate(200%)',
+          WebkitBackdropFilter: 'blur(32px) saturate(200%)',
           borderRadius: 20,
-          boxShadow: '0 24px 64px rgba(0,0,0,0.22)',
+          border: '1px solid rgba(0,0,0,0.06)',
+          boxShadow: '0 2px 0 rgba(255,255,255,0.7) inset, 0 8px 40px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.08)',
           overflow: 'hidden',
         }}
       >
@@ -206,18 +209,18 @@ export function ExportHtmlDialog({
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '18px 24px 16px',
-          borderBottom: '1px solid rgba(0,0,0,0.07)',
+          borderBottom: '1px solid rgba(0,0,0,0.06)',
         }}>
-          <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.02em' }}>
+          <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: '-0.02em', color: 'rgba(0,0,0,0.88)' }}>
             {isZh ? '导出设置' : 'Export Settings'}
           </span>
           <button
             onClick={onCancel}
             style={{
               width: 28, height: 28, borderRadius: 8,
-              background: 'rgba(0,0,0,0.06)', border: 'none',
+              background: 'rgba(0,0,0,0.06)', border: '1px solid rgba(0,0,0,0.06)',
               cursor: 'pointer', fontSize: 18, lineHeight: '28px',
-              textAlign: 'center', color: '#666',
+              textAlign: 'center', color: 'rgba(0,0,0,0.45)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
           >×</button>
@@ -242,8 +245,8 @@ export function ExportHtmlDialog({
                     onClick={() => onChange({ ...config, maxWidth: s.value })}
                     style={{
                       flex: 1, padding: '10px 8px', borderRadius: 10,
-                      border: isActive ? '2px solid #1a1a1a' : '2px solid rgba(0,0,0,0.1)',
-                      background: isActive ? 'rgba(0,0,0,0.04)' : 'transparent',
+                      border: isActive ? '2px solid rgba(0,0,0,0.75)' : '2px solid rgba(0,0,0,0.08)',
+                      background: isActive ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.5)',
                       cursor: 'pointer',
                       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
                       transition: 'border-color 0.12s, background 0.12s',
@@ -257,15 +260,15 @@ export function ExportHtmlDialog({
                     }}>
                       <div style={{
                         height: 14, borderRadius: 3,
-                        background: isActive ? '#1a1a1a' : 'rgba(0,0,0,0.18)',
+                        background: isActive ? 'rgba(0,0,0,0.80)' : 'rgba(0,0,0,0.14)',
                         width: s.value === 0 ? '100%' : s.value === 860 ? '78%' : '58%',
                         transition: 'width 0.15s',
                       }} />
                     </div>
-                    <span style={{ fontSize: 12, fontWeight: isActive ? 700 : 500, color: isActive ? '#1a1a1a' : '#555', letterSpacing: '-0.01em' }}>
+                    <span style={{ fontSize: 12, fontWeight: isActive ? 700 : 500, color: isActive ? 'rgba(0,0,0,0.88)' : 'rgba(0,0,0,0.50)', letterSpacing: '-0.01em' }}>
                       {s.label}
                     </span>
-                    <span style={{ fontSize: 10, color: '#aaa' }}>{s.sub}</span>
+                    <span style={{ fontSize: 10, color: 'rgba(0,0,0,0.35)' }}>{s.sub}</span>
                   </button>
                 )
               })}
@@ -303,7 +306,7 @@ export function ExportHtmlDialog({
                     <div style={{
                       width: 44, height: 44, borderRadius: 10,
                       background: swatchBg,
-                      border: '1px solid rgba(0,0,0,0.1)',
+                      border: '1px solid rgba(0,0,0,0.08)',
                       position: 'relative', overflow: 'hidden', flexShrink: 0,
                     }}>
                       {/* native color picker hidden inside custom swatch */}
@@ -338,7 +341,7 @@ export function ExportHtmlDialog({
                       )}
                     </div>
                     <span style={{
-                      fontSize: 10, color: '#777', letterSpacing: '-0.01em',
+                      fontSize: 10, color: 'rgba(0,0,0,0.45)', letterSpacing: '-0.01em',
                       lineHeight: 1.3, textAlign: 'center',
                       fontWeight: isActive ? 600 : 400,
                     }}>
@@ -361,9 +364,9 @@ export function ExportHtmlDialog({
               type="range" min={0} max={120} step={4}
               value={config.gap}
               onChange={e => onChange({ ...config, gap: Number(e.target.value) })}
-              style={{ width: '100%', accentColor: '#1a1a1a', cursor: 'pointer' }}
+              style={{ width: '100%', accentColor: 'rgba(0,0,0,0.70)', cursor: 'pointer' }}
             />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#bbb' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'rgba(0,0,0,0.30)' }}>
               <span>0</span>
               <span>120px</span>
             </div>
@@ -430,9 +433,9 @@ export function ExportHtmlDialog({
               type="range" min={0} max={32} step={2}
               value={config.radius}
               onChange={e => onChange({ ...config, radius: Number(e.target.value) })}
-              style={{ width: '100%', accentColor: '#1a1a1a', cursor: 'pointer' }}
+              style={{ width: '100%', accentColor: 'rgba(0,0,0,0.70)', cursor: 'pointer' }}
             />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#bbb' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'rgba(0,0,0,0.30)' }}>
               <span>{isZh ? '直角' : 'Square'}</span>
               <span>{isZh ? '大圆角' : 'Rounded'}</span>
             </div>
@@ -448,9 +451,9 @@ export function ExportHtmlDialog({
               type="range" min={0} max={100} step={5}
               value={config.shadow ?? 20}
               onChange={e => onChange({ ...config, shadow: Number(e.target.value) })}
-              style={{ width: '100%', accentColor: '#1a1a1a', cursor: 'pointer' }}
+              style={{ width: '100%', accentColor: 'rgba(0,0,0,0.70)', cursor: 'pointer' }}
             />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#bbb' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'rgba(0,0,0,0.30)' }}>
               <span>{isZh ? '无阴影' : 'None'}</span>
               <span>{isZh ? '深重' : 'Strong'}</span>
             </div>
@@ -462,7 +465,7 @@ export function ExportHtmlDialog({
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10,
           padding: '16px 24px',
-          borderTop: '1px solid rgba(0,0,0,0.07)',
+          borderTop: '1px solid rgba(0,0,0,0.06)',
         }}>
           <button
             onClick={onCancel}
@@ -470,17 +473,20 @@ export function ExportHtmlDialog({
               padding: '9px 20px', borderRadius: 10,
               background: 'rgba(0,0,0,0.05)',
               border: '1px solid rgba(0,0,0,0.08)',
-              fontSize: 14, cursor: 'pointer', fontWeight: 500, color: '#333',
+              fontSize: 14, cursor: 'pointer', fontWeight: 500, color: 'rgba(0,0,0,0.70)',
             }}
           >{isZh ? '取消' : 'Cancel'}</button>
           <button
             onClick={onConfirm}
             style={{
               padding: '9px 24px', borderRadius: 10,
-              background: '#1a1a1a', color: '#fff',
-              border: 'none', fontSize: 14,
-              cursor: 'pointer', fontWeight: 600,
+              background: 'rgba(20,20,22,0.88)', color: 'rgba(255,255,255,0.92)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)',
+              border: '1px solid rgba(255,255,255,0.08)',
+              fontSize: 14, cursor: 'pointer', fontWeight: 600,
               letterSpacing: '-0.01em',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.28)',
             }}
           >{isZh ? '导出 HTML' : 'Export HTML'}</button>
         </div>
@@ -493,7 +499,7 @@ export function ExportHtmlDialog({
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', letterSpacing: '-0.01em' }}>
+    <span style={{ fontSize: 13, fontWeight: 600, color: 'rgba(0,0,0,0.80)', letterSpacing: '-0.01em' }}>
       {children}
     </span>
   )
@@ -502,8 +508,8 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 function ValueTag({ children }: { children: React.ReactNode }) {
   return (
     <span style={{
-      fontSize: 12, fontWeight: 500, color: '#666',
-      background: 'rgba(0,0,0,0.05)',
+      fontSize: 12, fontWeight: 500, color: 'rgba(0,0,0,0.50)',
+      background: 'rgba(0,0,0,0.06)',
       padding: '2px 9px', borderRadius: 6,
       fontVariantNumeric: 'tabular-nums',
       letterSpacing: '-0.01em',
