@@ -1190,6 +1190,7 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
           currentPage={s.pages.findIndex(p => p.id === s.activePageId) + 1 || 1}
           totalPages={s.pages.length}
           isZh={isZh}
+          onAdd={() => s.setCtxMenu({ x: window.innerWidth / 2, y: window.innerHeight / 2, gridX: 0, gridY: 0 })}
         />
       )}
 
