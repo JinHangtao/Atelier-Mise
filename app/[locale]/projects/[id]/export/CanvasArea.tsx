@@ -294,8 +294,9 @@ function renderSelectionHandles(shape: DrawnShape, onDelete: () => void, canvasZ
 
 // ── buildShapeSVGString ───────────────────────────────────────────────────────
 // Pure-string SVG — used for zero-React imperative resize preview.
-function buildShapeSVGString(shape: DrawnShape, x0: number, y0: number, x1: number, y1: number): string {
-  const stroke = (shape.color ?? '#333333').replace(/#/g,'%23')
+function buildShapeSVGString(shape: DrawnShape, x0: number, y0: number, x1: number, y1: number, encodeHash = false): string {
+  const raw    = shape.color ?? '#333333'
+  const stroke = encodeHash ? raw.replace(/#/g, '%23') : raw
   const fill   = shape.shapeFill ? stroke : 'none'
   const sw     = shape.shapeStroke ?? 2
   const alpha  = shape.alpha ?? 1
@@ -320,6 +321,13 @@ function buildShapeSVGString(shape: DrawnShape, x0: number, y0: number, x1: numb
     case 'star': {
       const pts=Array.from({length:10},(_,i)=>{const a=(i/10)*Math.PI*2-Math.PI/2;const r=i%2===0?Math.max(rx,ry):Math.max(rx,ry)*0.4;return `${cx+Math.cos(a)*r},${cy+Math.sin(a)*r}`}).join(' ')
       return `<polygon points="${pts}" ${base}/>`
+    }
+    case 'bezier': {
+      const pts3 = shape.bezierPts
+      if (!pts3 || pts3.length < 2) return ''
+      let d = `M ${pts3[0].x} ${pts3[0].y}`
+      for (let i = 1; i < pts3.length; i++) d += ` L ${pts3[i].x} ${pts3[i].y}`
+      return `<path d="${d}" stroke="${stroke}" fill="none" stroke-width="${sw}" opacity="${alpha}" stroke-linecap="round" stroke-linejoin="round"/>`
     }
     default: return ''
   }
@@ -362,53 +370,74 @@ function DrawModeShapeWrapper({ shape, isSel, pageId, onDelete, canvasZoom }: {
   shape: DrawnShape; isSel: boolean; pageId: string; onDelete: () => void; canvasZoom: number
 }) {
   const [ctxMenuPos, setCtxMenuPos] = React.useState<{ x: number; y: number } | null>(null)
-  const previewGRef = React.useRef<SVGGElement>(null)
-  const resizeRef   = React.useRef<{
+  const previewGRef   = React.useRef<SVGGElement>(null)
+  const staticGRef    = React.useRef<SVGGElement>(null)   // hidden while resizing
+  const selHandlesRef = React.useRef<SVGGElement>(null)   // selection box + handles, hidden while resizing
+  const translateGRef = React.useRef<SVGGElement>(null)   // move용 imperative translate wrapper
+  const resizeRef     = React.useRef<{
     hid: HandleId; startX: number; startY: number
     origCoords: {x0:number;y0:number;x1:number;y1:number}
   } | null>(null)
+  const canvasZoomRef = React.useRef(canvasZoom)
+  React.useEffect(() => { canvasZoomRef.current = canvasZoom }, [canvasZoom])
   const PAD = 10   // logical page-space constant (only used for hit-test rect)
 
   const startResize = (e: React.PointerEvent<SVGRectElement>, hid: HandleId) => {
     e.stopPropagation(); e.preventDefault()
 
-    // ── Release any existing pointer capture on the parent SVG ──────────────
-    // The draw-mode SVG calls setPointerCapture on pointerdown. If we don't
-    // release it here, all subsequent pointermove events are redirected to that
-    // SVG and our window-level listener fires late / throttled.
-    const parentSVG = (e.currentTarget as SVGRectElement).ownerSVGElement
+    const handleEl = e.currentTarget as SVGRectElement
+
+    // ── Release capture from parent SVG, then grab it on the handle itself ──
+    // This guarantees all pointermove events go directly to the handle element
+    // (highest priority, fires before window listeners, never throttled by the
+    // SVG overlay's onPointerMove). Without this, the overlay's touch-action:none
+    // + full-screen coverage causes the window-level listener to receive events
+    // late / dropped, producing the "only updates on mouseup" symptom.
+    const parentSVG = handleEl.ownerSVGElement
     if (parentSVG && parentSVG.hasPointerCapture(e.pointerId)) {
       parentSVG.releasePointerCapture(e.pointerId)
     }
+    handleEl.setPointerCapture(e.pointerId)
 
     resizeRef.current = { hid, startX: e.clientX, startY: e.clientY,
       origCoords: { x0: shape.x0, y0: shape.y0, x1: shape.x1, y1: shape.y1 } }
 
+    ;(window as any).__drawResizing = true
+
+    // Hide static React shape + React-rendered handles; imperative preview takes over
+    if (staticGRef.current)    staticGRef.current.style.display    = 'none'
+    if (selHandlesRef.current) selHandlesRef.current.style.display = 'none'
+
     if (previewGRef.current)
-      imperativeResizePreview(previewGRef.current, shape, resizeRef.current.origCoords, canvasZoom)
+      imperativeResizePreview(previewGRef.current, shape, resizeRef.current.origCoords, canvasZoomRef.current)
 
     const onMove = (ev: PointerEvent) => {
       if (!resizeRef.current || !previewGRef.current) return
-      const dx = (ev.clientX - resizeRef.current.startX) / canvasZoom
-      const dy = (ev.clientY - resizeRef.current.startY) / canvasZoom
+      const dx = (ev.clientX - resizeRef.current.startX) / canvasZoomRef.current
+      const dy = (ev.clientY - resizeRef.current.startY) / canvasZoomRef.current
       imperativeResizePreview(previewGRef.current, shape,
-        applyHandle(resizeRef.current.hid, resizeRef.current.origCoords, dx, dy), canvasZoom)
+        applyHandle(resizeRef.current.hid, resizeRef.current.origCoords, dx, dy), canvasZoomRef.current)
     }
     const onUp = (ev: PointerEvent) => {
       if (!resizeRef.current) return
-      const dx = (ev.clientX - resizeRef.current.startX) / canvasZoom
-      const dy = (ev.clientY - resizeRef.current.startY) / canvasZoom
+      const dx = (ev.clientX - resizeRef.current.startX) / canvasZoomRef.current
+      const dy = (ev.clientY - resizeRef.current.startY) / canvasZoomRef.current
       const next = applyHandle(resizeRef.current.hid, resizeRef.current.origCoords, dx, dy)
       resizeRef.current = null
-      if (previewGRef.current) previewGRef.current.innerHTML = ''
+      ;(window as any).__drawResizing = false
+      if (previewGRef.current)   previewGRef.current.innerHTML     = ''
+      if (staticGRef.current)    staticGRef.current.style.display    = ''
+      if (selHandlesRef.current) selHandlesRef.current.style.display = ''
       getDrawLayerManager(pageId).patchShape(shape.id, next)
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup',   onUp)
-      window.removeEventListener('pointercancel', onUp)
+      handleEl.removeEventListener('pointermove', onMove)
+      handleEl.removeEventListener('pointerup',   onUp)
+      handleEl.removeEventListener('pointercancel', onUp)
     }
-    window.addEventListener('pointermove',   onMove)
-    window.addEventListener('pointerup',     onUp)
-    window.addEventListener('pointercancel', onUp)
+    // Listen on the handle element — capture ensures these fire even when
+    // the pointer moves outside the tiny handle rect.
+    handleEl.addEventListener('pointermove',   onMove)
+    handleEl.addEventListener('pointerup',     onUp)
+    handleEl.addEventListener('pointercancel', onUp)
   }
 
   const minX=Math.min(shape.x0,shape.x1), minY=Math.min(shape.y0,shape.y1)
@@ -426,18 +455,19 @@ function DrawModeShapeWrapper({ shape, isSel, pageId, onDelete, canvasZoom }: {
 
   return (
     <>
+      <g ref={translateGRef} data-draw-shape-id={shape.id}>
       <g
         style={{ pointerEvents: 'all', cursor: CURSOR_MOVE }}
         onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setCtxMenuPos({ x: e.clientX, y: e.clientY }) }}
       >
-        {/* Static shape rendered by React */}
-        <g>{renderShapeSVG(shape, 1)}</g>
+        {/* Static shape rendered by React — hidden while imperative resize preview is active */}
+        <g ref={staticGRef}>{renderShapeSVG(shape, 1)}</g>
 
         {/* Resize preview — innerHTML only, React never touches this node */}
         <g ref={previewGRef} />
 
         {isSel && (
-          <g>
+          <g ref={selHandlesRef}>
             <rect x={minX-HPAD} y={minY-HPAD} width={maxX-minX+HPAD*2} height={maxY-minY+HPAD*2}
               fill="rgba(99,102,241,0.04)" stroke="#6366f1" strokeWidth={sw1} rx={4*s} pointerEvents="none" />
             {([
@@ -451,6 +481,7 @@ function DrawModeShapeWrapper({ shape, isSel, pageId, onDelete, canvasZoom }: {
                 fill="#fff" stroke="#6366f1" strokeWidth={sw15}
                 style={{cursor:HANDLE_CURSOR_MAP[h.id==='tl'||h.id==='br'?'nwse-resize':'nesw-resize']??'nwse-resize',filter:'drop-shadow(0 1px 2px rgba(0,0,0,0.18))'}}
                 pointerEvents="all"
+                data-hid={h.id}
                 onPointerDown={e => startResize(e, h.id as HandleId)}
               />
             ) : (
@@ -460,11 +491,13 @@ function DrawModeShapeWrapper({ shape, isSel, pageId, onDelete, canvasZoom }: {
                 rx={2*s} fill="#6366f1" stroke="none"
                 style={{cursor:HANDLE_CURSOR_MAP[h.id==='ml'||h.id==='mr'?'ew-resize':'ns-resize']??'ew-resize',opacity:0.85}}
                 pointerEvents="all"
+                data-hid={h.id}
                 onPointerDown={e => startResize(e, h.id as HandleId)}
               />
             ))}
           </g>
         )}
+      </g>
       </g>
       {ctxMenuPos && typeof document !== 'undefined' && ReactDOM.createPortal(
         <ShapeContextMenu shape={shape} screenX={ctxMenuPos.x} screenY={ctxMenuPos.y}
@@ -1060,15 +1093,28 @@ export function CanvasArea(s: ExportPageState) {
 
   // ── Shape gesture state（合并为单一 ref，避免 stale state）────────────────
   const shapeGesture = React.useRef<{
-    mode: 'none' | 'drawing' | 'moving'
+    mode: 'none' | 'drawing' | 'moving' | 'resizing'
     origin: { x: number; y: number } | null
     dragStart: { x: number; y: number } | null
     movingId: string | null
     bezierPts: { x: number; y: number }[]
   }>({ mode: 'none', origin: null, dragStart: null, movingId: null, bezierPts: [] })
 
-  // preview shape（draw 模式拖拽绘制中的实时预览）
-  const [previewShape, setPreviewShape] = React.useState<DrawnShape | null>(null)
+  // draw 모드 그리기/bezier 실시간 프리뷰 — React state 대신 imperative innerHTML
+  // setPreviewShape를 호출할 때마다 리렌더링이 터졌던 게 하드컷의 원인이었음
+  const drawPreviewGMap = React.useRef<Map<string, SVGGElement>>(new Map())
+  const setDrawPreview = React.useCallback((shape: DrawnShape | null, pageId?: string) => {
+    // 多页时按 pageId 取对应的 <g>；无 pageId 则清空所有
+    if (!pageId) {
+      drawPreviewGMap.current.forEach(g => { g.innerHTML = '' })
+      return
+    }
+    const g = drawPreviewGMap.current.get(pageId)
+    if (!g) return
+    if (!shape) { g.innerHTML = ''; return }
+    g.innerHTML = buildShapeSVGString(shape, shape.x0, shape.y0, shape.x1, shape.y1)
+    g.style.opacity = '0.6'
+  }, [])
 
   // 每页的 shapes（单一来源，来自 manager emit）
   const [pageShapesState, setPageShapesState] = React.useState<Map<string, DrawnShape[]>>(new Map())
@@ -1435,7 +1481,7 @@ export function CanvasArea(s: ExportPageState) {
         mgr.selectShape(null)
         // 取消 bezier 绘制中
         shapeGesture.current = { mode: 'none', origin: null, dragStart: null, movingId: null, bezierPts: [] }
-        setPreviewShape(null)
+        setDrawPreview(null)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -2337,6 +2383,8 @@ export function CanvasArea(s: ExportPageState) {
                         // Resize handles release capture themselves — don't capture here if on a handle
                         if ((e.target as SVGElement).hasAttribute('data-hid') ||
                             (e.target as SVGElement).closest?.('[data-hid]')) return
+                        // resize 진행 중이면 SVG overlay는 완전히 패스
+                        if ((window as any).__drawResizing) return
                         e.preventDefault(); e.stopPropagation()
 
                         const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect()
@@ -2374,11 +2422,11 @@ export function CanvasArea(s: ExportPageState) {
                               const { color, alpha, shapeFill, shapeStroke, shapeSides } = sharedDrawState
                               mgr.addShape({ id: crypto.randomUUID(), shapeType: 'bezier', x0: 0, y0: 0, x1: 0, y1: 0, bezierPts: [...g.bezierPts], color, alpha, shapeFill, shapeStroke, shapeSides })
                             }
-                            g.bezierPts = []; setPreviewShape(null); return
+                            g.bezierPts = []; setDrawPreview(null, page.id); return
                           }
                           g.bezierPts.push({ x, y })
                           const { color, alpha, shapeFill, shapeStroke, shapeSides } = sharedDrawState
-                          setPreviewShape({ id: '__preview__', shapeType: 'bezier', x0: 0, y0: 0, x1: 0, y1: 0, bezierPts: [...g.bezierPts], color, alpha, shapeFill, shapeStroke, shapeSides })
+                          setDrawPreview({ id: '__preview__', shapeType: 'bezier', x0: 0, y0: 0, x1: 0, y1: 0, bezierPts: [...g.bezierPts], color, alpha, shapeFill, shapeStroke, shapeSides }, page.id)
                           return
                         }
                         g.mode = 'drawing'; g.origin = { x, y }
@@ -2386,6 +2434,10 @@ export function CanvasArea(s: ExportPageState) {
                       onPointerMove={e => {
                         if (e.pointerType === 'touch' && !e.isPrimary) return
                         e.preventDefault(); e.stopPropagation()
+
+                        // resize 중: DrawModeShapeWrapper의 window-level listener가 처리 — 여기서 아무것도 하지 않음
+                        const g = shapeGesture.current
+                        if (g.mode === 'resizing' || (window as any).__drawResizing) return
 
                         const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect()
                         const x = (e.clientX - rect.left) / canvasZoom
@@ -2417,7 +2469,6 @@ export function CanvasArea(s: ExportPageState) {
                         }
 
                         // ── 图形模式 ──────────────────────────────────────────
-                        const g = shapeGesture.current
                         if (g.mode === 'moving' && g.dragStart && g.movingId) {
                           const dx = x - g.dragStart.x, dy = y - g.dragStart.y
                           // 命令式 DOM 直接写 transform — 零 React re-render，消除页面内硬切
@@ -2439,7 +2490,7 @@ export function CanvasArea(s: ExportPageState) {
                             }
                           }
                           const { color, alpha, shapeFill, shapeStroke, shapeSides, shapeType } = sharedDrawState
-                          setPreviewShape({ id: '__preview__', shapeType: shapeType!, x0, y0, x1, y1, color, alpha, shapeFill, shapeStroke, shapeSides })
+                          setDrawPreview({ id: '__preview__', shapeType: shapeType!, x0, y0, x1, y1, color, alpha, shapeFill, shapeStroke, shapeSides }, page.id)
                         }
                       }}
                       onPointerUp={e => {
@@ -2493,7 +2544,7 @@ export function CanvasArea(s: ExportPageState) {
                               x1 = x0+Math.sign(dx)*side; y1 = y0+Math.sign(dy)*side
                             }
                           }
-                          setPreviewShape(null)
+                          setDrawPreview(null, page.id)
                           if (Math.abs(x1-x0) > 4 || Math.abs(y1-y0) > 4) {
                             const { color, alpha, shapeFill, shapeStroke, shapeSides, shapeType } = sharedDrawState
                             mgr.addShape({ id: crypto.randomUUID(), shapeType: shapeType!, x0, y0, x1, y1, color, alpha, shapeFill, shapeStroke, shapeSides })
@@ -2508,7 +2559,7 @@ export function CanvasArea(s: ExportPageState) {
                           getDrawLayerManager(page.id).endStroke()
                         }
                         shapeGesture.current = { mode: 'none', origin: null, dragStart: null, movingId: null, bezierPts: [] }
-                        setPreviewShape(null)
+                        setDrawPreview(null, page.id)
                       }}
                     >
                       {/* 已保存的 shapes */}
@@ -2526,10 +2577,11 @@ export function CanvasArea(s: ExportPageState) {
                           />
                         )
                       })}
-                      {/* 绘制中预览（drawing mode）*/}
-                      {previewShape && shapeGesture.current.mode === 'drawing' && renderShapeSVG(previewShape, 0.6)}
-                      {/* bezier 预览 */}
-                      {previewShape && shapeGesture.current.mode === 'none' && previewShape.shapeType === 'bezier' && renderShapeSVG(previewShape, 0.6)}
+                      {/* 绘制中预览 + bezier 预览 — imperative innerHTML, React never re-renders this */}
+                      <g ref={el => {
+                        if (el) drawPreviewGMap.current.set(page.id, el)
+                        else drawPreviewGMap.current.delete(page.id)
+                      }} />
                     </svg>
                   ) : (
                     // ── 非 draw 模式：tldraw/Excalidraw 风格 SVG 原生 drag ──
