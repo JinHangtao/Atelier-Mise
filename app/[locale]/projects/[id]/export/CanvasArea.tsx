@@ -1049,7 +1049,7 @@ export function CanvasArea(s: ExportPageState) {
     removeBackground, removingBgBlockId,
     editingContent, setEditingContent, editingCaption, setEditingCaption,
     editingFontSize, setEditingFontSize, editingImageCaptions, setEditingImageCaptions,
-    imageDragIndex, ctxImageInputRef,
+    dragIndex: imageDragIndex, ctxImageInputRef,
     imageEditorUrl, setImageEditorUrl, imageEditorIdx, setImageEditorIdx,
     isZh, project, schools, setRightTab,
     gridState,
