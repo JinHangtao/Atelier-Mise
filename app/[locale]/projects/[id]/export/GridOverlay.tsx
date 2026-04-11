@@ -109,6 +109,7 @@ type GridLayer = ColumnLayer | BaselineLayer | TableLayer
 
 interface GridSystemState {
   pages: Record<string, GridLayer[]>
+  editingLayerId: string | null
 }
 
 export interface CellEditTarget {
