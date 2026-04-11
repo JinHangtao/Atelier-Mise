@@ -35,7 +35,7 @@ export function RightPanel(s: ExportPageState) {
     addPage, deletePage, duplicatePage, reorderPages, renamePage, changePageAspect,
     setEditingBlockId,
     isZh, project, schools, visibleSchools, schoolsExpanded, setSchoolsExpanded,
-    compressImage,
+    compressImage, addImageBlock,
     setImageEditorUrl, setImageEditorIdx,
     contentWidth, setSelectedBlockId,
   } = s
@@ -1099,6 +1099,7 @@ export function RightPanel(s: ExportPageState) {
           isZh={isZh}
           canvasWidth={contentWidth}
           activePageId={activePageId}
+          addImageBlock={addImageBlock}
         />
       </div>
 
