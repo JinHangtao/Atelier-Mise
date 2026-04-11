@@ -523,6 +523,20 @@ export function useExportPage() {
     }])
   }
 
+  // ── addImageBlock：快捷添加 image block，可选指定坐标 ──
+  const addImageBlock = useCallback((dataUrl: string, pxX?: number, pxY?: number) => {
+    if (pxX !== undefined && pxY !== undefined) {
+      addBlockAt('image', dataUrl, pxX, pxY)
+    } else {
+      addBlock('image', dataUrl)
+    }
+  }, [addBlock, addBlockAt])
+
+  // ── addToMediaLibrary：将图片加入媒体库（当前为 no-op，后续可扩展）──
+  const addToMediaLibrary = useCallback((_dataUrl: string) => {
+    // TODO: implement media library persistence
+  }, [])
+
   const removeBlock = (blockId: string) => setBlocks(b => b.filter(x => x.id !== blockId))
 
   // ── [修复] patchBlock：不依赖 activePageId 闭包，遍历所有页找到 block 真实所在页写入 ──
@@ -1028,7 +1042,7 @@ srcCanvases.forEach((src, idx) => {
     // refs
     dragIndex, ctxImageInputRef,
     // block ops
-    addBlock, addBlockAt, removeBlock, patchBlock,
+    addBlock, addBlockAt, addImageBlock, addToMediaLibrary, removeBlock, patchBlock,
     moveBlockToPage, onBlockDragStop,
     startEdit, saveEdit, cancelEdit,
     compressImage, removeBackground,
