@@ -179,7 +179,7 @@ function TableLayerSVG({
   layer, W, H, svgRef, onUpdate, onEditCell,
 }: {
   layer: TableLayer; W: number; H: number
-  svgRef: React.RefObject<SVGSVGElement>
+  svgRef: React.RefObject<SVGSVGElement | null>
   onUpdate: (p: Partial<TableLayer>) => void
   onEditCell: (target: CellEditTarget) => void
 }) {
@@ -432,7 +432,7 @@ function LayerTransformBox({
   layer, W, H, svgRef, canvasZoom, onUpdate,
 }: {
   layer: GridLayer; W: number; H: number
-  svgRef: React.RefObject<SVGSVGElement>; canvasZoom: number
+  svgRef: React.RefObject<SVGSVGElement | null>; canvasZoom: number
   onUpdate: (p: Partial<GridLayer>) => void
 }) {
   const ox = layer.offsetX ?? 0; const oy = layer.offsetY ?? 0
