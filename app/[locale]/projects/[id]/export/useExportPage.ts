@@ -191,11 +191,22 @@ export function useExportPage() {
     let settleTimer = 0
     const MIN_ZOOM = 0.3, MAX_ZOOM = 3
 
+    // settle: 用户停止操作后才 setState — 期间纯 DOM 直驱，零 re-render
+    // ⚠️ 不加 CSS transition：transition + setState 同帧 = 闪烁根源
     const settle = () => {
-      // 平滑落定：给最后一帧加短暂过渡，消除"两帧跳变"感
-      applyTransform(livePan.current, liveZoom.current, 'transform 120ms cubic-bezier(0.25,0.46,0.45,0.94)')
+      applyTransform(livePan.current, liveZoom.current)
       setCanvasZoom(liveZoom.current)
       setCanvasPan({ x: livePan.current.x, y: livePan.current.y })
+    }
+
+    // RAF 节流：每帧最多写一次 DOM，防止同帧多次覆盖 transform 抖动
+    let rafId = 0
+    const scheduleApply = () => {
+      if (rafId) return
+      rafId = requestAnimationFrame(() => {
+        rafId = 0
+        applyTransform(livePan.current, liveZoom.current)
+      })
     }
 
     const handler = (e: WheelEvent) => {
@@ -207,39 +218,40 @@ export function useExportPage() {
       const MARGIN = 120
 
       if (e.ctrlKey || e.metaKey) {
-        const wrapRect   = wrap.getBoundingClientRect()
-        const mouseX     = e.clientX - wrapRect.left
-        const mouseY     = e.clientY - wrapRect.top
-        const isPinch    = Math.abs(e.deltaY) < 50 && e.deltaMode === 0
-        const rawDelta   = e.deltaMode === 1 ? e.deltaY * 0.12 : e.deltaY
-        const scaleDelta = isPinch ? -(rawDelta * 0.008) : (rawDelta > 0 ? -0.09 : 0.09)
-        const prevZoom   = liveZoom.current
-        const newZoom    = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prevZoom + scaleDelta))
-        const ratio      = newZoom / prevZoom
+        const wrapRect = wrap.getBoundingClientRect()
+        const mouseX   = e.clientX - wrapRect.left
+        const mouseY   = e.clientY - wrapRect.top
+        // exponential factor：鼠标和触控板统一公式，无需区分 isPinch，无跳变
+        // clamp ±50 截断鼠标大步长，触控板小值（±1~15）原样通过
+        const raw      = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY
+        const clamped  = Math.max(-50, Math.min(50, raw))
+        const factor   = Math.pow(0.997, clamped)   // <0 放大, >0 缩小，连续无级
+        const prevZoom = liveZoom.current
+        const newZoom  = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prevZoom * factor))
+        const ratio    = newZoom / prevZoom
         liveZoom.current = +newZoom.toFixed(4)
         livePan.current  = {
           x: Math.min(W - MARGIN, Math.max(-(W * 2), mouseX - (mouseX - livePan.current.x) * ratio)),
           y: Math.min(H - MARGIN, Math.max(-(H * 4), mouseY - (mouseY - livePan.current.y) * ratio)),
         }
-        applyTransform(livePan.current, liveZoom.current)
       } else if (e.shiftKey) {
-        const dx = (e.deltaY !== 0 ? e.deltaY : e.deltaX) * (e.deltaMode === 1 ? 20 : 1)
+        const dx = (e.deltaY !== 0 ? e.deltaY : e.deltaX) * (e.deltaMode === 1 ? 16 : 1)
         livePan.current = {
           x: Math.min(W - MARGIN, Math.max(-(W * 2), livePan.current.x - dx)),
           y: livePan.current.y,
         }
-        applyTransform(livePan.current, liveZoom.current)
       } else {
-        const mult = e.deltaMode === 1 ? 20 : 1
+        // 触控板双指滑动：同时处理 X/Y 轴，手感与系统原生一致
+        const mult = e.deltaMode === 1 ? 16 : 1
         livePan.current = {
-          x: livePan.current.x,
+          x: Math.min(W - MARGIN, Math.max(-(W * 2), livePan.current.x - e.deltaX * mult)),
           y: Math.min(H - MARGIN, Math.max(-(H * 4), livePan.current.y - e.deltaY * mult)),
         }
-        applyTransform(livePan.current, liveZoom.current)
       }
 
+      scheduleApply()
       clearTimeout(settleTimer)
-      settleTimer = window.setTimeout(settle, 150)
+      settleTimer = window.setTimeout(settle, 160)
     }
 
     const tryBind = () => {
@@ -252,7 +264,7 @@ export function useExportPage() {
     }
     tryBind()
     const raf = requestAnimationFrame(tryBind)
-    return () => { cancelAnimationFrame(raf); if (el) el.removeEventListener('wheel', handler); clearTimeout(settleTimer) }
+    return () => { cancelAnimationFrame(raf); cancelAnimationFrame(rafId); if (el) el.removeEventListener('wheel', handler); clearTimeout(settleTimer) }
   }, [applyTransform]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ResizeObserver
