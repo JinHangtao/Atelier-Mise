@@ -593,6 +593,13 @@ export function GridLayerOverlay({
   const svgRef = useRef<SVGSVGElement>(null)
   const handleEditCell = useCallback((t: CellEditTarget) => onEditCell?.(t), [onEditCell])
 
+  // 把正在编辑的 layer 移到渲染数组末尾（SVG z 序最高），
+  // 避免多个 table layer 的 bgRect 互相遮挡导致低层 layer 不可点击。
+  const editingId = gridState.editingLayerId
+  const sorted = editingId
+    ? [...visible.filter(l => l.id !== editingId), ...visible.filter(l => l.id === editingId)]
+    : visible
+
   return (
     <svg
       ref={svgRef}
@@ -607,7 +614,7 @@ export function GridLayerOverlay({
       viewBox={`0 0 ${W} ${H}`}
       preserveAspectRatio="none"
     >
-      {visible.map(layer => {
+      {sorted.map(layer => {
         const shared = {
           layer, W, H, svgRef, canvasZoom,
           onUpdate: (p: Partial<GridLayer>) => updateLayer(layer.id, p),

@@ -232,7 +232,7 @@ function renderShapeSVGInBox(shape: DrawnShape, PAD: number, w: number, h: numbe
   if (shape.shapeType === 'bezier' && shape.bezierPts) {
     const remapped: DrawnShape = {
       ...shape,
-      bezierPts: shape.bezierPts.map(p => ({ x: p.x - minX + PAD, y: p.y - minY + PAD })),
+      bezierPts: shape.bezierPts.map(p => ({ ...p, x: p.x - minX + PAD, y: p.y - minY + PAD })),
       x0: lx0, y0: ly0, x1: lx1, y1: ly1,
     }
     return buildShapeElement(remapped, lx0, ly0, lx1, ly1, 1)
