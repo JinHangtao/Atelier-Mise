@@ -2465,13 +2465,13 @@ export function CanvasArea(s: ExportPageState) {
                           if (e.detail === 2) {
                             if (g.bezierPts.length >= 2) {
                               const { color, alpha, shapeFill, shapeStroke, shapeSides } = sharedDrawState
-                              mgr.addShape({ id: crypto.randomUUID(), shapeType: 'bezier', x0: 0, y0: 0, x1: 0, y1: 0, bezierPts: [...g.bezierPts], color, alpha, shapeFill, shapeStroke, shapeSides })
+                              mgr.addShape({ id: crypto.randomUUID(), shapeType: 'bezier', x0: 0, y0: 0, x1: 0, y1: 0, bezierPts: g.bezierPts.map(p => ({ ...p, cp1x: p.x, cp1y: p.y, cp2x: p.x, cp2y: p.y, corner: false })), color, alpha, shapeFill, shapeStroke, shapeSides })
                             }
                             g.bezierPts = []; setDrawPreview(null, page.id); return
                           }
                           g.bezierPts.push({ x, y })
                           const { color, alpha, shapeFill, shapeStroke, shapeSides } = sharedDrawState
-                          setDrawPreview({ id: '__preview__', shapeType: 'bezier', x0: 0, y0: 0, x1: 0, y1: 0, bezierPts: [...g.bezierPts], color, alpha, shapeFill, shapeStroke, shapeSides }, page.id)
+                          setDrawPreview({ id: '__preview__', shapeType: 'bezier', x0: 0, y0: 0, x1: 0, y1: 0, bezierPts: g.bezierPts.map(p => ({ ...p, cp1x: p.x, cp1y: p.y, cp2x: p.x, cp2y: p.y, corner: false })), color, alpha, shapeFill, shapeStroke, shapeSides }, page.id)
                           return
                         }
                         g.mode = 'drawing'; g.origin = { x, y }
