@@ -13,7 +13,6 @@ import {
   generateId, aspectLabel, pageHeight, migrateOrLoad,
   defaultPages, makeNewPage, draftKey, optKey, pagesKey,
 } from './pageHelpers'
-import { saveMediaImage, loadMediaImages, deleteMediaImage } from './mediaLibraryDB'
 
 export type Anchor = 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right'
 
@@ -389,8 +388,6 @@ export function useExportPage() {
   const [selectedBlockId,      setSelectedBlockId]      = useState<string | null>(null)
   const [fontPickerOpen,       setFontPickerOpen]       = useState(false)
   const [colorPickerOpen,      setColorPickerOpen]      = useState(false)
-  const [imagePickerOpen,      setImagePickerOpen]      = useState(false)
-  const [selectedImages,       setSelectedImages]       = useState<string[]>([])
   const [rightTab,             setRightTab]             = useState<'pages' | 'blocks' | 'draw' | 'style'>('pages')
   const [imageEditorUrl,       setImageEditorUrl]       = useState<string | null>(null)
   const [imageEditorIdx,       setImageEditorIdx]       = useState<number | null>(null)
@@ -401,8 +398,6 @@ export function useExportPage() {
   const [removingBgBlockId,    setRemovingBgBlockId]    = useState<string | null>(null)
 
   const dragIndex      = useRef<number | null>(null)
-  const imageDragIndex = useRef<number | null>(null)
-  const localImageInputRef = useRef<HTMLInputElement | null>(null)
   const ctxImageInputRef   = useRef<HTMLInputElement | null>(null)
 
   // ── Keyboard shortcuts ──
@@ -502,57 +497,6 @@ export function useExportPage() {
     }
   }
 
-  // ── 媒体库图片存入 IndexedDB，project 里只留 id 引用 ──────────────────────────
-  const [mediaUrls, setMediaUrls] = useState<{ id: string; url: string }[]>([])
-
-  // 初始化时从 IDB 加载该项目的所有图片
-  useEffect(() => {
-    if (!id) return
-    let cancelled = false
-    loadMediaImages(id).then(map => {
-      if (cancelled) return
-      // 按 project.mediaIds 顺序排列，保证展示顺序稳定
-      const ids: string[] = (project as any)?.mediaIds || []
-      const ordered = ids
-        .filter(mid => map[mid])
-        .map(mid => ({ id: mid, url: map[mid] }))
-      // 把 IDB 有但 project.mediaIds 没记录的也追加进来（容错）
-      Object.entries(map).forEach(([mid, url]) => {
-        if (!ids.includes(mid)) ordered.push({ id: mid, url })
-      })
-      setMediaUrls(ordered)
-    }).catch(err => console.error('[MediaLibrary] 加载 IDB 失败:', err))
-    return () => { cancelled = true }
-  }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const addToMediaLibrary = (dataUrl: string) => {
-    compressImage(dataUrl).then(async compressed => {
-      try {
-        const imageId = await saveMediaImage(id, compressed)
-        setProjects(ps => ps.map(p => p.id === id
-          ? { ...p, mediaIds: [...((p as any).mediaIds || []), imageId] }
-          : p
-        ))
-        setMediaUrls(prev => [...prev, { id: imageId, url: compressed }])
-      } catch (err) {
-        console.error('[MediaLibrary] 存入 IndexedDB 失败:', err)
-      }
-    })
-  }
-
-  const removeFromMediaLibrary = async (imageId: string) => {
-    try {
-      await deleteMediaImage(id, imageId)
-      setProjects(ps => ps.map(p => p.id === id
-        ? { ...p, mediaIds: ((p as any).mediaIds || []).filter((mid: string) => mid !== imageId) }
-        : p
-      ))
-      setMediaUrls(prev => prev.filter(m => m.id !== imageId))
-    } catch (err) {
-      console.error('[MediaLibrary] 删除 IndexedDB 失败:', err)
-    }
-  }
-
   // ── Block CRUD ──
   const addBlock = useCallback((type: BlockType, content: string, caption?: string, images?: string[]) => {
     const currentPageId = activePageIdRef.current || activePageId
@@ -580,20 +524,6 @@ export function useExportPage() {
   }
 
   const removeBlock = (blockId: string) => setBlocks(b => b.filter(x => x.id !== blockId))
-
-  const addImageBlock = (url: string, pxX?: number, pxY?: number) => {
-    const imgEl = new window.Image()
-    imgEl.onload = () => {
-      const ratio = imgEl.naturalHeight / imgEl.naturalWidth
-      const cw    = Math.max(canvasWrapWidth - 40, 400)
-      const autoH = Math.round(cw * ratio)
-      setBlocks(b => {
-        const maxY = b.reduce((acc, bl) => bl.pixelPos ? Math.max(acc, bl.pixelPos.y + bl.pixelPos.h) : acc, 0)
-        return [...b, { id: generateId(), type: 'image' as BlockType, content: url, pixelPos: { x: pxX ?? 0, y: pxY ?? maxY, w: cw, h: autoH } }]
-      })
-    }
-    imgEl.src = url
-  }
 
   // ── [修复] patchBlock：不依赖 activePageId 闭包，遍历所有页找到 block 真实所在页写入 ──
   // 原实现：updatePageBlocks(activePageId, ...) 在跨页拖拽后 activePageId 尚未 re-render 更新，
@@ -732,17 +662,6 @@ export function useExportPage() {
     setEditingBlockId(null)
   }
   const cancelEdit = () => setEditingBlockId(null)
-
-  const toggleImageSelection = (url: string) =>
-    setSelectedImages(prev => prev.includes(url) ? prev.filter(u => u !== url) : [...prev, url])
-
-  const addImageRow = () => {
-    if (selectedImages.length === 0) return
-    if (selectedImages.length === 1) addImageBlock(selectedImages[0])
-    else addBlock('image-row', '', '', selectedImages)
-    setSelectedImages([])
-    setImagePickerOpen(false)
-  }
 
   // ── Export ──
   // 画布宽度已固定为 EXPORT_WIDTH，坐标完全一致，无需任何 scale 换算
@@ -1062,7 +981,6 @@ srcCanvases.forEach((src, idx) => {
   }
 
   const visibleSchools = schoolsExpanded ? schools : schools.slice(0, 3)
-  // mediaUrls 现在是 { id, url }[] 从 IDB 异步加载，调用方用 .url 拿 dataUrl
 
   return {
     // routing
@@ -1099,8 +1017,6 @@ srcCanvases.forEach((src, idx) => {
     selectedBlockId, setSelectedBlockId,
     fontPickerOpen, setFontPickerOpen,
     colorPickerOpen, setColorPickerOpen,
-    imagePickerOpen, setImagePickerOpen,
-    selectedImages, setSelectedImages,
     rightTab, setRightTab,
     imageEditorUrl, setImageEditorUrl,
     imageEditorIdx, setImageEditorIdx,
@@ -1110,16 +1026,15 @@ srcCanvases.forEach((src, idx) => {
     dragOverPageId, setDragOverPageId,
     removingBgBlockId,
     // refs
-    dragIndex, imageDragIndex, localImageInputRef, ctxImageInputRef,
+    dragIndex, ctxImageInputRef,
     // block ops
-    addBlock, addBlockAt, removeBlock, addImageBlock, patchBlock,
+    addBlock, addBlockAt, removeBlock, patchBlock,
     moveBlockToPage, onBlockDragStop,
     startEdit, saveEdit, cancelEdit,
-    toggleImageSelection, addImageRow,
-    compressImage, addToMediaLibrary, removeFromMediaLibrary, removeBackground,
+    compressImage, removeBackground,
     // export
     pagesForExport, allBlocksForExport, doExportHTML, doExportPDF, doExportDOCX,
-    visibleSchools, mediaUrls,
+    visibleSchools,
     // theme labels
     THEMES, FONTS,
   }

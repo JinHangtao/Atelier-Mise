@@ -1,7 +1,5 @@
 'use client'
-import React, { useRef, useCallback, useEffect } from 'react'
-
-// ─── Types ────────────────────────────────────────────────────────────────────
+import React, { useRef, useCallback, useEffect, useState } from 'react'
 
 export interface TableCell {
   text: string
@@ -11,14 +9,14 @@ export interface TableCell {
 }
 
 export interface TableData {
-  rows: TableCell[][]       // [行][列]
-  colWidths: number[]       // 每列宽度比例（0~1，总和=1）
-  headerRow?: boolean       // 首行高亮
-  headerCol?: boolean       // 首列高亮
-  borderColor?: string      // 边框颜色
-  fontSize?: number         // 表格字号
-  fontFamily?: string       // 字体
-  cellPadding?: number      // 单元格内边距 px
+  rows: TableCell[][]
+  colWidths: number[]
+  headerRow?: boolean
+  headerCol?: boolean
+  borderColor?: string
+  fontSize?: number
+  fontFamily?: string
+  cellPadding?: number
 }
 
 export const DEFAULT_TABLE_DATA: TableData = {
@@ -36,18 +34,14 @@ export const DEFAULT_TABLE_DATA: TableData = {
   cellPadding: 10,
 }
 
-// ─── Props ────────────────────────────────────────────────────────────────────
-
 interface TableBlockProps {
   tableData: TableData
-  isEditing: boolean            // 是否处于编辑模式（双击进入）
+  isEditing: boolean
   isSelected: boolean
-  blockWidth: number            // block 的像素宽度（来自 pixelPos.w）
+  blockWidth: number
   onChange: (data: TableData) => void
-  onHeightChange: (h: number) => void  // 内容撑高后通知父层更新 pixelPos.h
+  onHeightChange: (h: number) => void
 }
-
-// ─── Component ────────────────────────────────────────────────────────────────
 
 export function TableBlock({
   tableData,
@@ -57,10 +51,16 @@ export function TableBlock({
   onChange,
   onHeightChange,
 }: TableBlockProps) {
-  const tableRef = useRef<HTMLTableElement>(null)
+  const tableRef    = useRef<HTMLTableElement>(null)
   const resizingCol = useRef<{ colIdx: number; startX: number; startWidths: number[] } | null>(null)
+  const [activeCell, setActiveCell] = useState<[number, number] | null>(null)
 
-  // ── 自动上报高度 ──────────────────────────────────────────────────────────
+  // 退出编辑模式时清除激活格子
+  useEffect(() => {
+    if (!isEditing) setActiveCell(null)
+  }, [isEditing])
+
+  // 自动上报高度
   useEffect(() => {
     if (!tableRef.current) return
     const ro = new ResizeObserver(() => {
@@ -70,33 +70,29 @@ export function TableBlock({
     return () => ro.disconnect()
   }, [onHeightChange])
 
-  // ── 单元格文字更新 ────────────────────────────────────────────────────────
-  const updateCell = useCallback((ri: number, ci: number, patch: Partial<TableCell>) => {
+  // 单元格文字更新
+  const updateCell = useCallback((ri: number, ci: number, text: string) => {
     const newRows = tableData.rows.map((row, r) =>
-      row.map((cell, c) => r === ri && c === ci ? { ...cell, ...patch } : cell)
+      row.map((cell, c) => r === ri && c === ci ? { ...cell, text } : cell)
     )
     onChange({ ...tableData, rows: newRows })
   }, [tableData, onChange])
 
-  // ── 列宽拖拽 ─────────────────────────────────────────────────────────────
+  // 列宽拖拽
   const onColResizeStart = useCallback((e: React.MouseEvent, colIdx: number) => {
     e.preventDefault()
     e.stopPropagation()
     resizingCol.current = { colIdx, startX: e.clientX, startWidths: [...tableData.colWidths] }
-
     const onMove = (ev: MouseEvent) => {
       if (!resizingCol.current) return
       const { colIdx: ci, startX, startWidths } = resizingCol.current
-      const dx = ev.clientX - startX
-      const totalW = blockWidth
-      const deltaRatio = dx / totalW
-      const newWidths = [...startWidths]
-      const minRatio = 40 / totalW  // 最小列宽 40px
-
-      // 左列变宽右列变窄，两侧约束
-      const left  = Math.max(minRatio, newWidths[ci] + deltaRatio)
-      const right = Math.max(minRatio, newWidths[ci + 1] - deltaRatio)
-      const diff  = (newWidths[ci] + newWidths[ci + 1]) - (left + right)
+      const dx         = ev.clientX - startX
+      const deltaRatio = dx / blockWidth
+      const newWidths  = [...startWidths]
+      const minRatio   = 40 / blockWidth
+      const left       = Math.max(minRatio, newWidths[ci]     + deltaRatio)
+      const right      = Math.max(minRatio, newWidths[ci + 1] - deltaRatio)
+      const diff       = (newWidths[ci] + newWidths[ci + 1]) - (left + right)
       if (Math.abs(diff) < 0.001) {
         newWidths[ci]     = left
         newWidths[ci + 1] = right
@@ -122,30 +118,23 @@ export function TableBlock({
     <div style={{ width: '100%', overflow: 'hidden', position: 'relative' }}>
       <table
         ref={tableRef}
-        style={{
-          width: '100%',
-          borderCollapse: 'collapse',
-          tableLayout: 'fixed',
-          fontFamily: ff,
-          fontSize: fs,
-        }}
+        style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontFamily: ff, fontSize: fs }}
       >
-        {/* 列宽定义 */}
         <colgroup>
           {colWidths.map((w, ci) => (
             <col key={ci} style={{ width: `${(w * 100).toFixed(2)}%` }} />
           ))}
         </colgroup>
-
         <tbody>
           {rows.map((row, ri) => {
             const isHeaderRow = headerRow && ri === 0
             return (
               <tr key={ri}>
                 {row.map((cell, ci) => {
-                  const isHeaderCol = headerCol && ci === 0
-                  const isHeader    = isHeaderRow || isHeaderCol
-                  const isLastCol   = ci === row.length - 1
+                  const isHeaderCol  = headerCol && ci === 0
+                  const isHeader     = isHeaderRow || isHeaderCol
+                  const isLastCol    = ci === row.length - 1
+                  const isCellActive = isEditing && activeCell?.[0] === ri && activeCell?.[1] === ci
 
                   return (
                     <td
@@ -156,63 +145,93 @@ export function TableBlock({
                         position: 'relative',
                         background: isHeader ? 'rgba(26,26,26,0.04)' : 'transparent',
                         verticalAlign: 'top',
+                        boxShadow: isCellActive ? 'inset 0 0 0 2px rgba(66,133,244,0.6)' : undefined,
                       }}
+                      onClick={() => { if (isEditing) setActiveCell([ri, ci]) }}
                     >
-                      {/* contentEditable 文字区域 */}
-                      <div
-                        contentEditable={isEditing}
-                        suppressContentEditableWarning
-                        onInput={e => {
-                          updateCell(ri, ci, { text: (e.target as HTMLDivElement).innerText })
-                        }}
-                        onKeyDown={e => {
-                          // Tab 跳下一格
-                          if (e.key === 'Tab') {
-                            e.preventDefault()
-                            const allCells = tableRef.current?.querySelectorAll('[contenteditable]')
-                            if (!allCells) return
-                            const arr    = Array.from(allCells)
-                            const curIdx = arr.indexOf(e.currentTarget as HTMLDivElement)
-                            const next   = arr[curIdx + (e.shiftKey ? -1 : 1)] as HTMLElement | undefined
-                            next?.focus()
-                          }
-                          // 阻止 undo 冒泡到画布
-                          if ((e.metaKey || e.ctrlKey) && e.key === 'z') e.stopPropagation()
-                        }}
-                        style={{
-                          display:      'block',
-                          minHeight:    `${fs * 1.6}px`,
-                          padding:      `${pad}px`,
-                          outline:      'none',
-                          textAlign:    cell.align,
-                          fontWeight:   isHeader || cell.bold ? 700 : 400,
-                          color:        cell.color ?? '#1a1a1a',
-                          lineHeight:   1.6,
-                          whiteSpace:   'pre-wrap',
-                          wordBreak:    'break-word',
-                          cursor:       isEditing ? 'text' : 'default',
-                          userSelect:   isEditing ? 'text' : 'none',
-                          // 让文字不可见地保持值（避免 React 与 contentEditable 冲突）
-                        }}
-                        // 只在首次 mount 或值变化时同步（避免光标跳位）
-                        dangerouslySetInnerHTML={undefined}
-                        ref={el => {
-                          if (el && el.innerText !== cell.text && document.activeElement !== el) {
-                            el.innerText = cell.text
-                          }
-                        }}
-                      />
+                      {isCellActive ? (
+                        <textarea
+                          className="no-drag"
+                          autoFocus
+                          defaultValue={cell.text}
+                          onBlur={e => {
+                            updateCell(ri, ci, e.target.value)
+                            setTimeout(() => {
+                              if (!tableRef.current?.contains(document.activeElement)) {
+                                setActiveCell(null)
+                              }
+                            }, 0)
+                          }}
+                          onChange={e => updateCell(ri, ci, e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Tab') {
+                              e.preventDefault()
+                              const totalCols = row.length
+                              const totalRows = rows.length
+                              let nri = ri, nci = ci + (e.shiftKey ? -1 : 1)
+                              if (nci >= totalCols) { nci = 0; nri++ }
+                              if (nci < 0)          { nci = totalCols - 1; nri-- }
+                              if (nri >= 0 && nri < totalRows) setActiveCell([nri, nci])
+                              else setActiveCell(null)
+                            }
+                            if (e.key === 'Escape') { e.preventDefault(); setActiveCell(null) }
+                            if ((e.metaKey || e.ctrlKey) && e.key === 'z') e.stopPropagation()
+                          }}
+                          style={{
+                            display:    'block',
+                            width:      '100%',
+                            minHeight:  `${fs * 1.6 + pad * 2}px`,
+                            padding:    `${pad}px`,
+                            border:     'none',
+                            outline:    'none',
+                            resize:     'none',
+                            overflow:   'hidden',
+                            background: 'transparent',
+                            fontFamily: ff,
+                            fontSize:   fs,
+                            fontWeight: isHeader || cell.bold ? 700 : 400,
+                            color:      cell.color ?? '#1a1a1a',
+                            lineHeight: 1.6,
+                            textAlign:  cell.align,
+                            boxSizing:  'border-box',
+                            cursor:     'text',
+                          }}
+                          ref={el => {
+                            if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' }
+                          }}
+                          onInput={e => {
+                            const el = e.target as HTMLTextAreaElement
+                            el.style.height = 'auto'
+                            el.style.height = el.scrollHeight + 'px'
+                          }}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            display:    'block',
+                            minHeight:  `${fs * 1.6 + pad * 2}px`,
+                            padding:    `${pad}px`,
+                            textAlign:  cell.align,
+                            fontWeight: isHeader || cell.bold ? 700 : 400,
+                            color:      cell.color ?? '#1a1a1a',
+                            lineHeight: 1.6,
+                            whiteSpace: 'pre-wrap',
+                            wordBreak:  'break-word',
+                            cursor:     isEditing ? 'text' : 'default',
+                            userSelect: 'none',
+                          }}
+                        >
+                          {cell.text}
+                        </div>
+                      )}
 
-                      {/* 列宽拖拽手柄（非最后列） */}
                       {isEditing && !isLastCol && (
                         <div
+                          className="no-drag"
                           onMouseDown={e => onColResizeStart(e, ci)}
                           style={{
-                            position: 'absolute',
-                            top: 0, right: -3,
-                            width: 6, height: '100%',
-                            cursor: 'col-resize',
-                            zIndex: 10,
+                            position: 'absolute', top: 0, right: -3,
+                            width: 6, height: '100%', cursor: 'col-resize', zIndex: 10,
                             background: isSelected ? 'rgba(26,26,26,0.08)' : 'transparent',
                             transition: 'background 0.12s',
                           }}

@@ -12,7 +12,7 @@ import React, { useState, useRef } from 'react'
 import { Block, ExportOptions, THEMES, FONTS } from '../../../../../lib/exportStyles'
 import { Project } from '../../../../../types'
 import { Aspect, Page } from './types'
-import { aspectLabel, generateId } from './pageHelpers'
+import { aspectLabel, generateId, pageHeight } from './pageHelpers'
 
 // ── PanelButton ───────────────────────────────────────────────────────────────
 
@@ -205,7 +205,7 @@ export function ThemePickerPanel({
 export function PagesPanel({
   pages, activePageId, setActivePageId,
   onAdd, onDelete, onDuplicate, onReorder, onRename, onAspectChange,
-  isZh,
+  isZh, contentWidth = 860,
 }: {
   pages: Page[]
   activePageId: string
@@ -217,6 +217,7 @@ export function PagesPanel({
   onRename: (id: string, label: string) => void
   onAspectChange: (id: string, aspect: Aspect) => void
   isZh: boolean
+  contentWidth?: number
 }) {
   const dragIdx = useRef<number | null>(null)
   const [renamingId, setRenamingId] = useState<string | null>(null)
@@ -306,6 +307,9 @@ export function PagesPanel({
                   </div>
                 </div>
               )}
+
+              {/* 展开：图片图层面板 */}
+
             </div>
           )
         })}

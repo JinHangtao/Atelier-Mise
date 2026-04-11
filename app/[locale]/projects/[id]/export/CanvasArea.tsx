@@ -1,6 +1,6 @@
 'use client'
 import React from 'react'
-import { GridLayerOverlay } from './GridOverlay'
+import { GridLayerOverlay, CellEditTarget } from './GridOverlay'
 import ReactDOM from 'react-dom'
 import { Rnd } from 'react-rnd'
 import { Block, School } from '../../../../../lib/exportStyles'
@@ -13,6 +13,7 @@ import { Aspect, EmojiBlock as EmojiBlockType, ArrowDirection } from './types'
 import EmojiBlockComponent from './EmojiBlock'
 import { sharedDrawState, BRUSHES, universalRenderStroke } from './DrawPanel'
 import { getDrawLayerManager, destroyDrawLayerManager, DrawnShape } from './DrawLayerManager'
+
 
 // ── Cursor system — tldraw production-grade SVG data-URI cursors ───────────
 // SVG paths sourced directly from @tldraw/editor v4.5.8 (editor.css, MIT).
@@ -1056,6 +1057,13 @@ export function CanvasArea(s: ExportPageState) {
   const gridEditMode: boolean = s.gridEditMode
   const setGridEditMode: (v: boolean) => void = s.setGridEditMode
 
+  // ── Grid cell DOM-overlay editor（Excalidraw 同款方案，textarea 在 SVG 外层） ──
+  const [cellEditTarget, setCellEditTarget] = React.useState<(CellEditTarget & { pageId: string }) | null>(null)
+  const cellTextareaRef = React.useRef<HTMLTextAreaElement>(null)
+  React.useEffect(() => {
+    if (cellEditTarget) cellTextareaRef.current?.focus()
+  }, [cellEditTarget])
+
   // ── Cursor style — 由 page.tsx 通过 ExportPageState 传入 ────────────────
   const cursorStyle: 'grab' | 'arrow' = (s as any).cursorStyle ?? 'grab'
   const cursorShadow: boolean = (s as any).cursorShadow !== false
@@ -1446,6 +1454,11 @@ export function CanvasArea(s: ExportPageState) {
   // Tracks mouse-drag pan position for settle on mouseUp (no livePan needed)
   const _mousePanPos = React.useRef({ x: canvasPan.x, y: canvasPan.y })
 
+  // ── Smooth pan: RAF lerp — target is raw mouse position, displayed follows with lag ──
+  const _panTarget   = React.useRef({ x: canvasPan.x, y: canvasPan.y })  // raw destination
+  const _panDisplay  = React.useRef({ x: canvasPan.x, y: canvasPan.y })  // what's actually rendered
+  const _panRafId    = React.useRef<number | null>(null)
+
   // ── Tablet touch: pan + pinch-zoom ────────────────────────────────────────
   // Completely separate from mouse events — touch events fire on all touch devices.
   const touchPanRef = React.useRef<{ startX: number; startY: number; px: number; py: number } | null>(null)
@@ -1509,7 +1522,38 @@ export function CanvasArea(s: ExportPageState) {
   // wheel 缩放/平移已在 useExportPage 里 DOM 直驱，此处不重复绑定。
   const panLayerRef = (s as any).panLayerRef as React.RefObject<HTMLDivElement>
 
-  // ── Mobile: auto zoom-to-fit on mount ────────────────────────────────────
+  // ── Smooth pan: RAF lerp callback (defined after panLayerRef is available) ──
+  const _panLerp = 0.18  // lower = more lag / dreamier; 0.18 ≈ zoom-scroll feel
+  const _startSmoothPanLoop = React.useCallback(() => {
+    if (_panRafId.current !== null) return  // already running
+    const loop = () => {
+      const tx = _panTarget.current.x,  ty = _panTarget.current.y
+      const dx = _panDisplay.current.x, dy = _panDisplay.current.y
+      const nx = dx + (tx - dx) * _panLerp
+      const ny = dy + (ty - dy) * _panLerp
+      _panDisplay.current = { x: nx, y: ny }
+      _mousePanPos.current = { x: nx, y: ny }
+      if (panLayerRef.current) {
+        panLayerRef.current.style.transform = `translate(${nx}px,${ny}px) scale(${canvasZoomRef.current})`
+      }
+      // Keep looping while still panning OR while display hasn't settled (> 0.15px away)
+      if (isPanningRef.current || Math.abs(tx - nx) > 0.15 || Math.abs(ty - ny) > 0.15) {
+        _panRafId.current = requestAnimationFrame(loop)
+      } else {
+        // Snap to exact target on settle
+        _panDisplay.current = { x: tx, y: ty }
+        _mousePanPos.current = { x: tx, y: ty }
+        if (panLayerRef.current) {
+          panLayerRef.current.style.transform = `translate(${tx}px,${ty}px) scale(${canvasZoomRef.current})`
+        }
+        _panRafId.current = null
+      }
+    }
+    _panRafId.current = requestAnimationFrame(loop)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panLayerRef])
+
+    // ── Mobile: auto zoom-to-fit on mount ────────────────────────────────────
   React.useEffect(() => {
     if (typeof window === 'undefined' || window.innerWidth > 768) return
     // Small timeout to let layout settle
@@ -1602,8 +1646,11 @@ export function CanvasArea(s: ExportPageState) {
         const livePx = mat ? mat.m41 : canvasPan.x
         const livePy = mat ? mat.m42 : canvasPan.y
         panStart.current = { mx: e.clientX, my: e.clientY, px: livePx, py: livePy }
-        // 初始化 _mousePanPos，防止没有 mousemove 时 mouseup 写 {0,0}
+        // 初始化平滑 pan 状态：display 从当前真实位置出发，target 也先对齐
+        _panDisplay.current  = { x: livePx, y: livePy }
+        _panTarget.current   = { x: livePx, y: livePy }
         _mousePanPos.current = { x: livePx, y: livePy }
+        _startSmoothPanLoop()
         e.preventDefault()
       }}
       onMouseMove={e => {
@@ -1616,11 +1663,9 @@ export function CanvasArea(s: ExportPageState) {
         const MARGIN = 120
         const nx = Math.min(W - MARGIN, Math.max(-(W * 2), panStart.current.px + e.clientX - panStart.current.mx))
         const ny = Math.min(H - MARGIN, Math.max(-(H * 4), panStart.current.py + e.clientY - panStart.current.my))
-        // DOM 直驱，不触发 React re-render
-        if (panLayerRef.current) {
-          panLayerRef.current.style.transform = `translate(${nx}px,${ny}px) scale(${canvasZoomRef.current})`
-        }
-        _mousePanPos.current = { x: nx, y: ny }
+        // 只更新目标，RAF lerp loop 负责平滑追随 → 丝滑延迟感
+        _panTarget.current = { x: nx, y: ny }
+        _startSmoothPanLoop()
       }}
      onMouseUp={() => {
   if (!isPanningRef.current) return  // ← 加这一行
@@ -2727,8 +2772,65 @@ export function CanvasArea(s: ExportPageState) {
                       updateLayer={(layerId: string, patch: any) =>
                         (s as any).updateLayer(page.id, layerId, patch)
                       }
+                      onEditCell={target => setCellEditTarget({ ...target, pageId: page.id })}
                     />
                   )}
+
+                  {/* ── Grid cell textarea overlay ──
+                      绝对定位在 page-canvas-frame 内（position:relative），
+                      坐标 = SVG 逻辑 px × canvasZoom，与画布缩放完全同步。
+                      Safari / Chrome / Firefox 均正常，无 foreignObject 问题。 */}
+                  {cellEditTarget && cellEditTarget.pageId === page.id && (() => {
+                    const t = cellEditTarget
+                    return (
+                      <textarea
+                        ref={cellTextareaRef}
+                        defaultValue={t.currentText}
+                        onMouseDown={e => e.stopPropagation()}
+                        onPointerDown={e => e.stopPropagation()}
+                        onBlur={e => {
+                          const text = e.target.value;
+                          (s as any).updateLayer(page.id, t.layerId, {
+                            cellTexts: {
+                              ...((gridState as any)?.pages?.[page.id]
+                                ?.find((l: any) => l.id === t.layerId)
+                                ?.cellTexts ?? {}),
+                              [`${t.r}_${t.c}`]: text,
+                            },
+                          })
+                          setCellEditTarget(null)
+                        }}
+                        onKeyDown={e => {
+                          if (e.key === 'Escape') {
+                            setCellEditTarget(null)
+                          }
+                          e.stopPropagation()
+                        }}
+                        style={{
+                          position: 'absolute',
+                          // page-canvas-frame 在 panLayerRef 的 scale(canvasZoom) 内部，
+                          // 直接用 SVG 逻辑坐标，不乘 zoom。
+                          // CSS scale 会自动把整个 frame 含 textarea 一起放大。
+                          left:   t.svgX,
+                          top:    t.svgY,
+                          width:  t.svgW,
+                          height: t.svgH,
+                          zIndex: 20,
+                          fontSize: 11,
+                          fontFamily: 'Inter, DM Sans, sans-serif',
+                          lineHeight: 1.4,
+                          color: '#18181b',
+                          padding: 4,
+                          boxSizing: 'border-box',
+                          border: 'none',
+                          outline: '2px solid rgba(99,102,241,0.8)',
+                          background: 'rgba(255,255,255,0.95)',
+                          resize: 'none',
+                          pointerEvents: 'all',
+                        }}
+                      />
+                    )
+                  })()}
 
                   {/* ── Rnd blocks ── */}
                   <div className="rnd-canvas" style={{ position: 'relative', width: 860, ...(pgHeight ? { minHeight: pgHeight } : { minHeight: 600 }), pointerEvents: 'auto' }}>
@@ -2946,6 +3048,7 @@ export function CanvasArea(s: ExportPageState) {
                             onDoubleClick={() => {
                               if (TEXT_BLOCK_TYPES.includes(block.type)) startEdit(block)
                               if (block.type === 'sticky') setEditingBlockId(block.id)
+                              if (block.type === 'table') setEditingBlockId(block.id)
                             }}
                             style={{ width: '100%', height: '100%', opacity: 1, userSelect: editingBlockId === block.id ? 'text' : 'none', outline: 'none' } as React.CSSProperties}
                           >
@@ -3363,7 +3466,8 @@ export function CanvasArea(s: ExportPageState) {
                         />
                       ))
                     }
-                  </div>
+
+                  </div>{/* end rnd-canvas */}
                 </div>
               </div>
             )

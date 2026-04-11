@@ -1,13 +1,11 @@
 import { NextIntlClientProvider } from 'next-intl'
 import en from '../../messages/en.json'
 import zh from '../../messages/zh.json'
+import StorageMigration from './StorageMigration'
 
 const messages = { en, zh } as const
 
-export default async function LocaleLayout({
-  children,
-  params,
-}: {
+export default async function LocaleLayout({ children, params }: {
   children: React.ReactNode
   params: Promise<{ locale: string }>
 }) {
@@ -16,6 +14,7 @@ export default async function LocaleLayout({
 
   return (
     <NextIntlClientProvider locale={locale} messages={msgs}>
+      <StorageMigration />
       {children}
     </NextIntlClientProvider>
   )

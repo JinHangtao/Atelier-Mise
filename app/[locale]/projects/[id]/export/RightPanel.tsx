@@ -1,7 +1,8 @@
 'use client'
 import React from 'react'
 import { buildExportHTML, THEMES, FONTS } from '../../../../../lib/exportStyles'
-import { aspectLabel } from './pageHelpers'
+import { aspectLabel, pageHeight } from './pageHelpers'
+
 import { PagesPanel, CoverEditor, ThemePickerPanel } from './PanelComponents'
 import { DrawPanel } from './DrawPanel'
 import { ExportPageState, TEXT_BLOCK_TYPES, FONT_OPTIONS, COLOR_PRESETS } from './useExportPage'
@@ -34,10 +35,8 @@ export function RightPanel(s: ExportPageState) {
     addPage, deletePage, duplicatePage, reorderPages, renamePage, changePageAspect,
     setEditingBlockId,
     isZh, project, schools, visibleSchools, schoolsExpanded, setSchoolsExpanded,
-    mediaUrls, localImageInputRef, selectedImages, toggleImageSelection,
-    addImageRow, imagePickerOpen, setImagePickerOpen,
-    addImageBlock, compressImage, addToMediaLibrary,
-    setImageEditorUrl, setImageEditorIdx, imageDragIndex,
+    compressImage,
+    setImageEditorUrl, setImageEditorIdx,
     contentWidth, setSelectedBlockId,
   } = s
 
@@ -132,6 +131,7 @@ export function RightPanel(s: ExportPageState) {
             onRename={renamePage}
             onAspectChange={changePageAspect}
             isZh={isZh}
+            contentWidth={contentWidth}
           />
         </div>
       )}
@@ -554,6 +554,31 @@ export function RightPanel(s: ExportPageState) {
                       ))}
                     </>
                   )}
+                  {/* Remove background */}
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button
+                      onClick={() => {
+                        const url = selBlock.content
+                        if (url) (s as any).removeBackground(selBlock.id, url)
+                      }}
+                      disabled={!!(s as any).removingBgBlockId}
+                      style={{ flex: 1, padding: '7px 0', border: '1px solid rgba(26,26,26,0.12)', borderRadius: '7px', background: 'transparent', color: (s as any).removingBgBlockId === selBlock.id ? '#aaa' : '#1a1a1a', cursor: (s as any).removingBgBlockId ? 'default' : 'pointer', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.72rem', transition: 'all 0.12s' }}
+                      onMouseEnter={e => { if (!(s as any).removingBgBlockId) e.currentTarget.style.background = 'rgba(26,26,26,0.04)' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+                    >
+                      {(s as any).removingBgBlockId === selBlock.id
+                        ? (isZh ? '抠图中…' : 'Removing…')
+                        : (isZh ? '✂ 去除背景' : '✂ Remove BG')}
+                    </button>
+                    <button
+                      onClick={() => { setImageEditorUrl(selBlock.content); setImageEditorIdx(null) }}
+                      style={{ flex: 1, padding: '7px 0', border: '1px solid rgba(26,26,26,0.12)', borderRadius: '7px', background: 'transparent', color: '#1a1a1a', cursor: 'pointer', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.72rem', transition: 'all 0.12s' }}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.04)' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+                    >
+                      {isZh ? '✏ 编辑' : '✏ Edit'}
+                    </button>
+                  </div>
                   {[
                     { label: isZh ? '圆角' : 'Radius', key: 'imgRadius' as const, min: 0, max: 50, unit: 'px' },
                     { label: isZh ? '阴影' : 'Shadow', key: 'imgShadow' as const, min: 0, max: 40, unit: '' },
@@ -619,72 +644,62 @@ export function RightPanel(s: ExportPageState) {
             )
           })()}
 
-          {/* ── Images / Media Library — 始终显示，放在 Background 上面 ── */}
-          <div style={{ marginBottom: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <p style={{ fontSize: '0.65rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b0b0ac', fontFamily: 'Inter, DM Sans, sans-serif' }}>
-                {isZh ? '图片' : 'Images'}{mediaUrls.length > 0 && <span style={{ color: '#d0d0cc' }}> ({mediaUrls.length})</span>}
-              </p>
-              {mediaUrls.length > 0 && (
-                <span style={{ fontSize: '0.62rem', color: '#ccc', fontFamily: 'Inter, DM Sans, sans-serif' }}>{isZh ? '点击加入画布' : 'Click to add'}</span>
-              )}
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
-              {/* Upload cell — 始终显示 */}
-              <label
-                style={{ aspectRatio: '1', borderRadius: '6px', border: '1px dashed rgba(26,26,26,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', transition: 'border-color 0.12s' }}
-                onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(26,26,26,0.35)')}
-                onMouseLeave={e => (e.currentTarget.style.borderColor = 'rgba(26,26,26,0.15)')}
-                title={isZh ? '上传图片' : 'Upload image'}
-              >
-                <span style={{ fontSize: '1rem', color: '#ccc', lineHeight: 1 }}>+</span>
-                <input ref={localImageInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
-                  onChange={async e => {
-                    const files = Array.from(e.target.files || [])
-                    for (const file of files) {
-                      const dataUrl = await new Promise<string>(res => {
-                        const r = new FileReader(); r.onload = ev => res(ev.target?.result as string); r.readAsDataURL(file)
-                      })
-                      const compressed = await compressImage(dataUrl, 2400, 0.88)
-                      addToMediaLibrary(compressed)
-                    }
-                    e.target.value = ''
-                  }} />
-              </label>
-              {/* Image thumbnails */}
-              {mediaUrls.map((media) => (
-                <div key={media.id} style={{ position: 'relative', aspectRatio: '1' }}>
-                  <button onClick={() => addImageBlock(media.url)}
-                    style={{ position: 'absolute', inset: 0, padding: 0, border: 'none', borderRadius: '6px', overflow: 'hidden', cursor: 'pointer', width: '100%', height: '100%', outline: '1px solid rgba(26,26,26,0.1)', background: 'rgba(26,26,26,0.04)', transition: 'outline-color 0.1s' }}
-                    onMouseEnter={e => (e.currentTarget.style.outlineColor = 'rgba(26,26,26,0.4)')}
-                    onMouseLeave={e => (e.currentTarget.style.outlineColor = 'rgba(26,26,26,0.1)')}
-                    title={isZh ? '加入画布' : 'Add to canvas'}
-                  >
-                    <img src={media.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(26,26,26,0)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background 0.12s' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.22)')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'rgba(26,26,26,0)')}>
-                      <span style={{ color: '#fff', fontSize: '0.65rem', fontFamily: 'Space Mono, monospace', opacity: 0, transition: 'opacity 0.12s' }}
-                        onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                        onMouseLeave={e => (e.currentTarget.style.opacity = '0')}>+</span>
-                    </div>
-                  </button>
-                  {(s as any).removeFromMediaLibrary && (
-                    <button
-                      onClick={e => { e.stopPropagation(); (s as any).removeFromMediaLibrary(media.id) }}
-                      style={{ position: 'absolute', top: 3, right: 3, width: 16, height: 16, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: '0.5rem', lineHeight: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity 0.12s', zIndex: 2 }}
-                      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(220,60,60,0.9)')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.55)')}
-                      title={isZh ? '删除' : 'Remove'}
-                      className="_media-del"
-                    >×</button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
           <div style={{ height: '1px', background: 'rgba(26,26,26,0.06)', marginBottom: '24px' }} />
+
+          {/* Images section */}
+          <div style={{ marginBottom: '24px' }}>
+            {(() => {
+              const imgBlocks = blocks.filter(b => b.type === 'image' || b.type === 'image-row')
+              return (
+                <div>
+                  <p style={{ fontSize: '0.65rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b0b0ac', marginBottom: '10px', fontFamily: 'Inter, DM Sans, sans-serif' }}>{isZh ? '图片' : 'Images'}</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                    <label
+                      style={{ width: 64, height: 64, borderRadius: '8px', border: '1.5px dashed rgba(26,26,26,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'border-color 0.12s, background 0.12s', background: 'transparent' }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(26,26,26,0.35)'; e.currentTarget.style.background = 'rgba(26,26,26,0.02)' }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(26,26,26,0.15)'; e.currentTarget.style.background = 'transparent' }}
+                    >
+                      <span style={{ fontSize: '1.4rem', color: '#ccc', lineHeight: 1, userSelect: 'none' }}>+</span>
+                      <input type="file" accept="image/*" multiple style={{ display: 'none' }}
+                        onChange={e => {
+                          const files = Array.from(e.target.files ?? [])
+                          if (!files.length) return
+                          files.forEach(file => {
+                            const reader = new FileReader()
+                            reader.onload = ev => {
+                              const dataUrl = ev.target?.result as string
+                              if (dataUrl) compressImage(dataUrl, 2400, 0.88).then(compressed => addBlock('image', compressed))
+                            }
+                            reader.readAsDataURL(file)
+                          })
+                          e.target.value = ''
+                        }}
+                      />
+                    </label>
+                    {imgBlocks.map(b => {
+                      const src = b.type === 'image-row' ? (b.images?.[0] ?? b.content) : b.content
+                      return (
+                        <div
+                          key={b.id}
+                          onClick={() => setSelectedBlockId(b.id)}
+                          style={{ width: 64, height: 64, borderRadius: '8px', overflow: 'hidden', border: selectedBlockId === b.id ? '2px solid #1a1a1a' : '1px solid rgba(26,26,26,0.1)', cursor: 'pointer', flexShrink: 0, position: 'relative', background: '#f0ede8', transition: 'border-color 0.12s' }}
+                          onMouseEnter={e => { if (selectedBlockId !== b.id) e.currentTarget.style.borderColor = 'rgba(26,26,26,0.3)' }}
+                          onMouseLeave={e => { if (selectedBlockId !== b.id) e.currentTarget.style.borderColor = 'rgba(26,26,26,0.1)' }}
+                        >
+                          <img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                          {b.type === 'image-row' && b.images && b.images.length > 1 && (
+                            <div style={{ position: 'absolute', bottom: 3, right: 4, fontSize: '0.5rem', color: '#fff', background: 'rgba(0,0,0,0.45)', borderRadius: '3px', padding: '1px 4px', fontFamily: 'Space Mono, monospace', lineHeight: 1.4 }}>
+                              ×{b.images.length}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
 
           {/* Page background picker */}
           {activePage && (
@@ -939,24 +954,7 @@ export function RightPanel(s: ExportPageState) {
                                     {layer.showHeader?(isZh?'开 ●':'ON ●'):(isZh?'关 ○':'OFF ○')}
                                   </button>
                                 </div>
-                                <div style={{ height: '1px', background: 'rgba(26,26,26,0.07)' }} />
-                                <button
-                                  onClick={() => {
-                                    const initData = {
-                                      rows: Array.from({ length: layer.rows }, (_: unknown, ri: number) => ({
-                                        cells: Array.from({ length: layer.columns }, () => ({ content: ri===0 && layer.showHeader ? (isZh?'标题':'Header') : '' }))
-                                      })),
-                                      colWidths: Array.from({ length: layer.columns }, () => Math.floor(800 / layer.columns)),
-                                      headerRow: layer.showHeader,
-                                    }
-                                    addBlock('table', '', { tableData: initData, pixelPos: { x: 30, y: 30, w: 800, h: layer.rows * 40 + 8 } } as any)
-                                  }}
-                                  style={{ padding:'8px 0', borderRadius:'7px', border:'none', background:'#1a1a1a', cursor:'pointer', fontSize:'0.72rem', fontFamily:'Inter, DM Sans, sans-serif', color:'#f7f7f5', fontWeight:500, letterSpacing:'0.04em', transition:'background 0.12s' }}
-                                  onMouseEnter={e => (e.currentTarget.style.background = '#333')}
-                                  onMouseLeave={e => (e.currentTarget.style.background = '#1a1a1a')}
-                                >
-                                  {isZh ? `插入 ${layer.rows} × ${layer.columns} 表格 ↵` : `Insert ${layer.rows} × ${layer.columns} table ↵`}
-                                </button>
+
                               </>)}
                             </div>
                           )}
@@ -1001,7 +999,7 @@ export function RightPanel(s: ExportPageState) {
             )
           })()}
 
-          {/* Add Sticky + Emoji */}
+          {/* Add Block section */}
           <div style={{ height: '1px', background: 'rgba(26,26,26,0.06)', marginBottom: '16px' }} />
           <div style={{ marginBottom: '20px' }}>
             <p style={{ fontSize: '0.65rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b0b0ac', marginBottom: '10px', fontFamily: 'Inter, DM Sans, sans-serif' }}>{isZh ? '添加块' : 'Add Block'}</p>
@@ -1099,7 +1097,6 @@ export function RightPanel(s: ExportPageState) {
         />
         <DrawPanel
           isZh={isZh}
-          addImageBlock={addImageBlock}
           canvasWidth={contentWidth}
           activePageId={activePageId}
         />

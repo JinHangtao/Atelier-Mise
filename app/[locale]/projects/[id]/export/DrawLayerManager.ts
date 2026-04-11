@@ -26,11 +26,19 @@ export type Layer = StrokeLayer
 export type { LogicalPoint }
 
 // ── DrawnShape ────────────────────────────────────────────────────────────────
+
+export interface BezierAnchor {
+  x: number; y: number          // 锚点本身（逻辑坐标）
+  cp1x: number; cp1y: number    // in-handle（前段控制柄）
+  cp2x: number; cp2y: number    // out-handle（后段控制柄）
+  corner: boolean               // true = 尖角（两柄独立），false = 平滑（两柄对称）
+}
+
 export interface DrawnShape {
   id: string
   x0: number; y0: number
   x1: number; y1: number
-  bezierPts?: { x: number; y: number }[]
+  bezierPts?: BezierAnchor[]
   shapeType: ShapeType
   color: string
   alpha: number
