@@ -1599,6 +1599,52 @@ export function CanvasArea(s: ExportPageState) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+// ── Ctrl/Cmd + wheel: pinch-zoom (mouse & trackpad) ────────────────────────
+// Must be passive:false to preventDefault (block browser page-zoom).
+// zoom origin = mouse cursor position in canvas-wrap coordinates.
+React.useEffect(() => {
+  const el = canvasWrapRef.current
+  if (!el) return
+  const onWheel = (e: WheelEvent) => {
+    if (!e.ctrlKey && !e.metaKey) return   // 只处理 ctrl/cmd，其余交给 useExportPage
+    e.preventDefault()
+
+    const rect = el.getBoundingClientRect()
+    const mouseX = e.clientX - rect.left   // 鼠标在 canvas wrap 里的坐标
+    const mouseY = e.clientY - rect.top
+
+    // deltaY > 0 = scroll down = 缩小；触控板 pinch-out = deltaY < 0 = 放大
+    const delta = -e.deltaY * (e.deltaMode === 1 ? 20 : 1)  // deltaMode 1 = lines
+    const factor = Math.pow(1.001, delta)   // 灵敏度调这个
+
+    const oldZoom = canvasZoomRef.current
+    const newZoom = +Math.min(3, Math.max(0.2, oldZoom * factor)).toFixed(3)
+    if (newZoom === oldZoom) return
+
+    // 读 panLayer 当前实际 translate（避免 stale closure）
+    const panLayerEl = panLayerRef.current
+    const liveTransform = panLayerEl?.style.transform ?? ''
+    const mX = liveTransform.match(/translate\(([^,]+)px/)
+    const mY = liveTransform.match(/translate\([^,]+,\s*([^p]+)px/)
+    const livePx = mX ? parseFloat(mX[1]) : canvasPan.x
+    const livePy = mY ? parseFloat(mY[1]) : canvasPan.y
+
+    // 以鼠标为 origin 做缩放：origin + (pan - origin) * (newZoom/oldZoom)
+    const scaleDelta = newZoom / oldZoom
+    const newPanX = mouseX + (livePx - mouseX) * scaleDelta
+    const newPanY = mouseY + (livePy - mouseY) * scaleDelta
+
+    canvasZoomRef.current = newZoom
+    if (panLayerEl) {
+      panLayerEl.style.transform = `translate(${newPanX}px,${newPanY}px) scale(${newZoom})`
+    }
+    setCanvasZoom(newZoom)
+    setCanvasPan({ x: newPanX, y: newPanY })
+  }
+  el.addEventListener('wheel', onWheel, { passive: false })
+  return () => el.removeEventListener('wheel', onWheel)
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, [panLayerRef])
 
   return (
     <div
