@@ -273,6 +273,7 @@ export type BrushType =
 export type ShapeType =
   | 'rect' | 'ellipse' | 'line' | 'arrow'
   | 'triangle' | 'polygon' | 'star'
+  | 'bezier'
 
 export interface ShapeConfig {
   type: ShapeType
