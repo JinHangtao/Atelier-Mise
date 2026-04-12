@@ -2554,7 +2554,7 @@ export function CanvasArea(s: ExportPageState) {
                           g.bezierPts.push({ x, y })
                           g.mode = 'drawing'; g.origin = { x, y }
                           const { color, alpha, shapeFill, shapeStroke, shapeSides } = sharedDrawState
-                          setDrawPreview({ id: '__preview__', shapeType: 'bezier', x0: 0, y0: 0, x1: 0, y1: 0, bezierPts: [...g.bezierPts], color, alpha, shapeFill, shapeStroke, shapeSides }, page.id)
+                          setDrawPreview({ id: '__preview__', shapeType: 'bezier', x0: 0, y0: 0, x1: 0, y1: 0, bezierPts: [...g.bezierPts] as any, color, alpha, shapeFill, shapeStroke, shapeSides }, page.id)
                           return
                         }
                         g.mode = 'drawing'; g.origin = { x, y }
@@ -2599,7 +2599,7 @@ export function CanvasArea(s: ExportPageState) {
                         // ── bezier 橡皮筋预览：有 >=1 个锚点时，显示到鼠标位置的预测曲线
                         if (sharedDrawState.shapeType === 'bezier' && g.bezierPts.length >= 1) {
                           const { color, alpha, shapeFill, shapeStroke, shapeSides } = sharedDrawState
-                          setDrawPreview({ id: '__preview__', shapeType: 'bezier', x0: 0, y0: 0, x1: 0, y1: 0, bezierPts: [...g.bezierPts, { x, y }], color, alpha, shapeFill, shapeStroke, shapeSides }, page.id)
+                          setDrawPreview({ id: '__preview__', shapeType: 'bezier', x0: 0, y0: 0, x1: 0, y1: 0, bezierPts: [...g.bezierPts, { x, y }] as any, color, alpha, shapeFill, shapeStroke, shapeSides }, page.id)
                           return
                         }
                         if (g.mode === 'moving' && g.dragStart && g.movingId) {
@@ -2709,7 +2709,7 @@ export function CanvasArea(s: ExportPageState) {
                           const bx0 = Math.min(...xs), by0 = Math.min(...ys)
                           const bx1 = Math.max(...xs), by1 = Math.max(...ys)
                           const newId = crypto.randomUUID()
-                          mgr2.addShape({ id: newId, shapeType: 'bezier', x0: bx0, y0: by0, x1: bx1, y1: by1, bezierPts: [...g.bezierPts], color, alpha, shapeFill, shapeStroke, shapeSides })
+                          mgr2.addShape({ id: newId, shapeType: 'bezier', x0: bx0, y0: by0, x1: bx1, y1: by1, bezierPts: [...g.bezierPts] as any, color, alpha, shapeFill, shapeStroke, shapeSides })
                           mgr2.selectShape(newId)
                         }
                         g.bezierPts = []; g.mode = 'none'; g.origin = null
