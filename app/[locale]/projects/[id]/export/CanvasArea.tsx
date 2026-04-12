@@ -1148,10 +1148,6 @@ export function CanvasArea(s: ExportPageState) {
   // ── 笔刷 rAF 节流（SVG overlay 统一处理，同一时刻只有一页在画）────────────
   const brushRafId      = React.useRef(0)
   const brushPendingPts = React.useRef<{ x: number; y: number; t: number; pressure: number }[]>([])
-  // ── Palm rejection：pen 正在绘制时屏蔽所有 touch 输入 ──────────────────────
-  // pointerType === 'pen' down → 置 true；pen up/cancel → 置 false
-  // 期间所有 pointerType === 'touch' 的事件直接忽略
-  const penActiveRef = React.useRef(false)
 
   // ── Shape gesture state（合并为单一 ref，避免 stale state）────────────────
   const shapeGesture = React.useRef<{
@@ -1663,9 +1659,6 @@ export function CanvasArea(s: ExportPageState) {
     const el = canvasWrapRef.current
     if (!el) return
     const onTouchMoveNative = (e: TouchEvent) => {
-      // draw 模式下始终阻止默认行为，防止浏览器识别为 scroll 手势后
-      // 发射 pointercancel 截断正在进行的笔迹
-      if (isDrawModeRef.current) { e.preventDefault(); return }
       // Only preventDefault on the canvas background / pan layer itself.
       // If the touch started inside a scrollable child (block-body, page-scroll-wrap)
       // let the browser handle native scroll normally.
@@ -1996,10 +1989,15 @@ export function CanvasArea(s: ExportPageState) {
           userSelect: 'none',
           ...posStyle,
         }}
-        onMouseDown={e => {
+        onPointerDown={e => {
           e.stopPropagation()
           if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('span[data-zoom]') || (e.target as HTMLElement).closest('select')) return
+          // 只响应主按键/主触点，忽略多指
+          if (e.pointerType === 'mouse' && e.button !== 0) return
+          if (e.pointerType === 'touch' && !e.isPrimary) return
           e.preventDefault()
+          // setPointerCapture 保证 touch/pen 在 toolbar 外移动时事件不丢
+          ;(e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId)
           const rect     = toolbarRef.current!.getBoundingClientRect()
           const wrapRect = canvasWrapRef.current!.getBoundingClientRect()
           const startEx  = rect.left - wrapRect.left
@@ -2008,11 +2006,11 @@ export function CanvasArea(s: ExportPageState) {
           setToolbarDragging(true)
           // 立即设好初始位置，让 posStyle 切到 dragging 分支（transition:none）
           setToolbarDragPos({ x: startEx, y: startEy })
-          const onMove = (me: MouseEvent) => {
+          const onMove = (me: PointerEvent) => {
             if (!toolbarDragStart.current || !toolbarRef.current) return
             const nx = toolbarDragStart.current.ex + me.clientX - toolbarDragStart.current.mx
             const ny = toolbarDragStart.current.ey + me.clientY - toolbarDragStart.current.my
-            // ✅ 直接操作 DOM，零 React re-render，彻底消除拖拽卡顿
+            // 直接操作 DOM，零 React re-render，彻底消除拖拽卡顿
             toolbarRef.current.style.left      = `${nx}px`
             toolbarRef.current.style.top       = `${ny}px`
             toolbarRef.current.style.right     = 'auto'
@@ -2020,8 +2018,9 @@ export function CanvasArea(s: ExportPageState) {
             toolbarRef.current.style.transform = 'none'
           }
           const onUp = () => {
-            window.removeEventListener('mousemove', onMove)
-            window.removeEventListener('mouseup', onUp)
+            window.removeEventListener('pointermove', onMove)
+            window.removeEventListener('pointerup',   onUp)
+            window.removeEventListener('pointercancel', onUp)
             setToolbarDragging(false)
             setToolbarDragPos(null)  // 清除 dragPos，让 posStyle 切回 anchor 分支
             if (!toolbarDragStart.current || !canvasWrapRef.current || !toolbarRef.current) return
@@ -2036,8 +2035,9 @@ export function CanvasArea(s: ExportPageState) {
             setToolbarAnchor(`${row}-${col}` as Anchor)
             toolbarDragStart.current = null
           }
-          window.addEventListener('mousemove', onMove)
-          window.addEventListener('mouseup', onUp)
+          window.addEventListener('pointermove',   onMove)
+          window.addEventListener('pointerup',     onUp)
+          window.addEventListener('pointercancel', onUp)
         }}
       >
         <span style={{ fontSize: '0.58rem', letterSpacing: '0.22em', textTransform: 'uppercase', color: '#c8c8c4', fontFamily: 'Inter, DM Sans, sans-serif', fontWeight: 600, pointerEvents: 'none' }}>Canvas</span>
@@ -2507,8 +2507,6 @@ export function CanvasArea(s: ExportPageState) {
                       }}
                       onPointerDown={e => {
                         if (e.pointerType === 'mouse' && e.button !== 0) return
-                        // Palm rejection：pen 正在绘制时忽略所有 touch（含 isPrimary）
-                        if (e.pointerType === 'touch' && penActiveRef.current) return
                         if (e.pointerType === 'touch' && !e.isPrimary) return
                         // If the click landed inside a context menu portal, don't intercept it
                         if ((e.target as HTMLElement).closest?.('[data-shape-context-menu]')) return
@@ -2519,27 +2517,14 @@ export function CanvasArea(s: ExportPageState) {
                         if ((window as any).__drawResizing) return
                         e.preventDefault(); e.stopPropagation()
 
-                        // pen 开始绘制 → 激活 palm rejection
-                        if (e.pointerType === 'pen') penActiveRef.current = true
-
                         const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect()
                         const x = (e.clientX - rect.left) / canvasZoom
                         const y = (e.clientY - rect.top)  / canvasZoom
 
                         // ── 笔刷模式 ──────────────────────────────────────────
                         if (!sharedDrawState.shapeType) {
-                          // setPointerCapture 必须在 nativeEvent.target 上调，
-                          // React 合成事件的 currentTarget 在 handler 结束后会被清空，
-                          // 用 nativeEvent 确保 capture 真正生效（Safari/iPad 关键）
-                          const svgEl = e.currentTarget as SVGSVGElement
-                          const nativeTarget = e.nativeEvent.target as Element
-                          try {
-                            if (nativeTarget && 'setPointerCapture' in nativeTarget) {
-                              nativeTarget.setPointerCapture(e.pointerId)
-                            } else {
-                              svgEl.setPointerCapture(e.pointerId)
-                            }
-                          } catch {}
+                          // 笔刷需要 capture 保证笔迹连续，图形模式不 capture（避免页面内硬切）
+                          ;(e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId)
                           const mgr = getDrawLayerManager(page.id)
                           const pt = { x, y, pressure: e.pointerType === 'pen' ? Math.max(0.1, e.pressure) : 0.5, t: Date.now() }
                           drawDrawing.current = true
@@ -2582,8 +2567,6 @@ export function CanvasArea(s: ExportPageState) {
                         g.mode = 'drawing'; g.origin = { x, y }
                       }}
                       onPointerMove={e => {
-                        // Palm rejection：pen 正在绘制时忽略所有 touch
-                        if (e.pointerType === 'touch' && penActiveRef.current) return
                         if (e.pointerType === 'touch' && !e.isPrimary) return
                         e.preventDefault(); e.stopPropagation()
 
@@ -2600,17 +2583,15 @@ export function CanvasArea(s: ExportPageState) {
                           if (!drawDrawing.current) return
                           const evts: PointerEvent[] = typeof (e.nativeEvent as any).getCoalescedEvents === 'function'
                             ? (e.nativeEvent as any).getCoalescedEvents() : [e.nativeEvent]
-                          // getBoundingClientRect 提到循环外，只算一次，避免每个 coalesced
-                          // 点都触发 layout flush（Apple Pencil 120Hz 下会造成主线程严重卡顿）
-                          const r = rect
-                          const zoom = canvasZoom
-                          const now = Date.now()
-                          const newPts = evts.map((re: PointerEvent) => ({
-                            x: (re.clientX - r.left) / zoom,
-                            y: (re.clientY - r.top)  / zoom,
-                            pressure: re.pointerType === 'pen' ? Math.max(0.1, re.pressure) : 0.5,
-                            t: now,
-                          }))
+                          const newPts = evts.map((re: PointerEvent) => {
+                            const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect()
+                            return {
+                              x: (re.clientX - r.left) / canvasZoom,
+                              y: (re.clientY - r.top)  / canvasZoom,
+                              pressure: re.pointerType === 'pen' ? Math.max(0.1, re.pressure) : 0.5,
+                              t: Date.now(),
+                            }
+                          })
                           brushPendingPts.current.push(...newPts)
                           if (!brushRafId.current) {
                             brushRafId.current = requestAnimationFrame(() => {
@@ -2653,11 +2634,7 @@ export function CanvasArea(s: ExportPageState) {
                         }
                       }}
                       onPointerUp={e => {
-                        // Palm rejection：pen 正在绘制时忽略 touch up
-                        if (e.pointerType === 'touch' && penActiveRef.current) return
                         if (e.pointerType === 'touch' && !e.isPrimary) return
-                        // pen 抬起 → 解除 palm rejection
-                        if (e.pointerType === 'pen') penActiveRef.current = false
                         e.preventDefault()
 
                         const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect()
@@ -2714,9 +2691,7 @@ export function CanvasArea(s: ExportPageState) {
                           }
                         }
                       }}
-                      onPointerCancel={e => {
-                        // pen cancel（如切换 app、截图等系统打断）→ 解除 palm rejection
-                        if (e.pointerType === 'pen') penActiveRef.current = false
+                      onPointerCancel={() => {
                         cancelAnimationFrame(brushRafId.current); brushRafId.current = 0
                         brushPendingPts.current = []
                         if (drawDrawing.current) {
