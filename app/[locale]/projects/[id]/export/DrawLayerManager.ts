@@ -266,6 +266,10 @@ export class DrawLayerManager {
     this.emit({ type: 'shapes-changed', shapes: [...this._shapes] })
     this._emitUndoState()
     this._persistShapes()
+    // 直接调React刷新，不经过任何事件总线或state异步
+    if (typeof window !== 'undefined' && (window as any).__forceShapesUpdate) {
+      (window as any).__forceShapesUpdate()
+    }
   }
 
   selectShape(id: string | null) {
@@ -354,6 +358,22 @@ export class DrawLayerManager {
   }
 
   cancelResize() { this._resizePreview = null; this.composite() }
+
+  patchBezierPts(id: string, bezierPts: { x: number; y: number }[]) {
+    const s = this._shapes.find(sh => sh.id === id)
+    if (!s) return
+    s.bezierPts = bezierPts as BezierAnchor[]
+    // 同步更新 bbox
+    if (bezierPts.length >= 1) {
+      const xs = bezierPts.map(p => p.x)
+      const ys = bezierPts.map(p => p.y)
+      s.x0 = Math.min(...xs); s.y0 = Math.min(...ys)
+      s.x1 = Math.max(...xs); s.y1 = Math.max(...ys)
+    }
+    this.composite()
+    this.emit({ type: 'shapes-changed', shapes: [...this._shapes] })
+    this._persistShapes()
+  }
 
   patchShape(id: string, patch: { x0: number; y0: number; x1: number; y1: number }) {
     const s = this._shapes.find(sh => sh.id === id)
@@ -460,7 +480,17 @@ export class DrawLayerManager {
   private _restoreShapes() {
     try {
       const raw = localStorage.getItem(this._shapesKey)
-      if (raw) this._shapes = JSON.parse(raw) as DrawnShape[]
+      if (!raw) return
+      const shapes = JSON.parse(raw) as DrawnShape[]
+      this._shapes = shapes.map(s => {
+        if (s.shapeType === 'bezier' && s.bezierPts && s.bezierPts.length >= 1
+            && s.x0 === 0 && s.y0 === 0 && s.x1 === 0 && s.y1 === 0) {
+          const xs = s.bezierPts.map(p => p.x)
+          const ys = s.bezierPts.map(p => p.y)
+          return { ...s, x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) }
+        }
+        return s
+      })
     } catch {}
   }
 }

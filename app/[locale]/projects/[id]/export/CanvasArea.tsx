@@ -11,7 +11,7 @@ import { TableBlock, DEFAULT_TABLE_DATA } from './TableBlock'
 import { ExportPageState, TEXT_BLOCK_TYPES, FONT_OPTIONS, COLOR_PRESETS } from './useExportPage'
 import { Aspect, EmojiBlock as EmojiBlockType, ArrowDirection } from './types'
 import EmojiBlockComponent from './EmojiBlock'
-import { sharedDrawState, BRUSHES, universalRenderStroke } from './DrawPanel'
+import { sharedDrawState, BRUSHES, universalRenderStroke, catmullRomToSVGPath } from './DrawPanel'
 import { getDrawLayerManager, destroyDrawLayerManager, DrawnShape } from './DrawLayerManager'
 
 
@@ -197,10 +197,9 @@ function buildShapeElement(shape: DrawnShape, x0: number, y0: number, x1: number
       return <polygon points={pts2} {...commonProps} />
     }
     case 'bezier': {
-      if (!shape.bezierPts || shape.bezierPts.length < 2) return null
-      const pts3 = shape.bezierPts
-      let d = `M ${pts3[0].x} ${pts3[0].y}`
-      for (let i = 1; i < pts3.length; i++) d += ` L ${pts3[i].x} ${pts3[i].y}`
+      if (!shape.bezierPts || shape.bezierPts.length < 1) return null
+      if (shape.bezierPts.length === 1) return <circle cx={shape.bezierPts[0].x} cy={shape.bezierPts[0].y} r={3} fill={stroke} opacity={alpha} />
+      const d = catmullRomToSVGPath(shape.bezierPts)
       return <path d={d} {...commonProps} fill="none" />
     }
     default:
@@ -228,11 +227,15 @@ function renderShapeSVGInBox(shape: DrawnShape, PAD: number, w: number, h: numbe
   const ly0 = shape.y0 - minY + PAD
   const lx1 = shape.x1 - minX + PAD
   const ly1 = shape.y1 - minY + PAD
-  // For bezier, remap each point
+  // For bezier, remap anchor points to local coords
   if (shape.shapeType === 'bezier' && shape.bezierPts) {
     const remapped: DrawnShape = {
       ...shape,
-      bezierPts: shape.bezierPts.map(p => ({ ...p, x: p.x - minX + PAD, y: p.y - minY + PAD })),
+      bezierPts: shape.bezierPts.map(p => ({
+        ...p,
+        x: p.x - minX + PAD,
+        y: p.y - minY + PAD,
+      })),
       x0: lx0, y0: ly0, x1: lx1, y1: ly1,
     }
     return buildShapeElement(remapped, lx0, ly0, lx1, ly1, 1)
@@ -325,9 +328,11 @@ function buildShapeSVGString(shape: DrawnShape, x0: number, y0: number, x1: numb
     }
     case 'bezier': {
       const pts3 = shape.bezierPts
-      if (!pts3 || pts3.length < 2) return ''
-      let d = `M ${pts3[0].x} ${pts3[0].y}`
-      for (let i = 1; i < pts3.length; i++) d += ` L ${pts3[i].x} ${pts3[i].y}`
+      if (!pts3 || pts3.length < 1) return ''
+      if (pts3.length === 1) {
+        return `<circle cx="${pts3[0].x}" cy="${pts3[0].y}" r="${Math.max(2, (shape.shapeStroke ?? 2) * 1.5)}" fill="${stroke}" opacity="${alpha}"/>`
+      }
+      const d = catmullRomToSVGPath(pts3)
       return `<path d="${d}" stroke="${stroke}" fill="none" stroke-width="${sw}" opacity="${alpha}" stroke-linecap="round" stroke-linejoin="round"/>`
     }
     default: return ''
@@ -467,7 +472,52 @@ function DrawModeShapeWrapper({ shape, isSel, pageId, onDelete, canvasZoom }: {
         {/* Resize preview — innerHTML only, React never touches this node */}
         <g ref={previewGRef} />
 
-        {isSel && (
+        {isSel && shape.shapeType === 'bezier' && shape.bezierPts && shape.bezierPts.length >= 1 ? (
+          // ── Catmull-Rom 锚点编辑：只拖锚点，无控制柄 ─────────────────────────
+          <g ref={selHandlesRef}>
+            {(() => {
+              const pts = shape.bezierPts as { x: number; y: number }[]
+              const AR = 5.5 * s
+
+              const dragAnchor = (e: React.PointerEvent<SVGCircleElement>, idx: number) => {
+                e.stopPropagation(); e.preventDefault()
+                const el = e.currentTarget as SVGCircleElement
+                const parentSVG = el.ownerSVGElement
+                if (parentSVG?.hasPointerCapture(e.pointerId)) parentSVG.releasePointerCapture(e.pointerId)
+                el.setPointerCapture(e.pointerId)
+                const startX = e.clientX, startY = e.clientY
+                const zoom = canvasZoomRef.current
+                const orig = pts.map(p => ({ ...p }))
+                const move = (ev: PointerEvent) => {
+                  const dx = (ev.clientX - startX) / zoom
+                  const dy = (ev.clientY - startY) / zoom
+                  const next = orig.map((p, i) => i !== idx ? { ...p } : { x: p.x + dx, y: p.y + dy })
+                  getDrawLayerManager(pageId).patchBezierPts(shape.id, next)
+                }
+                const up = () => {
+                  el.removeEventListener('pointermove', move)
+                  el.removeEventListener('pointerup', up)
+                  el.removeEventListener('pointercancel', up)
+                }
+                el.addEventListener('pointermove', move)
+                el.addEventListener('pointerup', up)
+                el.addEventListener('pointercancel', up)
+              }
+
+              return (
+                <g pointerEvents="all">
+                  {pts.map((p, i) => (
+                    <circle key={`an-${i}`}
+                      cx={p.x} cy={p.y} r={AR}
+                      fill="#fff" stroke="#6366f1" strokeWidth={sw15}
+                      style={{ cursor: 'move', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.18))' }}
+                      onPointerDown={e => dragAnchor(e, i)} />
+                  ))}
+                </g>
+              )
+            })()}
+          </g>
+        ) : isSel && (
           <g ref={selHandlesRef}>
             <rect x={minX-HPAD} y={minY-HPAD} width={maxX-minX+HPAD*2} height={maxY-minY+HPAD*2}
               fill="rgba(99,102,241,0.04)" stroke="#6366f1" strokeWidth={sw1} rx={4*s} pointerEvents="none" />
@@ -1106,7 +1156,12 @@ export function CanvasArea(s: ExportPageState) {
     dragStart: { x: number; y: number } | null
     movingId: string | null
     bezierPts: { x: number; y: number }[]
-  }>({ mode: 'none', origin: null, dragStart: null, movingId: null, bezierPts: [] })
+    bezierDragging: boolean
+    bezierEditingId: string | null
+  }>({ mode: 'none', origin: null, dragStart: null, movingId: null, bezierPts: [], bezierDragging: false, bezierEditingId: null })
+
+  // bezier 双击检测：完全在 onPointerDown 里自行计时，绕开 onDoubleClick 的异步时序问题
+  const lastBezierClickRef = React.useRef<{ time: number; x: number; y: number } | null>(null)
 
   // draw 모드 그리기/bezier 실시간 프리뷰 — React state 대신 imperative innerHTML
   // setPreviewShape를 호출할 때마다 리렌더링이 터졌던 게 하드컷의 원인이었음
@@ -1125,8 +1180,12 @@ export function CanvasArea(s: ExportPageState) {
   }, [])
 
   // 每页的 shapes（单一来源，来自 manager emit）
-  const [pageShapesState, setPageShapesState] = React.useState<Map<string, DrawnShape[]>>(new Map())
-  const pageShapes = pageShapesState
+  const [shapesVersion, setShapesVersion] = React.useState(0)
+  // 把刷新函数挂到window上，DrawLayerManager可以直接调用，完全不经过React事件
+  React.useEffect(() => {
+    (window as any).__forceShapesUpdate = () => setShapesVersion(v => v + 1)
+    return () => { delete (window as any).__forceShapesUpdate }
+  }, [])
 
   // ── Pen SVG overlay state（矢量实时笔迹预览）────────────────────────────
   // 绘制中只有 1 条 path，笔抬起后清空，永远不会堆积
@@ -1137,28 +1196,30 @@ export function CanvasArea(s: ExportPageState) {
   // 订阅当前活跃页 manager 的事件
   const activePageIdRef = React.useRef(activePageId)
   activePageIdRef.current = activePageId
+  const pagesRef = React.useRef(pages)
+  pagesRef.current = pages
 
+  // 全页面 shapes-changed 统一 handler（不挂在 effect 里，避免 deps 问题）
   React.useEffect(() => {
-    const mgr = getDrawLayerManager(activePageId)
-    const handler = (e: import('./DrawLayerManager').LayerManagerEvent) => {
-      if (e.type === 'undo-state-changed') setDrawCanUndo(e.canUndo)
+    const activeMgr = getDrawLayerManager(activePageId)
+
+    const handleShapesChanged = (pageId: string) => (e: import('./DrawLayerManager').LayerManagerEvent) => {
+      if (e.type === 'undo-state-changed' && pageId === activePageIdRef.current) setDrawCanUndo(e.canUndo)
       if (e.type === 'shapes-changed') {
-        setPageShapesState(prev => new Map(prev).set(activePageId, e.shapes))
+        (window as any).__forceShapesUpdate?.()
       }
     }
-    mgr.on(handler)
-    // mount() は shapes-changed を emit しないので初期値をここで読む
-    setPageShapesState(prev => {
-  const next = new Map(prev)
-  pages.forEach(page => {
-    const initial = getDrawLayerManager(page.id).getShapes()
-    if (initial.length > 0) next.set(page.id, [...initial])
-  })
-  return next
-})
 
-    // 挂载 pen SVG overlay 回调
-    mgr.stroke.onPenSvgUpdate = (pathStr, color, alpha, size) => {
+    // 监听当前所有页面
+    const subs = pagesRef.current.map(page => {
+      const mgr = getDrawLayerManager(page.id)
+      const handler = handleShapesChanged(page.id)
+      mgr.on(handler)
+      return { mgr, handler }
+    })
+
+    // pen SVG overlay 回调（必须在 return 之前赋值）
+    activeMgr.stroke.onPenSvgUpdate = (pathStr, color, alpha, size) => {
       if (!pathStr) {
         setPenSvgOverlay(null)
       } else {
@@ -1167,8 +1228,8 @@ export function CanvasArea(s: ExportPageState) {
     }
 
     return () => {
-      mgr.off(handler)
-      mgr.stroke.onPenSvgUpdate = null
+      subs.forEach(({ mgr, handler }) => mgr.off(handler))
+      activeMgr.stroke.onPenSvgUpdate = null
     }
   }, [activePageId])
 
@@ -1448,6 +1509,22 @@ export function CanvasArea(s: ExportPageState) {
   const isDrawModeRef = React.useRef(isDrawMode)
   React.useEffect(() => { isDrawModeRef.current = isDrawMode }, [isDrawMode])
 
+  // 切换工具（shapeType 变化）时，退出任何进行中的 bezier 编辑/绘制
+  // sharedDrawState 是可变对象，用 DrawPanel 传入的 shapeType state 做 dep
+  const prevShapeTypeRef = React.useRef(sharedDrawState.shapeType)
+  React.useEffect(() => {
+    const cur = sharedDrawState.shapeType
+    if (prevShapeTypeRef.current !== cur) {
+      prevShapeTypeRef.current = cur
+      // 切换到非 bezier 工具：清理所有 bezier 绘制/编辑状态
+      lastBezierClickRef.current = null
+      shapeGesture.current = { mode: 'none', origin: null, dragStart: null, movingId: null, bezierPts: [], bezierDragging: false, bezierEditingId: null }
+      // 用 activePageId 清预览
+      const g = drawPreviewGMap.current.get(activePageId)
+      if (g) g.innerHTML = ''
+    }
+  })
+
   // canvasZoom ref — event callbacks 闭包里用，不触发 re-mount
   const canvasZoomRef = React.useRef(canvasZoom)
   React.useEffect(() => { canvasZoomRef.current = canvasZoom }, [canvasZoom])
@@ -1492,8 +1569,8 @@ export function CanvasArea(s: ExportPageState) {
       }
       if (e.key === 'Escape') {
         mgr.selectShape(null)
-        // 取消 bezier 绘制中
-        shapeGesture.current = { mode: 'none', origin: null, dragStart: null, movingId: null, bezierPts: [] }
+        lastBezierClickRef.current = null
+        shapeGesture.current = { mode: 'none', origin: null, dragStart: null, movingId: null, bezierPts: [], bezierDragging: false, bezierEditingId: null }
         setDrawPreview(null)
       }
     }
@@ -2455,6 +2532,17 @@ export function CanvasArea(s: ExportPageState) {
                         const g   = shapeGesture.current
 
                         const hit = mgr.hitTestShape(x, y)
+
+                        // bezier 工具点击已有 bezier shape → 进入锚点编辑模式
+                        if (hit && sharedDrawState.shapeType === 'bezier' && hit.shapeType === 'bezier') {
+                          g.bezierPts = (hit.bezierPts ?? []).map(p => ({ x: p.x, y: p.y }))
+                          g.bezierEditingId = hit.id
+                          g.bezierDragging = false
+                          lastBezierClickRef.current = null
+                          mgr.selectShape(hit.id)
+                          return
+                        }
+
                         if (hit) {
                           mgr.selectShape(hit.id)
                           g.mode = 'moving'; g.dragStart = { x, y }; g.movingId = hit.id
@@ -2463,16 +2551,10 @@ export function CanvasArea(s: ExportPageState) {
                         mgr.selectShape(null)
 
                         if (sharedDrawState.shapeType === 'bezier') {
-                          if (e.detail === 2) {
-                            if (g.bezierPts.length >= 2) {
-                              const { color, alpha, shapeFill, shapeStroke, shapeSides } = sharedDrawState
-                              mgr.addShape({ id: crypto.randomUUID(), shapeType: 'bezier', x0: 0, y0: 0, x1: 0, y1: 0, bezierPts: g.bezierPts.map(p => ({ ...p, cp1x: p.x, cp1y: p.y, cp2x: p.x, cp2y: p.y, corner: false })), color, alpha, shapeFill, shapeStroke, shapeSides })
-                            }
-                            g.bezierPts = []; setDrawPreview(null, page.id); return
-                          }
                           g.bezierPts.push({ x, y })
+                          g.mode = 'drawing'; g.origin = { x, y }
                           const { color, alpha, shapeFill, shapeStroke, shapeSides } = sharedDrawState
-                          setDrawPreview({ id: '__preview__', shapeType: 'bezier', x0: 0, y0: 0, x1: 0, y1: 0, bezierPts: g.bezierPts.map(p => ({ ...p, cp1x: p.x, cp1y: p.y, cp2x: p.x, cp2y: p.y, corner: false })), color, alpha, shapeFill, shapeStroke, shapeSides }, page.id)
+                          setDrawPreview({ id: '__preview__', shapeType: 'bezier', x0: 0, y0: 0, x1: 0, y1: 0, bezierPts: [...g.bezierPts], color, alpha, shapeFill, shapeStroke, shapeSides }, page.id)
                           return
                         }
                         g.mode = 'drawing'; g.origin = { x, y }
@@ -2514,7 +2596,12 @@ export function CanvasArea(s: ExportPageState) {
                           return
                         }
 
-                        // ── 图形模式 ──────────────────────────────────────────
+                        // ── bezier 橡皮筋预览：有 >=1 个锚点时，显示到鼠标位置的预测曲线
+                        if (sharedDrawState.shapeType === 'bezier' && g.bezierPts.length >= 1) {
+                          const { color, alpha, shapeFill, shapeStroke, shapeSides } = sharedDrawState
+                          setDrawPreview({ id: '__preview__', shapeType: 'bezier', x0: 0, y0: 0, x1: 0, y1: 0, bezierPts: [...g.bezierPts, { x, y }], color, alpha, shapeFill, shapeStroke, shapeSides }, page.id)
+                          return
+                        }
                         if (g.mode === 'moving' && g.dragStart && g.movingId) {
                           const dx = x - g.dragStart.x, dy = y - g.dragStart.y
                           // 命令式 DOM 直接写 transform — 零 React re-render，消除页面内硬切
@@ -2604,12 +2691,33 @@ export function CanvasArea(s: ExportPageState) {
                           drawDrawing.current = false
                           getDrawLayerManager(page.id).endStroke()
                         }
-                        shapeGesture.current = { mode: 'none', origin: null, dragStart: null, movingId: null, bezierPts: [] }
+                        lastBezierClickRef.current = null
+                        shapeGesture.current = { mode: 'none', origin: null, dragStart: null, movingId: null, bezierPts: [], bezierDragging: false, bezierEditingId: null }
+                        setDrawPreview(null, page.id)
+                      }}
+                      onDoubleClick={e => {
+                        if (sharedDrawState.shapeType !== 'bezier') return
+                        e.preventDefault(); e.stopPropagation()
+                        const g = shapeGesture.current
+                        const mgr2 = getDrawLayerManager(page.id)
+                        // 더블클릭시 마지막으로 추가된 중복 앵커 제거 (down이 2번 발생)
+                        if (g.bezierPts.length > 2) g.bezierPts.pop()
+                        if (g.bezierPts.length >= 2) {
+                          const { color, alpha, shapeFill, shapeStroke, shapeSides } = sharedDrawState
+                          const xs = g.bezierPts.map(p => p.x)
+                          const ys = g.bezierPts.map(p => p.y)
+                          const bx0 = Math.min(...xs), by0 = Math.min(...ys)
+                          const bx1 = Math.max(...xs), by1 = Math.max(...ys)
+                          const newId = crypto.randomUUID()
+                          mgr2.addShape({ id: newId, shapeType: 'bezier', x0: bx0, y0: by0, x1: bx1, y1: by1, bezierPts: [...g.bezierPts], color, alpha, shapeFill, shapeStroke, shapeSides })
+                          mgr2.selectShape(newId)
+                        }
+                        g.bezierPts = []; g.mode = 'none'; g.origin = null
                         setDrawPreview(null, page.id)
                       }}
                     >
                       {/* 已保存的 shapes */}
-                      {(pageShapes.get(page.id) ?? []).map(shape => {
+                      {(getDrawLayerManager(page.id).getShapes() as DrawnShape[]).map(shape => {
                         const isSel = shape.id === getDrawLayerManager(page.id).getSelectedShapeId()
                         // moving 中由命令式 DOM transform 处理，React 始终用原始坐标
                         return (
@@ -2635,7 +2743,7 @@ export function CanvasArea(s: ExportPageState) {
                     // 架构：一个全页 SVG overlay，shapes 是其中的 <g> 元素。
                     // drag 中用 React state 驱动 translate，drop 时一次 patchShape 持久化。
                     (() => {
-                      const shapes = pageShapes.get(page.id) ?? []
+                      const shapes = getDrawLayerManager(page.id).getShapes() as DrawnShape[]
                       if (shapes.length === 0) return null
                       return (
                         <svg
@@ -2659,8 +2767,9 @@ export function CanvasArea(s: ExportPageState) {
                             const PAD   = 10
                             const minX  = Math.min(shape.x0, shape.x1)
                             const minY  = Math.min(shape.y0, shape.y1)
-                            const maxX  = Math.max(shape.x0, shape.x1)
-                            const maxY  = Math.max(shape.y0, shape.y1)
+                            // bezier 可能退化为线段导致 bbox 宽/高为 0，至少保证 20px 可点击范围
+                            const maxX  = Math.max(shape.x0, shape.x1, minX + 20)
+                            const maxY  = Math.max(shape.y0, shape.y1, minY + 20)
 
                             // ── drag state (per-shape ref, no re-render during drag) ──
                             // We use a single module-level ref map keyed by shape id so

@@ -272,7 +272,7 @@ export type BrushType =
 
 export type ShapeType =
   | 'rect' | 'ellipse' | 'line' | 'arrow'
-  | 'triangle' | 'polygon' | 'star' | 'bezier'
+  | 'triangle' | 'polygon' | 'star'
 
 export interface ShapeConfig {
   type: ShapeType
@@ -290,13 +290,11 @@ export const SHAPES: ShapeConfig[] = [
   { type: 'triangle', label: 'Triangle', labelZh: '三角',   icon: '△' },
   { type: 'polygon',  label: 'Polygon',  labelZh: '多边形', icon: '⬡', sides: 6 },
   { type: 'star',     label: 'Star',     labelZh: '星形',   icon: '☆', sides: 5 },
-  { type: 'bezier',   label: 'Bezier',   labelZh: '贝塞尔', icon: '∿' },
 ]
 
 export const SHAPE_GROUPS: { label: string; labelZh: string; shapes: ShapeConfig[] }[] = [
   { label: 'Basic', labelZh: '基础', shapes: SHAPES.filter(s => ['rect','ellipse','line','arrow'].includes(s.type)) },
   { label: 'Geo',   labelZh: '几何', shapes: SHAPES.filter(s => ['triangle','polygon','star'].includes(s.type)) },
-  { label: 'Curve', labelZh: '曲线', shapes: SHAPES.filter(s => ['bezier'].includes(s.type)) },
 ]
 
 // ─── RenderMode ───────────────────────────────────────────────────────────────
@@ -1202,6 +1200,69 @@ export function universalRenderStroke(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// CATMULL-ROM → CUBIC BEZIER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * 把一组锚点用 centripetal Catmull-Rom 转成 canvas cubic bezierCurveTo 调用。
+ * 用户只需点击放锚点，曲线自动平滑经过每个点，无需控制柄。
+ * alpha=0.5 (centripetal) 不会产生自交或尖刺。
+ */
+export function catmullRomToBezierCtx(
+  ctx: CanvasRenderingContext2D,
+  pts: { x: number; y: number }[],
+) {
+  if (pts.length < 2) return
+  if (pts.length === 2) {
+    ctx.moveTo(pts[0].x, pts[0].y)
+    ctx.lineTo(pts[1].x, pts[1].y)
+    return
+  }
+  // 首尾各复制一个端点作为幽灵点
+  const p = [pts[0], ...pts, pts[pts.length - 1]]
+  ctx.moveTo(p[1].x, p[1].y)
+  for (let i = 1; i < p.length - 2; i++) {
+    const p0 = p[i - 1], p1 = p[i], p2 = p[i + 1], p3 = p[i + 2]
+    // centripetal parameterization (alpha=0.5)
+    const d1 = Math.sqrt(Math.hypot(p1.x - p0.x, p1.y - p0.y))
+    const d2 = Math.sqrt(Math.hypot(p2.x - p1.x, p2.y - p1.y))
+    const d3 = Math.sqrt(Math.hypot(p3.x - p2.x, p3.y - p2.y))
+    const d1s = d1 || 1e-4, d2s = d2 || 1e-4, d3s = d3 || 1e-4
+    // control points
+    const cp1x = p1.x + (p2.x - p0.x) * d2s / (6 * (d1s + d2s) / d2s)
+    const cp1y = p1.y + (p2.y - p0.y) * d2s / (6 * (d1s + d2s) / d2s)
+    const cp2x = p2.x - (p3.x - p1.x) * d2s / (6 * (d2s + d3s) / d2s)
+    const cp2y = p2.y - (p3.y - p1.y) * d2s / (6 * (d2s + d3s) / d2s)
+    ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y)
+  }
+}
+
+/**
+ * 同上，输出 SVG path string（用于 SVG overlay 预览）。
+ */
+export function catmullRomToSVGPath(pts: { x: number; y: number }[]): string {
+  if (pts.length < 2) return ''
+  if (pts.length === 2) {
+    return `M ${pts[0].x.toFixed(2)} ${pts[0].y.toFixed(2)} L ${pts[1].x.toFixed(2)} ${pts[1].y.toFixed(2)}`
+  }
+  const p = [pts[0], ...pts, pts[pts.length - 1]]
+  const parts: string[] = [`M ${p[1].x.toFixed(2)} ${p[1].y.toFixed(2)}`]
+  for (let i = 1; i < p.length - 2; i++) {
+    const p0 = p[i - 1], p1 = p[i], p2 = p[i + 1], p3 = p[i + 2]
+    const d1 = Math.sqrt(Math.hypot(p1.x - p0.x, p1.y - p0.y))
+    const d2 = Math.sqrt(Math.hypot(p2.x - p1.x, p2.y - p1.y))
+    const d3 = Math.sqrt(Math.hypot(p3.x - p2.x, p3.y - p2.y))
+    const d1s = d1 || 1e-4, d2s = d2 || 1e-4, d3s = d3 || 1e-4
+    const cp1x = p1.x + (p2.x - p0.x) * d2s / (6 * (d1s + d2s) / d2s)
+    const cp1y = p1.y + (p2.y - p0.y) * d2s / (6 * (d1s + d2s) / d2s)
+    const cp2x = p2.x - (p3.x - p1.x) * d2s / (6 * (d2s + d3s) / d2s)
+    const cp2y = p2.y - (p3.y - p1.y) * d2s / (6 * (d2s + d3s) / d2s)
+    parts.push(`C ${cp1x.toFixed(2)} ${cp1y.toFixed(2)} ${cp2x.toFixed(2)} ${cp2y.toFixed(2)} ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`)
+  }
+  return parts.join(' ')
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // SHAPE RENDERER
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1257,17 +1318,9 @@ export function renderShape(
       ctx.closePath(); break
     }
     case 'bezier': {
-      const bpts = bezierPts&&bezierPts.length>0?bezierPts:[{x:x0,y:y0},{x:x1,y:y1}]
-      if (bpts.length===1){ctx.arc(bpts[0].x,bpts[0].y,3,0,Math.PI*2);break}
-      ctx.moveTo(bpts[0].x,bpts[0].y)
-      if (bpts.length===2){ctx.lineTo(bpts[1].x,bpts[1].y)}
-      else {
-        for (let i=1;i<bpts.length-1;i++){
-          const mx=(bpts[i].x+bpts[i+1].x)/2, my=(bpts[i].y+bpts[i+1].y)/2
-          ctx.quadraticCurveTo(bpts[i].x,bpts[i].y,mx,my)
-        }
-        ctx.lineTo(bpts[bpts.length-1].x,bpts[bpts.length-1].y)
-      }
+      const bpts = bezierPts && bezierPts.length > 0 ? bezierPts : [{x:x0,y:y0},{x:x1,y:y1}]
+      if (bpts.length === 1) { ctx.arc(bpts[0].x, bpts[0].y, 3, 0, Math.PI*2); break }
+      catmullRomToBezierCtx(ctx, bpts)
       break
     }
   }
@@ -1498,7 +1551,7 @@ export function DrawPanel({ isZh, addImageBlock, canvasWidth = 600, activePageId
               </div>
             )}
             <p style={{ fontSize: '0.6rem', color: '#b0b0ac', fontFamily: 'Inter, DM Sans, sans-serif', lineHeight: 1.5 }}>
-              {shapeType === 'bezier' ? t('Click to add points · Double-click to finish','单击添加节点 · 双击完成') : t('Drag to draw · Shift = constrain','拖拽绘制 · Shift = 等比')}
+              {t('Drag to draw · Shift = constrain','拖拽绘制 · Shift = 等比')}
             </p>
           </div>
         )}
