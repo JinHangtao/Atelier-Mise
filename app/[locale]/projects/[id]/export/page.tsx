@@ -1,5 +1,6 @@
 'use client'
 import React from 'react'
+import ReactDOM from 'react-dom'
 import { Rnd } from 'react-rnd'
 import { buildExportHTML, THEMES } from '../../../../../lib/exportStyles'
 import { ImageEditor } from './ImageEditor'
@@ -644,8 +645,8 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
                 {isZh ? '导出' : 'Export'}
                 <span style={{ fontSize: '0.6rem', opacity: 0.6 }}>{mobileExportOpen ? '▲' : '▼'}</span>
               </button>
-              {mobileExportOpen && (
-                <div ref={mobileExportRef} style={{ position: 'fixed', top: mobileExportPos.top, right: mobileExportPos.right, background: '#fff', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.14), 0 0 0 1px rgba(26,26,26,0.07)', zIndex: 300, overflow: 'hidden', minWidth: 160, animation: 'fadeIn 0.15s ease', fontFamily: 'Inter, DM Sans, sans-serif' }}>
+              {mobileExportOpen && typeof document !== 'undefined' && ReactDOM.createPortal(
+                <div ref={mobileExportRef} style={{ position: 'fixed', top: mobileExportPos.top, right: mobileExportPos.right, background: '#fff', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.14), 0 0 0 1px rgba(26,26,26,0.07)', zIndex: 9999, overflow: 'hidden', minWidth: 160, fontFamily: 'Inter, DM Sans, sans-serif' }}>
                   {[
                     { label: 'HTML', sub: isZh ? '网页文件' : 'Web file', action: () => { setMobileExportOpen(false); setExportDialogOpen(true) } },
                     { label: 'PDF',  sub: isZh ? '打印 / 分享' : 'Print / share', action: () => { setMobileExportOpen(false); doExportPDF() } },
@@ -659,7 +660,8 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
                       <span style={{ fontSize: '0.65rem', color: '#aaa', marginLeft: 10 }}>{sub}</span>
                     </button>
                   ))}
-                </div>
+                </div>,
+                document.body
               )}
             </div>
           ) : (
