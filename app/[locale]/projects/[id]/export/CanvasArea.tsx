@@ -1720,8 +1720,11 @@ export function CanvasArea(s: ExportPageState) {
   // e.preventDefault() 在那里完全失效，浏览器抢走手势发 touchcancel，pan永远启动不了。
   // 绑在具体 DOM 节点上，{ passive: false } 才真实有效。
   React.useEffect(() => {
-    const wrap = canvasWrapRef.current
-    if (!wrap) return
+    let cleanup: (() => void) | null = null
+
+    const bind = () => {
+      const wrap = canvasWrapRef.current
+      if (!wrap) { setTimeout(bind, 50); return }
 
     const isScrollTarget = (target: HTMLElement) =>
       !!(target.closest('.block-body') ||
@@ -1818,14 +1821,18 @@ export function CanvasArea(s: ExportPageState) {
       }
     }
 
-    wrap.addEventListener('touchstart', onNativeTouchStart, { passive: false })
-    wrap.addEventListener('touchmove',  onNativeTouchMove,  { passive: false })
-    return () => {
-      wrap.removeEventListener('touchstart', onNativeTouchStart)
-      wrap.removeEventListener('touchmove',  onNativeTouchMove)
+      wrap.addEventListener('touchstart', onNativeTouchStart, { passive: false })
+      wrap.addEventListener('touchmove',  onNativeTouchMove,  { passive: false })
+      cleanup = () => {
+        wrap.removeEventListener('touchstart', onNativeTouchStart)
+        wrap.removeEventListener('touchmove',  onNativeTouchMove)
+      }
     }
+
+    bind()
+    return () => { cleanup?.() }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canvasWrapRef.current])
+  }, [])
 
   // wheel 缩放/平移统一由 useExportPage DOM 直驱，CanvasArea 不重复绑定。
 
