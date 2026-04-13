@@ -1539,7 +1539,7 @@ export function CanvasArea(s: ExportPageState) {
   // ── Tablet touch: pan + pinch-zoom ────────────────────────────────────────
   // Completely separate from mouse events — touch events fire on all touch devices.
   const touchPanRef = React.useRef<{ startX: number; startY: number; px: number; py: number } | null>(null)
-  const touchPinchRef = React.useRef<{ dist: number; midX: number; midY: number; startZoom: number; startPanX: number; startPanY: number } | null>(null)
+  const touchPinchRef = React.useRef<{ dist: number; midX: number; midY: number; startZoom: number; startPanX: number; startPanY: number; wRect: DOMRect | null } | null>(null)
   const _touchPanPos = React.useRef({ x: canvasPan.x, y: canvasPan.y })
 
   // ── Tablet: long-press to show context menu ────────────────────────────────
@@ -1809,7 +1809,7 @@ export function CanvasArea(s: ExportPageState) {
           const mat = liveTransform && liveTransform !== 'none' ? new DOMMatrix(liveTransform) : null
           const livePx = mat ? mat.m41 : canvasPan.x
           const livePy = mat ? mat.m42 : canvasPan.y
-          touchPinchRef.current = { dist, midX, midY, startZoom: canvasZoomRef.current, startPanX: livePx, startPanY: livePy }
+          touchPinchRef.current = { dist, midX, midY, startZoom: canvasZoomRef.current, startPanX: livePx, startPanY: livePy, wRect: wrap?.getBoundingClientRect() ?? null }
           e.preventDefault()
         }
       }}
@@ -1829,10 +1829,10 @@ export function CanvasArea(s: ExportPageState) {
           const MARGIN = 120
           const nx = Math.min(W - MARGIN, Math.max(-(W * 2), touchPanRef.current.px + e.touches[0].clientX - touchPanRef.current.startX))
           const ny = Math.min(H - MARGIN, Math.max(-(H * 4), touchPanRef.current.py + e.touches[0].clientY - touchPanRef.current.startY))
-          if (panLayerRef.current) {
-            panLayerRef.current.style.transform = `translate(${nx}px,${ny}px) scale(${canvasZoomRef.current})`
-          }
+          // ── 与鼠标 pan 一致：只更新 target，交给 RAF lerp 平滑追随 ──
+          _panTarget.current = { x: nx, y: ny }
           _touchPanPos.current = { x: nx, y: ny }
+          _startSmoothPanLoop()
         } else if (e.touches.length === 2 && touchPinchRef.current) {
           e.preventDefault()
           const t0 = e.touches[0], t1 = e.touches[1]
@@ -1841,8 +1841,8 @@ export function CanvasArea(s: ExportPageState) {
           const rawZoom = pinch.startZoom * (dist / pinch.dist)
           const newZoom = +Math.min(3, Math.max(0.2, rawZoom)).toFixed(3)
           // Pan so pinch midpoint stays fixed on canvas
-          const wrap = canvasWrapRef.current
-          const wRect = wrap?.getBoundingClientRect()
+          // ── 用 touchStart 时缓存的 wRect，避免每帧强制 layout reflow ──
+          const wRect = pinch.wRect
           const midX = (t0.clientX + t1.clientX) / 2
           const midY = (t0.clientY + t1.clientY) / 2
           const originX = wRect ? midX - wRect.left : midX
