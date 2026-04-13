@@ -1542,6 +1542,61 @@ export function CanvasArea(s: ExportPageState) {
   const touchPinchRef = React.useRef<{ dist: number; midX: number; midY: number; startZoom: number; startPanX: number; startPanY: number; wRect: DOMRect | null } | null>(null)
   const _touchPanPos = React.useRef({ x: canvasPan.x, y: canvasPan.y })
 
+  // ── Mobile momentum: velocity tracking + inertia RAF ─────────────────────
+  // 用最近3帧加权平均速度，消除 touchend 瞬时噪声（手势结束时数据最嘈杂）
+  const _touchVelRef   = React.useRef({ vx: 0, vy: 0 })
+  const _touchPrevRef  = React.useRef<{ x: number; y: number; t: number } | null>(null)
+  const _touchVelBuf   = React.useRef<Array<{ vx: number; vy: number }>>([])
+  const _momentumRafId = React.useRef<number | null>(null)
+
+  const _stopMomentum = () => {
+    if (_momentumRafId.current !== null) {
+      cancelAnimationFrame(_momentumRafId.current)
+      _momentumRafId.current = null
+    }
+  }
+
+  // 只在手机端（≤768px）启动惯性，桌面不动
+  const _startMomentum = React.useCallback((initVx: number, initVy: number) => {
+    if (typeof window === 'undefined' || window.innerWidth > 768) return
+    _stopMomentum()
+    const wrap = canvasWrapRef.current
+    const W = wrap ? wrap.offsetWidth : 800
+    const H = wrap ? wrap.offsetHeight : 600
+    const MARGIN = 120
+    const DECAY = 0.93   // iOS 原生 ~0.95，稍微收紧一点更精准
+    const MIN_V = 0.4    // 低于此速度停止，防止无限滑行
+
+    let vx = initVx
+    let vy = initVy
+
+    const loop = () => {
+      vx *= DECAY
+      vy *= DECAY
+
+      if (Math.abs(vx) < MIN_V && Math.abs(vy) < MIN_V) {
+        // 速度够小了，commit 最终位置到 React state
+        setCanvasPan({ x: _touchPanPos.current.x, y: _touchPanPos.current.y })
+        _momentumRafId.current = null
+        return
+      }
+
+      const nx = Math.min(W - MARGIN, Math.max(-(W * 2), _touchPanPos.current.x + vx))
+      const ny = Math.min(H - MARGIN, Math.max(-(H * 4), _touchPanPos.current.y + vy))
+      _touchPanPos.current = { x: nx, y: ny }
+      _panTarget.current   = { x: nx, y: ny }
+      _panDisplay.current  = { x: nx, y: ny }
+      _mousePanPos.current = { x: nx, y: ny }
+
+      if (panLayerRef.current) {
+        panLayerRef.current.style.transform = `translate(${nx}px,${ny}px) scale(${canvasZoomRef.current})`
+      }
+      _momentumRafId.current = requestAnimationFrame(loop)
+    }
+    _momentumRafId.current = requestAnimationFrame(loop)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panLayerRef])
+
   // ── Tablet: long-press to show context menu ────────────────────────────────
   const longPressTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
   const longPressBlockRef = React.useRef<{ blockId: string; clientX: number; clientY: number } | null>(null)
@@ -1663,28 +1718,32 @@ export function CanvasArea(s: ExportPageState) {
     const el = canvasWrapRef.current
     if (!el) return
 
+    // 统一豁免判断 — native 和 React handler 共用同一个函数，不再出现逻辑不一致
+    const isScrollTarget = (target: HTMLElement) =>
+      !!(target.closest('.block-body') ||
+         target.closest('.page-scroll-wrap') ||
+         target.closest('[data-allow-scroll]'))
+
     const onNativeTouchStart = (e: TouchEvent) => {
       if (isDrawModeRef.current) return
       const target = e.target as HTMLElement
-      if (
-        target.closest('.block-body') ||
-        target.closest('.page-scroll-wrap') ||
-        target.closest('[data-allow-scroll]')
-      ) return
-      // Prevent browser pan/zoom so only our JS handles it
+      if (isScrollTarget(target)) return
+      // rnd-block 内部：不 preventDefault，让 Rnd 的 pointer 事件正常工作
+      // 但 block 外框/resize handle 区域（在 .rnd-block 但不在 .block-body）
+      // 也不 preventDefault，避免原先的"触摸死区"问题
       if (!target.closest('.rnd-block')) {
         e.preventDefault()
       }
+      // 新手指落下时停止正在进行的惯性
+      _stopMomentum()
+      _touchVelBuf.current = []
+      _touchPrevRef.current = null
     }
 
     const onNativeTouchMove = (e: TouchEvent) => {
       if (isDrawModeRef.current) return
       const target = e.target as HTMLElement
-      if (
-        target.closest('.block-body') ||
-        target.closest('.page-scroll-wrap') ||
-        target.closest('[data-allow-scroll]')
-      ) return
+      if (isScrollTarget(target)) return
       e.preventDefault()
 
       if (e.touches.length === 1 && touchPanRef.current) {
@@ -1701,6 +1760,19 @@ export function CanvasArea(s: ExportPageState) {
         _panTarget.current   = { x: nx, y: ny }
         _panDisplay.current  = { x: nx, y: ny }
         _mousePanPos.current = { x: nx, y: ny }
+
+        // ── 速度采样：记录最近3帧，取加权平均，消除手势末尾噪声 ──
+        const now = performance.now()
+        const prev = _touchPrevRef.current
+        if (prev) {
+          const dt = Math.max(1, now - prev.t)
+          const vx = (nx - prev.x) / dt * 16  // 归一化到 ~60fps 单位
+          const vy = (ny - prev.y) / dt * 16
+          _touchVelBuf.current.push({ vx, vy })
+          if (_touchVelBuf.current.length > 3) _touchVelBuf.current.shift()
+        }
+        _touchPrevRef.current = { x: nx, y: ny, t: now }
+
       } else if (e.touches.length === 2 && touchPinchRef.current) {
         const t0 = e.touches[0], t1 = e.touches[1]
         const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY)
@@ -1820,6 +1892,7 @@ export function CanvasArea(s: ExportPageState) {
       onTouchStart={e => {
         if (isDrawMode) return
         clearLongPress()
+        _stopMomentum()  // 新手指落下立即打断惯性
         const target = e.target as HTMLElement
         // 1-finger on a block → let the block handle drag, but arm long-press timer
         if (target.closest('.rnd-block')) {
@@ -1856,6 +1929,8 @@ export function CanvasArea(s: ExportPageState) {
           const livePy = mat ? mat.m42 : canvasPan.y
           touchPanRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, px: livePx, py: livePy }
           _touchPanPos.current = { x: livePx, y: livePy }
+          _touchVelBuf.current = []
+          _touchPrevRef.current = null
         } else if (e.touches.length === 2) {
           // Two-finger pinch
           touchPanRef.current = null
@@ -1881,44 +1956,44 @@ export function CanvasArea(s: ExportPageState) {
           const lp = longPressBlockRef.current
           if (Math.hypot(t.clientX - lp.clientX, t.clientY - lp.clientY) > 10) clearLongPress()
         }
+        // 实际 transform 由 native handler 驱动；React handler 只负责同步速度 buf
+        // （native 先于 React 触发，_touchPanPos 此时已是最新值）
         if (e.touches.length === 1 && touchPanRef.current) {
           e.preventDefault()
-          const wrap = canvasWrapRef.current
-          const W = wrap ? wrap.offsetWidth : 800
-          const H = wrap ? wrap.offsetHeight : 600
-          const MARGIN = 120
-          const nx = Math.min(W - MARGIN, Math.max(-(W * 2), touchPanRef.current.px + e.touches[0].clientX - touchPanRef.current.startX))
-          const ny = Math.min(H - MARGIN, Math.max(-(H * 4), touchPanRef.current.py + e.touches[0].clientY - touchPanRef.current.startY))
-          // Native handler already drove the transform; sync refs so touchEnd commits correctly
-          _touchPanPos.current = { x: nx, y: ny }
+          // 速度 buf 已由 native handler 写入，这里无需重复计算
         } else if (e.touches.length === 2 && touchPinchRef.current) {
           e.preventDefault()
-          const t0 = e.touches[0], t1 = e.touches[1]
-          const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY)
-          const pinch = touchPinchRef.current
-          const rawZoom = pinch.startZoom * (dist / pinch.dist)
-          const newZoom = +Math.min(3, Math.max(0.2, rawZoom)).toFixed(3)
-          // Pan so pinch midpoint stays fixed on canvas
-          // ── 用 touchStart 时缓存的 wRect，避免每帧强制 layout reflow ──
-          const wRect = pinch.wRect
-          const midX = (t0.clientX + t1.clientX) / 2
-          const midY = (t0.clientY + t1.clientY) / 2
-          const originX = wRect ? midX - wRect.left : midX
-          const originY = wRect ? midY - wRect.top  : midY
-          const scaleDelta = newZoom / pinch.startZoom
-          const newPanX = originX + (pinch.startPanX - originX) * scaleDelta + (midX - pinch.midX)
-          const newPanY = originY + (pinch.startPanY - originY) * scaleDelta + (midY - pinch.midY)
-          if (panLayerRef.current) {
-            panLayerRef.current.style.transform = `translate(${newPanX}px,${newPanY}px) scale(${newZoom})`
-          }
-          _touchPanPos.current = { x: newPanX, y: newPanY }
-          canvasZoomRef.current = newZoom
+          // pinch transform 同样由 native handler 驱动
         }
       }}
       onTouchEnd={e => {
         clearLongPress()
         if (touchPanRef.current) {
           touchPanRef.current = null
+          _touchPrevRef.current = null
+
+          // ── 计算加权平均速度（最近3帧，越新权重越高：1/2/4）────────────
+          const buf = _touchVelBuf.current
+          if (buf.length > 0 && window.innerWidth <= 768) {
+            const weights = [1, 2, 4]
+            let wvx = 0, wvy = 0, wsum = 0
+            buf.forEach((v, i) => {
+              const idx = i + (3 - buf.length)  // 对齐到末尾权重
+              const w = weights[idx] ?? 1
+              wvx += v.vx * w
+              wvy += v.vy * w
+              wsum += w
+            })
+            const avgVx = wvx / wsum
+            const avgVy = wvy / wsum
+            // 速度太小就不启动惯性（避免轻点也滑动）
+            if (Math.abs(avgVx) > 1.5 || Math.abs(avgVy) > 1.5) {
+              _startMomentum(avgVx, avgVy)
+              _touchVelBuf.current = []
+              return  // momentum 会在结束时 commit setCanvasPan
+            }
+          }
+          _touchVelBuf.current = []
           setCanvasPan({ x: _touchPanPos.current.x, y: _touchPanPos.current.y })
         }
         if (touchPinchRef.current && e.touches.length < 2) {
@@ -1929,8 +2004,11 @@ export function CanvasArea(s: ExportPageState) {
       }}
       onTouchCancel={() => {
         clearLongPress()
+        _stopMomentum()
         touchPanRef.current = null
         touchPinchRef.current = null
+        _touchVelBuf.current = []
+        _touchPrevRef.current = null
       }}
     >
       {/* CSS for canvas/blocks */}
