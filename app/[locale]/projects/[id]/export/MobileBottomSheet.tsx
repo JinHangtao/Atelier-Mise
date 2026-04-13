@@ -1023,142 +1023,141 @@ export function MobileBottomBar({
             </div>
           </div>
 
-          {/* ── Actions ── */}
-          {onAddPage && (
-            <button
-              className="page-action-btn"
-              onClick={() => { onAddPage(); closePopover() }}
-              style={{
-                width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-                padding: '14px 16px', border: 'none',
-                background: 'transparent', cursor: 'pointer',
-                borderBottom: '1px solid rgba(26,26,26,0.06)',
-                WebkitTapHighlightColor: 'transparent',
-                transition: 'background 0.1s ease',
-                textAlign: 'left',
-              }}
-              onTouchStart={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.05)' }}
-              onTouchEnd={e => { e.currentTarget.style.background = 'transparent' }}
-            >
-              <div style={{
-                width: 32, height: 32, borderRadius: 8,
-                background: 'rgba(26,26,26,0.07)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 15, flexShrink: 0,
-              }}>＋</div>
-              <div>
-                <div style={{ fontSize: '0.88rem', fontWeight: 600, color: '#1a1a1a', fontFamily: 'Inter, DM Sans, sans-serif' }}>
-                  {isZh ? '添加页面' : 'Add page'}
-                </div>
-                <div style={{ fontSize: '0.68rem', color: '#bbb', marginTop: 2, fontFamily: 'Inter, DM Sans, sans-serif' }}>
-                  {isZh ? '在当前页后插入' : 'Insert after current page'}
-                </div>
-              </div>
-            </button>
-          )}
+          {/* ── Actions row ── */}
+          <div style={{
+            display: 'flex', alignItems: 'stretch',
+            borderTop: '1px solid rgba(26,26,26,0.07)',
+          }}>
+            {/* 添加页面 */}
+            {onAddPage && (
+              <button
+                onClick={() => { onAddPage(); closePopover() }}
+                style={{
+                  flex: 1, display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', justifyContent: 'center', gap: 5,
+                  padding: '14px 8px',
+                  border: 'none', background: 'transparent', cursor: 'pointer',
+                  borderRight: onDeletePage ? '1px solid rgba(26,26,26,0.07)' : 'none',
+                  WebkitTapHighlightColor: 'transparent',
+                  transition: 'background 0.1s ease',
+                }}
+                onTouchStart={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.05)' }}
+                onTouchEnd={e => {
+                  e.currentTarget.style.background = 'transparent'
+                  e.currentTarget.style.transition = `background 0.1s ease, transform 0.28s ${SPRING_BTN}`
+                  e.currentTarget.style.transform = 'scale(1)'
+                  setTimeout(() => { if (e.currentTarget) e.currentTarget.style.transition = 'background 0.1s ease' }, 300)
+                }}
+                onTouchCancel={e => { e.currentTarget.style.background = 'transparent' }}
+              >
+                <div style={{
+                  width: 36, height: 36, borderRadius: 10,
+                  background: 'rgba(26,26,26,0.07)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '1.1rem', color: '#1a1a1a',
+                  transition: `transform 0.28s ${SPRING_BTN}`,
+                }}>＋</div>
+                <span style={{
+                  fontSize: '0.72rem', fontWeight: 600, color: '#1a1a1a',
+                  fontFamily: 'Inter, DM Sans, sans-serif',
+                }}>{isZh ? '添加页面' : 'Add page'}</span>
+              </button>
+            )}
 
-          {onDeletePage && !confirmDelete && (
-            <button
-              className="page-action-btn-danger"
-              onClick={() => setConfirmDelete(true)}
-              disabled={totalPages <= 1}
-              style={{
-                width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-                padding: '14px 16px', border: 'none',
-                background: 'transparent',
-                cursor: totalPages <= 1 ? 'not-allowed' : 'pointer',
-                opacity: totalPages <= 1 ? 0.32 : 1,
-                WebkitTapHighlightColor: 'transparent',
-                transition: 'background 0.1s ease',
-                textAlign: 'left',
-              }}
-              onTouchStart={e => { if (totalPages > 1) e.currentTarget.style.background = 'rgba(220,60,60,0.06)' }}
-              onTouchEnd={e => { e.currentTarget.style.background = 'transparent' }}
-            >
-              <div style={{
-                width: 32, height: 32, borderRadius: 8,
-                background: 'rgba(220,60,60,0.09)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 15, flexShrink: 0,
-              }}>🗑</div>
-              <div>
-                <div style={{ fontSize: '0.88rem', fontWeight: 600, color: '#c03030', fontFamily: 'Inter, DM Sans, sans-serif' }}>
-                  {isZh ? '删除当前页' : 'Delete this page'}
-                </div>
-                <div style={{ fontSize: '0.68rem', color: '#e0aaaa', marginTop: 2, fontFamily: 'Inter, DM Sans, sans-serif' }}>
-                  {totalPages <= 1
-                    ? (isZh ? '至少需要保留一页' : 'Need at least one page')
-                    : (isZh ? '点击后需再次确认' : 'Tap again to confirm')}
-                </div>
-              </div>
-            </button>
-          )}
+            {/* 删除页面 */}
+            {onDeletePage && !confirmDelete && (
+              <button
+                onClick={() => { if (totalPages > 1) setConfirmDelete(true) }}
+                disabled={totalPages <= 1}
+                style={{
+                  flex: 1, display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', justifyContent: 'center', gap: 5,
+                  padding: '14px 8px',
+                  border: 'none', background: 'transparent',
+                  cursor: totalPages <= 1 ? 'not-allowed' : 'pointer',
+                  opacity: totalPages <= 1 ? 0.28 : 1,
+                  WebkitTapHighlightColor: 'transparent',
+                  transition: 'background 0.1s ease',
+                }}
+                onTouchStart={e => { if (totalPages > 1) e.currentTarget.style.background = 'rgba(220,60,60,0.06)' }}
+                onTouchEnd={e => {
+                  e.currentTarget.style.background = 'transparent'
+                  e.currentTarget.style.transition = `background 0.1s ease, transform 0.28s ${SPRING_BTN}`
+                  e.currentTarget.style.transform = 'scale(1)'
+                  setTimeout(() => { if (e.currentTarget) e.currentTarget.style.transition = 'background 0.1s ease' }, 300)
+                }}
+                onTouchCancel={e => { e.currentTarget.style.background = 'transparent' }}
+              >
+                <div style={{
+                  width: 36, height: 36, borderRadius: 10,
+                  background: 'rgba(220,60,60,0.08)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '1.05rem',
+                }}>🗑</div>
+                <span style={{
+                  fontSize: '0.72rem', fontWeight: 600, color: '#c03030',
+                  fontFamily: 'Inter, DM Sans, sans-serif',
+                }}>{isZh ? '删除此页' : 'Delete page'}</span>
+              </button>
+            )}
+          </div>{/* end actions row */}
 
-          {/* 二次确认 — inline 展开，无系统弹窗 */}
+          {/* 二次确认 — 从底部滑入替换操作行 */}
           {onDeletePage && confirmDelete && (
             <div style={{
-              animation: 'confirmIn 0.2s ease both',
+              borderTop: '1px solid rgba(220,60,60,0.12)',
+              background: 'rgba(220,60,60,0.04)',
+              animation: 'confirmIn 0.22s ease both',
               overflow: 'hidden',
             }}>
               <div style={{
-                margin: '12px 12px 0',
-                padding: '12px 14px',
-                borderRadius: 10,
-                background: 'rgba(220,60,60,0.06)',
-                border: '1px solid rgba(220,60,60,0.16)',
+                padding: '12px 16px 8px',
+                fontSize: '0.78rem', fontWeight: 500, color: '#c03030',
+                fontFamily: 'Inter, DM Sans, sans-serif', lineHeight: 1.45,
               }}>
-                <div style={{
-                  fontSize: '0.8rem', fontWeight: 500, color: '#c03030',
-                  fontFamily: 'Inter, DM Sans, sans-serif', marginBottom: 10,
-                  lineHeight: 1.4,
-                }}>
-                  {isZh ? '删除后无法恢复，确认吗？' : 'This cannot be undone — confirm?'}
-                </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button
-                    onClick={() => setConfirmDelete(false)}
-                    style={{
-                      flex: 1, height: 36, borderRadius: 8,
-                      border: '1px solid rgba(26,26,26,0.12)',
-                      background: '#fff', color: '#666',
-                      fontSize: '0.82rem', fontWeight: 500, cursor: 'pointer',
-                      fontFamily: 'Inter, DM Sans, sans-serif',
-                      WebkitTapHighlightColor: 'transparent',
-                      transition: `background 0.1s ease, transform 0.1s ease`,
-                    }}
-                    onTouchStart={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.06)'; e.currentTarget.style.transform = 'scale(0.95)' }}
-                    onTouchEnd={e => {
-                      e.currentTarget.style.background = '#fff'
-                      e.currentTarget.style.transition = `background 0.1s ease, transform 0.28s ${SPRING_BTN}`
-                      e.currentTarget.style.transform = 'scale(1)'
-                    }}
-                  >{isZh ? '取消' : 'Cancel'}</button>
-                  <button
-                    onClick={() => { onDeletePage(); closePopover() }}
-                    style={{
-                      flex: 1, height: 36, borderRadius: 8,
-                      border: 'none',
-                      background: '#c03030', color: '#fff',
-                      fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer',
-                      fontFamily: 'Inter, DM Sans, sans-serif',
-                      WebkitTapHighlightColor: 'transparent',
-                      transition: `background 0.1s ease, transform 0.1s ease`,
-                      boxShadow: '0 2px 8px rgba(192,48,48,0.3)',
-                    }}
-                    onTouchStart={e => { e.currentTarget.style.transform = 'scale(0.95)'; e.currentTarget.style.background = '#a82828' }}
-                    onTouchEnd={e => {
-                      e.currentTarget.style.background = '#c03030'
-                      e.currentTarget.style.transition = `background 0.1s ease, transform 0.28s ${SPRING_BTN}`
-                      e.currentTarget.style.transform = 'scale(1)'
-                    }}
-                  >{isZh ? '确认删除' : 'Delete'}</button>
-                </div>
+                {isZh ? '删除后无法恢复，确认吗？' : 'This cannot be undone — confirm?'}
               </div>
-              <div style={{ height: 12 }} />
+              <div style={{ display: 'flex', gap: 8, padding: '0 12px 12px' }}>
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  style={{
+                    flex: 1, height: 36, borderRadius: 9,
+                    border: '1px solid rgba(26,26,26,0.14)',
+                    background: '#fff', color: '#555',
+                    fontSize: '0.82rem', fontWeight: 500, cursor: 'pointer',
+                    fontFamily: 'Inter, DM Sans, sans-serif',
+                    WebkitTapHighlightColor: 'transparent',
+                    transition: `background 0.1s ease, transform 0.1s ease`,
+                  }}
+                  onTouchStart={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.06)'; e.currentTarget.style.transform = 'scale(0.95)' }}
+                  onTouchEnd={e => {
+                    e.currentTarget.style.background = '#fff'
+                    e.currentTarget.style.transition = `background 0.1s ease, transform 0.28s ${SPRING_BTN}`
+                    e.currentTarget.style.transform = 'scale(1)'
+                  }}
+                >{isZh ? '取消' : 'Cancel'}</button>
+                <button
+                  onClick={() => { onDeletePage(); closePopover() }}
+                  style={{
+                    flex: 1, height: 36, borderRadius: 9,
+                    border: 'none',
+                    background: '#c03030', color: '#fff',
+                    fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer',
+                    fontFamily: 'Inter, DM Sans, sans-serif',
+                    WebkitTapHighlightColor: 'transparent',
+                    transition: `background 0.1s ease, transform 0.1s ease`,
+                    boxShadow: '0 2px 8px rgba(192,48,48,0.28)',
+                  }}
+                  onTouchStart={e => { e.currentTarget.style.transform = 'scale(0.95)'; e.currentTarget.style.background = '#a82828' }}
+                  onTouchEnd={e => {
+                    e.currentTarget.style.background = '#c03030'
+                    e.currentTarget.style.transition = `background 0.1s ease, transform 0.28s ${SPRING_BTN}`
+                    e.currentTarget.style.transform = 'scale(1)'
+                  }}
+                >{isZh ? '确认删除' : 'Delete'}</button>
+              </div>
             </div>
           )}
-
-          {!confirmDelete && <div style={{ height: 6 }} />}
 
           {/* 小三角指向页码按钮 */}
           <div style={{
