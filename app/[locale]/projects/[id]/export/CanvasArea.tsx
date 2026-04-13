@@ -1800,6 +1800,7 @@ export function CanvasArea(s: ExportPageState) {
         } else if (e.touches.length === 2) {
           // Two-finger pinch
           touchPanRef.current = null
+          const wrap = canvasWrapRef.current
           const t0 = e.touches[0], t1 = e.touches[1]
           const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY)
           const midX = (t0.clientX + t1.clientX) / 2
