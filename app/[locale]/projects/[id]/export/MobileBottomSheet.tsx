@@ -33,6 +33,7 @@ interface MobileBottomSheetProps {
   onStartEdit?: (block: Block) => void
   onRemoveBg?: (id: string, content: string) => void
   onPatchBlock?: (id: string, patch: Partial<Block>) => void
+  onDeletePage?: () => void
 }
 
 // ── SheetHandle ────────────────────────────────────────────────────────────
@@ -168,6 +169,7 @@ export function MobileBottomSheet({
   onStartEdit,
   onRemoveBg,
   onPatchBlock,
+  onDeletePage,
 }: MobileBottomSheetProps) {
   const isOpen = !!block
   const { mounted, translateOut, backdropVisible, phase } = useMountedSheet(isOpen, 260)
@@ -603,14 +605,32 @@ export function MobileBottomSheet({
 
           <Divider />
 
-          {/* Delete */}
+          {/* Delete element */}
           <Row
             icon="🗑"
-            label={isZh ? '删除' : 'Delete'}
+            label={isZh ? '删除元素' : 'Delete element'}
             sub={isZh ? '此操作不可撤销' : 'Cannot be undone'}
             onClick={() => onDelete(block.id)}
             danger
           />
+
+          {/* Delete page */}
+          {onDeletePage && (
+            <>
+              <Divider />
+              <Row
+                icon="📄"
+                label={isZh ? '删除当前页面' : 'Delete this page'}
+                sub={isZh ? '页面及所有内容将被删除' : 'Page and all content will be removed'}
+                onClick={() => {
+                  if (window.confirm(isZh ? '确定删除当前页面？此操作不可撤销。' : 'Delete this page? This cannot be undone.')) {
+                    onDeletePage()
+                  }
+                }}
+                danger
+              />
+            </>
+          )}
 
           <div style={{ height: 8 }} />
         </div>
@@ -627,10 +647,11 @@ interface MobileAddSheetProps {
   onAddText: () => void
   onAddTitle: () => void
   onAddImage: () => void
+  onAddPage?: () => void
 }
 
 export function MobileAddSheet({
-  isOpen, isZh, onClose, onAddText, onAddTitle, onAddImage,
+  isOpen, isZh, onClose, onAddText, onAddTitle, onAddImage, onAddPage,
 }: MobileAddSheetProps) {
   const { mounted, translateOut, backdropVisible } = useMountedSheet(isOpen, 240)
   const { handleRef, sheetRef, dragOffset, isDragging } = useDragToDismiss(onClose)
@@ -765,10 +786,13 @@ export function MobileAddSheet({
           >×</button>
         </div>
 
-        <div style={{ display: 'flex', gap: 10, padding: '0 20px 20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: '0 20px 20px' }}>
           <Item icon="✦" label={isZh ? '标题' : 'Title'} sub={isZh ? '大标题文字' : 'Heading text'} onClick={onAddTitle} staggerIndex={0} />
           <Item icon="✎" label={isZh ? '文字' : 'Text'}  sub={isZh ? '正文段落'   : 'Body text'}    onClick={onAddText}  staggerIndex={1} />
           <Item icon="🖼" label={isZh ? '图片' : 'Image'} sub={isZh ? '从相册选择' : 'From photos'}  onClick={onAddImage} staggerIndex={2} />
+          {onAddPage && (
+            <Item icon="📄" label={isZh ? '新页面' : 'New page'} sub={isZh ? '添加一页' : 'Add a page'} onClick={onAddPage} staggerIndex={3} />
+          )}
         </div>
       </div>
     </>
@@ -785,17 +809,23 @@ interface MobileBottomBarProps {
   totalPages: number
   isZh: boolean
   onAdd: () => void
+  onAddPage?: () => void
+  onDeletePage?: () => void
+  onGoToPage?: (page: number) => void
 }
 
 export function MobileBottomBar({
   zoom, onZoomIn, onZoomOut, onZoomFit,
   currentPage, totalPages, isZh,
-  onAdd,
+  onAdd, onAddPage, onDeletePage, onGoToPage,
 }: MobileBottomBarProps) {
-  // zoom 百分比变化时做数字 flip 动画
   const zoomPct = Math.round(zoom * 100)
   const [displayZoom, setDisplayZoom] = React.useState(zoomPct)
   const [flipKey, setFlipKey] = React.useState(0)
+  const [pagePopover, setPagePopover] = React.useState(false)
+  const [confirmDelete, setConfirmDelete] = React.useState(false)
+  const popoverRef = React.useRef<HTMLDivElement>(null)
+
   React.useEffect(() => {
     if (zoomPct !== displayZoom) {
       setFlipKey(k => k + 1)
@@ -803,6 +833,23 @@ export function MobileBottomBar({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoomPct])
+
+  // 点击外部关闭 popover
+  React.useEffect(() => {
+    if (!pagePopover) return
+    const handler = (e: MouseEvent | TouchEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        setPagePopover(false)
+        setConfirmDelete(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    document.addEventListener('touchstart', handler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('touchstart', handler)
+    }
+  }, [pagePopover])
 
   const Btn = ({ label, onPress, wide }: { label: string; onPress: () => void; wide?: boolean }) => (
     <button
@@ -830,15 +877,33 @@ export function MobileBottomBar({
       }}
     >
       {wide ? (
-        // zoom 数字：变化时做垂直 flip
-        <span
-          key={flipKey}
-          style={{ animation: flipKey > 0 ? 'zoomFlip 0.22s ease both' : 'none' }}
-        >
+        <span key={flipKey} style={{ animation: flipKey > 0 ? 'zoomFlip 0.22s ease both' : 'none' }}>
           {label}
         </span>
       ) : label}
     </button>
+  )
+
+  // 页面缩略图 dots
+  const PageDots = () => (
+    <div style={{ display: 'flex', gap: 4, alignItems: 'center', justifyContent: 'center', padding: '2px 0 10px' }}>
+      {Array.from({ length: totalPages }).map((_, i) => (
+        <button
+          key={i}
+          onClick={() => { onGoToPage?.(i + 1); setPagePopover(false); setConfirmDelete(false) }}
+          style={{
+            width: i + 1 === currentPage ? 20 : 6,
+            height: 6,
+            borderRadius: 3,
+            background: i + 1 === currentPage ? '#1a1a1a' : 'rgba(26,26,26,0.18)',
+            border: 'none', padding: 0, cursor: 'pointer',
+            transition: `width 0.28s ${SPRING_BTN}, background 0.18s ease`,
+            WebkitTapHighlightColor: 'transparent',
+            flexShrink: 0,
+          }}
+        />
+      ))}
+    </div>
   )
 
   return (
@@ -849,7 +914,186 @@ export function MobileBottomBar({
           60%  { opacity: 1;   transform: translateY(1px)  scale(1.04); }
           100% { opacity: 1;   transform: translateY(0)    scale(1);    }
         }
+        @keyframes pagePopIn {
+          0%   { opacity: 0; transform: translateY(8px) scale(0.95); }
+          60%  { transform: translateY(-2px) scale(1.01); }
+          100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes pagePopOut {
+          0%   { opacity: 1; transform: translateY(0) scale(1); }
+          100% { opacity: 0; transform: translateY(6px) scale(0.96); }
+        }
       `}</style>
+
+      {/* Page popover */}
+      {pagePopover && (
+        <div
+          ref={popoverRef}
+          style={{
+            position: 'fixed',
+            bottom: 'calc(56px + env(safe-area-inset-bottom))',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1100,
+            background: '#fff',
+            borderRadius: 16,
+            boxShadow: '0 8px 40px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.08)',
+            padding: '14px 0 4px',
+            minWidth: 200,
+            animation: `pagePopIn 0.34s ${SPRING_IN} both`,
+            overflow: 'hidden',
+          }}
+        >
+          {/* 小三角 */}
+          <div style={{
+            position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)',
+            width: 12, height: 12, background: '#fff',
+            clipPath: 'polygon(0 0, 100% 0, 50% 100%)',
+            filter: 'drop-shadow(0 2px 2px rgba(0,0,0,0.06))',
+          }} />
+
+          {/* 标题 */}
+          <div style={{
+            fontSize: '0.62rem', letterSpacing: '0.14em', textTransform: 'uppercase',
+            color: '#c4c4c0', fontWeight: 600, padding: '0 16px 10px',
+            fontFamily: 'Inter, DM Sans, sans-serif',
+          }}>
+            {isZh ? '页面' : 'Pages'}
+          </div>
+
+          {/* 页面 dots 导航 */}
+          {totalPages > 1 && <PageDots />}
+
+          {/* 当前页标签 */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            gap: 6, padding: '0 16px 10px',
+          }}>
+            <span style={{
+              fontSize: '0.7rem', color: '#888',
+              fontFamily: 'Space Mono, monospace', letterSpacing: '0.05em',
+            }}>
+              {isZh ? `第 ${currentPage} 页，共 ${totalPages} 页` : `Page ${currentPage} of ${totalPages}`}
+            </span>
+          </div>
+
+          <div style={{ height: 1, background: 'rgba(26,26,26,0.06)', margin: '0 0 4px' }} />
+
+          {/* 添加页面 */}
+          {onAddPage && (
+            <button
+              onClick={() => { onAddPage(); setPagePopover(false); setConfirmDelete(false) }}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                padding: '12px 16px', border: 'none', background: 'transparent',
+                cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+                transition: 'background 0.08s ease',
+                fontFamily: 'Inter, DM Sans, sans-serif',
+              }}
+              onTouchStart={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.05)' }}
+              onTouchEnd={e => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <span style={{ fontSize: 16, width: 24, textAlign: 'center' }}>＋</span>
+              <div>
+                <div style={{ fontSize: '0.88rem', fontWeight: 500, color: '#1a1a1a' }}>
+                  {isZh ? '添加页面' : 'Add page'}
+                </div>
+                <div style={{ fontSize: '0.68rem', color: '#aaa', marginTop: 1 }}>
+                  {isZh ? '在当前页后插入' : 'Insert after current'}
+                </div>
+              </div>
+            </button>
+          )}
+
+          {/* 删除页面 */}
+          {onDeletePage && (
+            <>
+              {!confirmDelete ? (
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '12px 16px', border: 'none', background: 'transparent',
+                    cursor: totalPages <= 1 ? 'default' : 'pointer',
+                    opacity: totalPages <= 1 ? 0.3 : 1,
+                    WebkitTapHighlightColor: 'transparent',
+                    transition: 'background 0.08s ease',
+                    fontFamily: 'Inter, DM Sans, sans-serif',
+                  }}
+                  disabled={totalPages <= 1}
+                  onTouchStart={e => { if (totalPages > 1) e.currentTarget.style.background = 'rgba(220,60,60,0.06)' }}
+                  onTouchEnd={e => { e.currentTarget.style.background = 'transparent' }}
+                >
+                  <span style={{ fontSize: 16, width: 24, textAlign: 'center', color: '#dc3c3c' }}>🗑</span>
+                  <div>
+                    <div style={{ fontSize: '0.88rem', fontWeight: 500, color: '#c03030' }}>
+                      {isZh ? '删除当前页' : 'Delete page'}
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: '#e0a0a0', marginTop: 1 }}>
+                      {isZh ? (totalPages <= 1 ? '至少保留一页' : '点击确认删除') : (totalPages <= 1 ? 'Need at least 1 page' : 'Tap to confirm')}
+                    </div>
+                  </div>
+                </button>
+              ) : (
+                // 二次确认态：inline 展开，不跳弹窗
+                <div style={{
+                  margin: '4px 12px 8px',
+                  borderRadius: 10,
+                  background: 'rgba(220,60,60,0.07)',
+                  border: '1px solid rgba(220,60,60,0.18)',
+                  overflow: 'hidden',
+                  animation: `pagePopIn 0.22s ${SPRING_IN} both`,
+                }}>
+                  <div style={{
+                    padding: '10px 14px 8px',
+                    fontSize: '0.78rem', color: '#c03030',
+                    fontFamily: 'Inter, DM Sans, sans-serif', fontWeight: 500,
+                  }}>
+                    {isZh ? '删除后无法恢复，确认吗？' : 'This cannot be undone. Sure?'}
+                  </div>
+                  <div style={{ display: 'flex', gap: 0 }}>
+                    <button
+                      onClick={() => setConfirmDelete(false)}
+                      style={{
+                        flex: 1, padding: '10px 0', border: 'none',
+                        borderTop: '1px solid rgba(220,60,60,0.12)',
+                        background: 'transparent', color: '#888',
+                        fontSize: '0.82rem', fontWeight: 500, cursor: 'pointer',
+                        fontFamily: 'Inter, DM Sans, sans-serif',
+                        WebkitTapHighlightColor: 'transparent',
+                        transition: 'background 0.08s ease',
+                      }}
+                      onTouchStart={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.05)' }}
+                      onTouchEnd={e => { e.currentTarget.style.background = 'transparent' }}
+                    >
+                      {isZh ? '取消' : 'Cancel'}
+                    </button>
+                    <button
+                      onClick={() => { onDeletePage(); setPagePopover(false); setConfirmDelete(false) }}
+                      style={{
+                        flex: 1, padding: '10px 0', border: 'none',
+                        borderTop: '1px solid rgba(220,60,60,0.12)',
+                        borderLeft: '1px solid rgba(220,60,60,0.12)',
+                        background: 'transparent', color: '#c03030',
+                        fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer',
+                        fontFamily: 'Inter, DM Sans, sans-serif',
+                        WebkitTapHighlightColor: 'transparent',
+                        transition: 'background 0.08s ease',
+                      }}
+                      onTouchStart={e => { e.currentTarget.style.background = 'rgba(220,60,60,0.1)' }}
+                      onTouchEnd={e => { e.currentTarget.style.background = 'transparent' }}
+                    >
+                      {isZh ? '删除' : 'Delete'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          <div style={{ height: 6 }} />
+        </div>
+      )}
 
       <div style={{
         position: 'fixed', bottom: 0, left: 0, right: 0,
@@ -863,16 +1107,64 @@ export function MobileBottomBar({
         borderTop: '1px solid rgba(26,26,26,0.08)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Btn label="−"                onPress={onZoomOut} />
+          <Btn label="−"                 onPress={onZoomOut} />
           <Btn label={`${displayZoom}%`} onPress={onZoomFit} wide />
-          <Btn label="+"                onPress={onZoomIn} />
+          <Btn label="+"                 onPress={onZoomIn} />
         </div>
 
-        <div style={{ fontSize: '0.7rem', color: '#888', fontFamily: 'Space Mono, monospace', letterSpacing: '0.05em' }}>
-          {isZh ? `第 ${currentPage} / ${totalPages} 页` : `${currentPage} / ${totalPages}`}
-        </div>
+        {/* 页码 — 点击弹 popover */}
+        <button
+          onClick={() => { setPagePopover(v => !v); setConfirmDelete(false) }}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            padding: '6px 10px', borderRadius: 10,
+            border: pagePopover ? '1px solid rgba(26,26,26,0.18)' : '1px solid transparent',
+            background: pagePopover ? 'rgba(26,26,26,0.07)' : 'transparent',
+            cursor: 'pointer', WebkitTapHighlightColor: 'transparent',
+            transition: 'background 0.15s ease, border-color 0.15s ease, transform 0.1s ease',
+          }}
+          onTouchStart={e => {
+            e.currentTarget.style.background = 'rgba(26,26,26,0.1)'
+            e.currentTarget.style.transform = 'scale(0.93)'
+          }}
+          onTouchEnd={e => {
+            e.currentTarget.style.background = pagePopover ? 'rgba(26,26,26,0.07)' : 'transparent'
+            e.currentTarget.style.transition = `background 0.15s ease, border-color 0.15s ease, transform 0.28s ${SPRING_BTN}`
+            e.currentTarget.style.transform = 'scale(1)'
+            setTimeout(() => { if (e.currentTarget) e.currentTarget.style.transition = 'background 0.15s ease, border-color 0.15s ease, transform 0.1s ease' }, 300)
+          }}
+        >
+          {/* 页面缩略 dots (最多5个，超出省略) */}
+          <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+            {Array.from({ length: Math.min(totalPages, 5) }).map((_, i) => {
+              const isActive = i + 1 === currentPage || (i === 4 && currentPage > 5)
+              return (
+                <div key={i} style={{
+                  width: isActive ? 12 : 4,
+                  height: 4, borderRadius: 2,
+                  background: isActive ? '#1a1a1a' : 'rgba(26,26,26,0.22)',
+                  transition: `width 0.28s ${SPRING_BTN}, background 0.18s ease`,
+                  flexShrink: 0,
+                }} />
+              )
+            })}
+          </div>
+          <span style={{
+            fontSize: '0.7rem', color: '#888',
+            fontFamily: 'Space Mono, monospace', letterSpacing: '0.05em',
+          }}>
+            {currentPage} / {totalPages}
+          </span>
+          {/* 展开箭头 */}
+          <span style={{
+            fontSize: '0.6rem', color: '#bbb',
+            transform: pagePopover ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'transform 0.22s ease',
+            lineHeight: 1,
+          }}>▲</span>
+        </button>
 
-        {/* + FAB：press scale down，松手 spring 弹回带轻微超调 */}
+        {/* + FAB */}
         <button
           onClick={onAdd}
           style={{
@@ -883,7 +1175,6 @@ export function MobileBottomBar({
             boxShadow: '0 2px 12px rgba(0,0,0,0.22)',
             WebkitTapHighlightColor: 'transparent',
             flexShrink: 0,
-            // 始终有 transition，press 下去和弹回都流畅
             transition: `transform 0.1s ease, box-shadow 0.1s ease`,
           }}
           onTouchStart={e => {
