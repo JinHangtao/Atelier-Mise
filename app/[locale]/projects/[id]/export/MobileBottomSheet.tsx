@@ -1029,9 +1029,8 @@ export function MobileBottomBar({
             borderTop: '1px solid rgba(26,26,26,0.07)',
           }}>
             {/* 添加页面 */}
-            {onAddPage && (
-              <button
-                onClick={() => { onAddPage(); closePopover() }}
+            <button
+                onClick={() => { onAddPage?.(); closePopover() }}
                 style={{
                   flex: 1, display: 'flex', flexDirection: 'column',
                   alignItems: 'center', justifyContent: 'center', gap: 5,
@@ -1062,10 +1061,9 @@ export function MobileBottomBar({
                   fontFamily: 'Inter, DM Sans, sans-serif',
                 }}>{isZh ? '添加页面' : 'Add page'}</span>
               </button>
-            )}
 
             {/* 删除页面 */}
-            {onDeletePage && !confirmDelete && (
+            {!confirmDelete && (
               <button
                 onClick={() => { if (totalPages > 1) setConfirmDelete(true) }}
                 disabled={totalPages <= 1}
@@ -1103,7 +1101,7 @@ export function MobileBottomBar({
           </div>{/* end actions row */}
 
           {/* 二次确认 — 从底部滑入替换操作行 */}
-          {onDeletePage && confirmDelete && (
+          {confirmDelete && (
             <div style={{
               borderTop: '1px solid rgba(220,60,60,0.12)',
               background: 'rgba(220,60,60,0.04)',
@@ -1137,7 +1135,7 @@ export function MobileBottomBar({
                   }}
                 >{isZh ? '取消' : 'Cancel'}</button>
                 <button
-                  onClick={() => { onDeletePage(); closePopover() }}
+                  onClick={() => { onDeletePage?.(); closePopover() }}
                   style={{
                     flex: 1, height: 36, borderRadius: 9,
                     border: 'none',
