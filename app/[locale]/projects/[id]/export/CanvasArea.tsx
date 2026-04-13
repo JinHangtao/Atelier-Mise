@@ -1542,6 +1542,10 @@ export function CanvasArea(s: ExportPageState) {
   const touchPinchRef = React.useRef<{ dist: number; midX: number; midY: number; startZoom: number; startPanX: number; startPanY: number; wRect: DOMRect | null } | null>(null)
   const _touchPanPos = React.useRef({ x: canvasPan.x, y: canvasPan.y })
 
+  // ── panLayerRef: 由 useExportPage 统一管理，CanvasArea 直接读取 ──────────
+  // wheel 缩放/平移已在 useExportPage 里 DOM 直驱，此处不重复绑定。
+  const panLayerRef = (s as any).panLayerRef as React.RefObject<HTMLDivElement>
+
   // ── Mobile momentum: velocity tracking + inertia RAF ─────────────────────
   // 用最近3帧加权平均速度，消除 touchend 瞬时噪声（手势结束时数据最嘈杂）
   const _touchVelRef   = React.useRef({ vx: 0, vy: 0 })
@@ -1649,10 +1653,6 @@ export function CanvasArea(s: ExportPageState) {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [isDrawMode, activePageId])
-
-  // ── panLayerRef: 由 useExportPage 统一管理，CanvasArea 直接读取 ──────────
-  // wheel 缩放/平移已在 useExportPage 里 DOM 直驱，此处不重复绑定。
-  const panLayerRef = (s as any).panLayerRef as React.RefObject<HTMLDivElement>
 
   // ── Smooth pan: RAF lerp callback (defined after panLayerRef is available) ──
   const _panLerp = 0.18  // lower = more lag / dreamier; 0.18 ≈ zoom-scroll feel
