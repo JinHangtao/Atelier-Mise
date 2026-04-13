@@ -1730,13 +1730,17 @@ export function CanvasArea(s: ExportPageState) {
       if (isScrollTarget(target)) return
       if (target.closest('[data-toolbar]')) return
       const isMobile = window.innerWidth <= 768
+      // 桌面端：block 上不接管
       if (!isMobile && target.closest('.rnd-block')) return
-      if (!target.closest('.rnd-block')) {
+      // 手机端用 pan-x pan-y pinch-zoom，不 preventDefault，让浏览器原生处理缩放+滚动
+      // 我们只记录起始位置，用 touchmove 里的数据驱动 panLayer
+      if (!isMobile) {
         e.preventDefault()
         _stopMomentum()
       }
       _touchVelBuf.current = []
       _touchPrevRef.current = null
+      // 记录起点——无论手机还是桌面都需要
       if (e.touches.length === 1) {
         const panLayerEl = panLayerRef.current
         const liveTransform = panLayerEl?.style.transform ?? ''
@@ -1752,13 +1756,13 @@ export function CanvasArea(s: ExportPageState) {
         const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY)
         const midX = (t0.clientX + t1.clientX) / 2
         const midY = (t0.clientY + t1.clientY) / 2
-        const panLayerEl2 = panLayerRef.current
-        const liveTransform2 = panLayerEl2?.style.transform ?? ''
-        const mat2 = liveTransform2 && liveTransform2 !== 'none' ? new DOMMatrix(liveTransform2) : null
-        const livePx2 = mat2 ? mat2.m41 : 0
-        const livePy2 = mat2 ? mat2.m42 : 0
-        touchPinchRef.current = { dist, midX, midY, startZoom: canvasZoomRef.current, startPanX: livePx2, startPanY: livePy2, wRect: wrap?.getBoundingClientRect() ?? null }
-        e.preventDefault()
+        const panLayerEl = panLayerRef.current
+        const liveTransform = panLayerEl?.style.transform ?? ''
+        const mat = liveTransform && liveTransform !== 'none' ? new DOMMatrix(liveTransform) : null
+        const livePx = mat ? mat.m41 : 0
+        const livePy = mat ? mat.m42 : 0
+        touchPinchRef.current = { dist, midX, midY, startZoom: canvasZoomRef.current, startPanX: livePx, startPanY: livePy, wRect: wrap?.getBoundingClientRect() ?? null }
+        if (!isMobile) e.preventDefault()
       }
     }
 
@@ -1766,16 +1770,13 @@ export function CanvasArea(s: ExportPageState) {
       if (isDrawModeRef.current) return
       const target = e.target as HTMLElement
       if (isScrollTarget(target)) return
-      e.preventDefault()
+      const isMobile = window.innerWidth <= 768
+      // 桌面端 preventDefault 阻止浏览器默认行为；手机端不 preventDefault，让 pinch-zoom CSS 生效
+      if (!isMobile) e.preventDefault()
 
       if (e.touches.length === 1 && touchPanRef.current) {
-        const rawDx = e.touches[0].clientX - touchPanRef.current.startX
-        const rawDy = e.touches[0].clientY - touchPanRef.current.startY
-        // 手机端在 block 上：超过 8px 才接管（避免干扰点击）
-        const isMobile = window.innerWidth <= 768
-        if (isMobile && (target as HTMLElement).closest('.rnd-block') && Math.hypot(rawDx, rawDy) < 8) return
-        const nx = touchPanRef.current.px + rawDx
-        const ny = touchPanRef.current.py + rawDy
+        const nx = touchPanRef.current.px + e.touches[0].clientX - touchPanRef.current.startX
+        const ny = touchPanRef.current.py + e.touches[0].clientY - touchPanRef.current.startY
         if (panLayerRef.current) {
           panLayerRef.current.style.transform = `translate(${nx}px,${ny}px) scale(${canvasZoomRef.current})`
         }
@@ -1844,7 +1845,7 @@ export function CanvasArea(s: ExportPageState) {
         backgroundSize: (s as any).dotGrid ? '24px 24px' : 'auto',
         backgroundPosition: (s as any).dotGrid ? '0 0' : '0 0',
         overflow: 'hidden', position: 'relative',
-        touchAction: 'none',
+        touchAction: window.innerWidth <= 768 ? 'pan-x pan-y pinch-zoom' : 'none',
         cursor: isDrawMode
           ? (sharedDrawState.brushType === 'eraser' ? CURSOR_ERASER
             : sharedDrawState.shapeType ? CURSOR_SHAPE
@@ -1918,7 +1919,7 @@ export function CanvasArea(s: ExportPageState) {
         const target = e.target as HTMLElement
         // toolbar 터치는 toolbar 자체 handler가 처리
         if (target.closest('[data-toolbar]')) return
-        // 1-finger on a block → arm long-press; on mobile also init pan state
+        // 1-finger on a block → let the block handle drag, but arm long-press timer
         if (target.closest('.rnd-block')) {
           const cardEl = target.closest('[data-block-id]') as HTMLElement | null
           const bid = cardEl?.getAttribute('data-block-id')
@@ -1940,13 +1941,14 @@ export function CanvasArea(s: ExportPageState) {
               clearLongPress()
             }, 550)
           }
-          // 桌面端：block 上不接管 pan
+          // 桌面端 block 不接管；手机端继续初始化 pan state
           if (window.innerWidth > 768) return
-          // 手机端：继续往下初始化 pan state（native handler 已经处理了真正的 pan，
-          // 这里只是同步 React refs，native 优先）
         }
-        // 空白区域停止惯性
-        if (!target.closest('.rnd-block')) _stopMomentum()
+        if (window.innerWidth <= 768) {
+          // 手机端：native handler 已处理 pan，这里只同步 React refs
+        } else {
+          _stopMomentum()
+        }
         if (e.touches.length === 1) {
           const panLayerEl = panLayerRef.current
           const liveTransform = panLayerEl?.style.transform ?? ''
