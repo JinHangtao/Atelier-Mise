@@ -1585,7 +1585,10 @@ export function CanvasArea(s: ExportPageState) {
         return
       }
 
-      const nx = Math.min(W - MARGIN, Math.max(-(W * 2), _touchPanPos.current.x + vx))
+      const PAGE_W = 860
+      const renderedW = PAGE_W * canvasZoomRef.current
+      const overflowX = Math.max(0, renderedW - W)
+      const nx = Math.min(W * 0.3, Math.max(-(overflowX + W * 0.15), _touchPanPos.current.x + vx))
       const ny = Math.min(H - MARGIN, Math.max(-(H * 4), _touchPanPos.current.y + vy))
       _touchPanPos.current = { x: nx, y: ny }
       _panTarget.current   = { x: nx, y: ny }
@@ -1752,7 +1755,11 @@ export function CanvasArea(s: ExportPageState) {
       hammer.on('panmove', (e: any) => {
         if (isDrawModeRef.current) return
         if (!touchPanRef.current) return
-        const nx = panStartPx + e.deltaX
+        const _hmWrap = canvasWrapRef.current
+        const _hmW = _hmWrap ? _hmWrap.offsetWidth : 390
+        const _hmRenderedW = 860 * canvasZoomRef.current
+        const _hmOverflowX = Math.max(0, _hmRenderedW - _hmW)
+        const nx = Math.min(_hmW * 0.3, Math.max(-(_hmOverflowX + _hmW * 0.15), panStartPx + e.deltaX))
         const ny = panStartPy + e.deltaY
         if (panLayerRef.current) {
           panLayerRef.current.style.transform = `translate(${nx}px,${ny}px) scale(${canvasZoomRef.current})`
@@ -1907,7 +1914,9 @@ export function CanvasArea(s: ExportPageState) {
         const W = wrap ? wrap.offsetWidth : 800
         const H = wrap ? wrap.offsetHeight : 600
         const MARGIN = 120
-        const nx = Math.min(W - MARGIN, Math.max(-(W * 2), panStart.current.px + e.clientX - panStart.current.mx))
+        const _mouseRenderedW = 860 * canvasZoomRef.current
+        const _mouseOverflowX = Math.max(0, _mouseRenderedW - W)
+        const nx = Math.min(W * 0.3, Math.max(-(_mouseOverflowX + W * 0.15), panStart.current.px + e.clientX - panStart.current.mx))
         const ny = Math.min(H - MARGIN, Math.max(-(H * 4), panStart.current.py + e.clientY - panStart.current.my))
         // 只更新目标，RAF lerp loop 负责平滑追随 → 丝滑延迟感
         _panTarget.current = { x: nx, y: ny }
