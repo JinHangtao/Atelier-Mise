@@ -1714,11 +1714,8 @@ export function CanvasArea(s: ExportPageState) {
   // The React synthetic handlers below are kept as-is; native fires first and sets
   // touchPanRef/touchPinchRef, so the synthetic handlers just re-confirm the same
   // state (harmless double-write to refs). The actual DOM transform is driven here.
+  // ── Native touch — 挂 document，绕开 canvasWrapRef 首帧为 null 的时序陷阱 ──
   React.useEffect(() => {
-    const el = canvasWrapRef.current
-    if (!el) return
-
-    // 统一豁免判断 — native 和 React handler 共用同一个函数，不再出现逻辑不一致
     const isScrollTarget = (target: HTMLElement) =>
       !!(target.closest('.block-body') ||
          target.closest('.page-scroll-wrap') ||
@@ -1729,19 +1726,16 @@ export function CanvasArea(s: ExportPageState) {
 
     const onNativeTouchStart = (e: TouchEvent) => {
       if (isDrawModeRef.current) return
+      const wrap = canvasWrapRef.current
+      if (!wrap || !wrap.contains(e.target as Node)) return
       const target = e.target as HTMLElement
       if (isScrollTarget(target)) return
       if (target.closest('[data-toolbar]')) return
-      const isMobile = window.innerWidth <= 768
-      // 桌面端：block 上不接管
-      if (!isMobile && target.closest('.rnd-block')) return
-      // 手机端和桌面端都 preventDefault，阻止浏览器滚动跟 JS pan 打架
-      // (canvas wrap 上 touch-action:none 已声明，preventDefault 在此合法)
+      if (window.innerWidth > 768 && target.closest('.rnd-block')) return
       e.preventDefault()
       _stopMomentum()
       _touchVelBuf.current = []
       _touchPrevRef.current = null
-      // 记录起点——无论手机还是桌面都需要
       if (e.touches.length === 1) {
         const panLayerEl = panLayerRef.current
         const liveTransform = panLayerEl?.style.transform ?? ''
@@ -1752,7 +1746,6 @@ export function CanvasArea(s: ExportPageState) {
         _touchPanPos.current = { x: livePx, y: livePy }
       } else if (e.touches.length === 2) {
         touchPanRef.current = null
-        const wrap = canvasWrapRef.current
         const t0 = e.touches[0], t1 = e.touches[1]
         const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY)
         const midX = (t0.clientX + t1.clientX) / 2
@@ -1762,15 +1755,15 @@ export function CanvasArea(s: ExportPageState) {
         const mat = liveTransform && liveTransform !== 'none' ? new DOMMatrix(liveTransform) : null
         const livePx = mat ? mat.m41 : 0
         const livePy = mat ? mat.m42 : 0
-        touchPinchRef.current = { dist, midX, midY, startZoom: canvasZoomRef.current, startPanX: livePx, startPanY: livePy, wRect: wrap?.getBoundingClientRect() ?? null }
+        touchPinchRef.current = { dist, midX, midY, startZoom: canvasZoomRef.current, startPanX: livePx, startPanY: livePy, wRect: wrap.getBoundingClientRect() }
       }
     }
 
     const onNativeTouchMove = (e: TouchEvent) => {
       if (isDrawModeRef.current) return
+      if (!touchPanRef.current && !touchPinchRef.current) return
       const target = e.target as HTMLElement
       if (isScrollTarget(target)) return
-      // touch-action:none on canvas wrap 已声明，preventDefault 合法且必须，阻止浏览器接管
       e.preventDefault()
 
       if (e.touches.length === 1 && touchPanRef.current) {
@@ -1821,11 +1814,11 @@ export function CanvasArea(s: ExportPageState) {
       }
     }
 
-    el.addEventListener('touchstart', onNativeTouchStart, { passive: false })
-    el.addEventListener('touchmove',  onNativeTouchMove,  { passive: false })
+    document.addEventListener('touchstart', onNativeTouchStart, { passive: false })
+    document.addEventListener('touchmove',  onNativeTouchMove,  { passive: false })
     return () => {
-      el.removeEventListener('touchstart', onNativeTouchStart)
-      el.removeEventListener('touchmove',  onNativeTouchMove)
+      document.removeEventListener('touchstart', onNativeTouchStart)
+      document.removeEventListener('touchmove',  onNativeTouchMove)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
