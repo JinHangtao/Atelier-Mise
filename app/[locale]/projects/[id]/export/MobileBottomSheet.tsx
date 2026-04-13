@@ -35,45 +35,82 @@ interface MobileBottomSheetProps {
   onPatchBlock?: (id: string, patch: Partial<Block>) => void
 }
 
-// ── Shared sheet primitives ────────────────────────────────────────────────
-function SheetHandle({
-  onTouchStart, onTouchMove, onTouchEnd,
-}: {
-  onTouchStart: (e: React.TouchEvent) => void
-  onTouchMove: (e: React.TouchEvent) => void
-  onTouchEnd: () => void
-}) {
+// ── SheetHandle ────────────────────────────────────────────────────────────
+// Purely visual — drag logic is wired via native listeners in useDragToDismiss
+function SheetHandle({ handleRef }: { handleRef: React.RefObject<HTMLDivElement> }) {
   return (
     <div
-      style={{ padding: '12px 0 4px', display: 'flex', justifyContent: 'center', flexShrink: 0, cursor: 'grab' }}
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
+      ref={handleRef}
+      style={{ padding: '12px 0 4px', display: 'flex', justifyContent: 'center', flexShrink: 0, cursor: 'grab', touchAction: 'none' }}
     >
       <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(26,26,26,0.15)' }} />
     </div>
   )
 }
 
+// ── useDragToDismiss ───────────────────────────────────────────────────────
+// Uses NATIVE touch listeners on the handle element (not React synthetic events)
+// so we can call e.preventDefault() and prevent the sheet's overflowY scroll
+// from swallowing our drag. The sheet's own scroll is managed separately.
 function useDragToDismiss(onClose: () => void) {
-  const dragRef = React.useRef<{ startY: number } | null>(null)
+  const handleRef = React.useRef<HTMLDivElement>(null)
+  const sheetRef  = React.useRef<HTMLDivElement>(null)
+  const dragRef   = React.useRef<{ startY: number; startScrollTop: number } | null>(null)
   const [dragOffset, setDragOffset] = React.useState(0)
+  const isDraggingRef = React.useRef(false)
 
-  const onTouchStart = (e: React.TouchEvent) => {
-    dragRef.current = { startY: e.touches[0].clientY }
-  }
-  const onTouchMove = (e: React.TouchEvent) => {
-    if (!dragRef.current) return
-    const dy = e.touches[0].clientY - dragRef.current.startY
-    if (dy > 0) setDragOffset(dy)
-  }
-  const onTouchEnd = () => {
-    if (dragOffset > 80) onClose()
-    else setDragOffset(0)
-    dragRef.current = null
-  }
+  React.useEffect(() => {
+    const handle = handleRef.current
+    if (!handle) return
 
-  return { dragOffset, isDragging: !!dragRef.current, onTouchStart, onTouchMove, onTouchEnd }
+    const onTouchStart = (e: TouchEvent) => {
+      // Don't preventDefault here — let the touch register, but capture it
+      const scrollEl = sheetRef.current?.querySelector('[data-sheet-scroll]') as HTMLElement | null
+      dragRef.current = {
+        startY: e.touches[0].clientY,
+        startScrollTop: scrollEl?.scrollTop ?? 0,
+      }
+      isDraggingRef.current = false
+    }
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!dragRef.current) return
+      const dy = e.touches[0].clientY - dragRef.current.startY
+      if (Math.abs(dy) > 4) isDraggingRef.current = true
+      if (!isDraggingRef.current) return
+      e.preventDefault() // now safe — we know it's a drag, not a tap
+      if (dy > 0) setDragOffset(dy)
+      else setDragOffset(0)
+    }
+
+    const onTouchEnd = () => {
+      if (!dragRef.current) return
+      dragRef.current = null
+      // Read offset synchronously from state via a callback form isn't possible,
+      // so we use a ref mirror
+      setDragOffset(prev => {
+        if (prev > 80) { onClose(); return 0 }
+        return 0
+      })
+      isDraggingRef.current = false
+    }
+
+    handle.addEventListener('touchstart', onTouchStart, { passive: true })
+    handle.addEventListener('touchmove',  onTouchMove,  { passive: false })
+    handle.addEventListener('touchend',   onTouchEnd,   { passive: true })
+    handle.addEventListener('touchcancel',onTouchEnd,   { passive: true })
+
+    return () => {
+      handle.removeEventListener('touchstart', onTouchStart)
+      handle.removeEventListener('touchmove',  onTouchMove)
+      handle.removeEventListener('touchend',   onTouchEnd)
+      handle.removeEventListener('touchcancel',onTouchEnd)
+    }
+  // onClose identity changes don't matter — we only care about the gesture
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return { handleRef, sheetRef, dragOffset, isDragging: isDraggingRef }
 }
 
 // ── MobileBottomSheet ──────────────────────────────────────────────────────
@@ -94,10 +131,7 @@ export function MobileBottomSheet({
   onPatchBlock,
 }: MobileBottomSheetProps) {
   const isVisible = !!block
-  const drag = useDragToDismiss(onClose)
-  const sheetRef = React.useRef<HTMLDivElement>(null)
-
-  React.useEffect(() => { /* reset handled by useDragToDismiss */ }, [block?.id])
+  const { handleRef, sheetRef, dragOffset, isDragging } = useDragToDismiss(onClose)
 
   const handleBackdrop = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) onClose()
@@ -105,25 +139,25 @@ export function MobileBottomSheet({
 
   const blockTypeLabel = (type: string) => {
     const map: Record<string, [string, string]> = {
-      image: ['🖼', isZh ? '图片' : 'Image'],
-      title: ['✦', isZh ? '标题' : 'Title'],
-      note: ['✎', isZh ? '文字' : 'Text'],
-      custom: ['⊞', isZh ? '自定义' : 'Custom'],
-      sticky: ['📝', isZh ? '便利贴' : 'Sticky'],
-      table: ['⊟', isZh ? '表格' : 'Table'],
+      image:       ['🖼', isZh ? '图片'   : 'Image'],
+      title:       ['✦',  isZh ? '标题'   : 'Title'],
+      note:        ['✎',  isZh ? '文字'   : 'Text'],
+      custom:      ['⊞',  isZh ? '自定义' : 'Custom'],
+      sticky:      ['📝', isZh ? '便利贴' : 'Sticky'],
+      table:       ['⊟',  isZh ? '表格'   : 'Table'],
       'image-row': ['🖼', isZh ? '图片组' : 'Image Row'],
-      milestone: ['◎', isZh ? '进度' : 'Milestone'],
+      milestone:   ['◎',  isZh ? '进度'   : 'Milestone'],
     }
     return map[type] ?? ['◻', type]
   }
 
-  const isTextBlock = block && ['title', 'note', 'custom', 'milestone'].includes(block.type)
+  const isTextBlock  = block && ['title', 'note', 'custom', 'milestone'].includes(block.type)
   const isImageBlock = block?.type === 'image' || block?.type === 'image-row'
 
   if (!block) return null
 
   const [typeIcon, typeLabel] = blockTypeLabel(block.type)
-  const sheetTransform = isVisible ? `translateY(${drag.dragOffset}px)` : 'translateY(100%)'
+  const sheetTransform = isVisible ? `translateY(${dragOffset}px)` : 'translateY(100%)'
 
   const Row = ({
     icon, label, sub, onClick, danger, disabled,
@@ -169,10 +203,10 @@ export function MobileBottomSheet({
   const TextProps = () => {
     if (!isTextBlock || !onPatchBlock || !block) return null
     const fontSize = block.fontSize ?? 16
-    const isBold = block.fontWeight === 'bold' || block.fontWeight === '700'
+    const isBold   = block.fontWeight === 'bold' || block.fontWeight === '700'
     const isItalic = block.fontStyle === 'italic'
-    const color = block.color ?? '#1a1a1a'
-    const align = block.align ?? 'left'
+    const color    = block.color ?? '#1a1a1a'
+    const align    = block.align ?? 'left'
 
     const ToggleBtn = ({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) => (
       <button
@@ -214,11 +248,11 @@ export function MobileBottomSheet({
 
         {/* Bold / Italic / Align */}
         <div style={{ padding: '0 20px 10px', display: 'flex', gap: 6 }}>
-          <ToggleBtn active={isBold} label="B" onClick={() => onPatchBlock(block.id, { fontWeight: isBold ? 'normal' : 'bold' })} />
-          <ToggleBtn active={isItalic} label="I" onClick={() => onPatchBlock(block.id, { fontStyle: isItalic ? 'normal' : 'italic' })} />
-          <ToggleBtn active={align === 'left'} label="≡←" onClick={() => onPatchBlock(block.id, { align: 'left' })} />
-          <ToggleBtn active={align === 'center'} label="≡" onClick={() => onPatchBlock(block.id, { align: 'center' })} />
-          <ToggleBtn active={align === 'right'} label="≡→" onClick={() => onPatchBlock(block.id, { align: 'right' })} />
+          <ToggleBtn active={isBold}            label="B"   onClick={() => onPatchBlock(block.id, { fontWeight: isBold  ? 'normal' : 'bold'   })} />
+          <ToggleBtn active={isItalic}          label="I"   onClick={() => onPatchBlock(block.id, { fontStyle: isItalic ? 'normal' : 'italic' })} />
+          <ToggleBtn active={align === 'left'}  label="≡←"  onClick={() => onPatchBlock(block.id, { align: 'left'   })} />
+          <ToggleBtn active={align === 'center'}label="≡"   onClick={() => onPatchBlock(block.id, { align: 'center' })} />
+          <ToggleBtn active={align === 'right'} label="≡→"  onClick={() => onPatchBlock(block.id, { align: 'right'  })} />
         </div>
 
         {/* Color swatches */}
@@ -260,7 +294,7 @@ export function MobileBottomSheet({
   // ── Image properties section ───────────────────────────────────────────
   const ImageProps = () => {
     if (!isImageBlock || !onPatchBlock || !block) return null
-    const opacity = block.opacity ?? 1
+    const opacity      = block.opacity      ?? 1
     const borderRadius = block.borderRadius ?? 0
 
     return (
@@ -303,7 +337,10 @@ export function MobileBottomSheet({
 
   return (
     <>
-      {/* Backdrop */}
+      {/* ── Backdrop ──────────────────────────────────────────────────────
+          CRITICAL: touchAction:'none' + pointerEvents only 'auto' when visible.
+          Without this, the backdrop intercepts all touch events even when
+          transparent, completely blocking canvas pan/pinch underneath. */}
       <div
         onClick={handleBackdrop}
         style={{
@@ -312,11 +349,16 @@ export function MobileBottomSheet({
           backdropFilter: isVisible ? 'blur(2px)' : 'none',
           WebkitBackdropFilter: isVisible ? 'blur(2px)' : 'none',
           transition: 'background 0.28s ease, backdrop-filter 0.28s ease',
+          // KEY FIX: only intercept touches when sheet is actually open
           pointerEvents: isVisible ? 'auto' : 'none',
+          touchAction: isVisible ? 'none' : 'auto',
         }}
       />
 
-      {/* Sheet */}
+      {/* ── Sheet ─────────────────────────────────────────────────────────
+          Structure: fixed outer (no overflow) → handle (touchAction:none) →
+          scrollable inner (data-sheet-scroll, touchAction:pan-y).
+          This way the handle drag always works and the content scrolls normally. */}
       <div
         ref={sheetRef}
         style={{
@@ -325,17 +367,19 @@ export function MobileBottomSheet({
           borderRadius: '20px 20px 0 0',
           boxShadow: '0 -4px 40px rgba(0,0,0,0.18)',
           transform: sheetTransform,
-          transition: drag.isDragging ? 'none' : 'transform 0.36s cubic-bezier(0.34,1.05,0.64,1)',
+          transition: isDragging.current ? 'none' : 'transform 0.36s cubic-bezier(0.34,1.05,0.64,1)',
           maxHeight: '82vh',
-          display: 'flex', flexDirection: 'column',
-          overflowY: 'auto',
-          WebkitOverflowScrolling: 'touch',
+          display: 'flex',
+          flexDirection: 'column',
+          // KEY FIX: no overflow here — overflow lives on the inner scroll div only
+          overflow: 'hidden',
           paddingBottom: 'env(safe-area-inset-bottom)',
         }}
       >
-        <SheetHandle onTouchStart={drag.onTouchStart} onTouchMove={drag.onTouchMove} onTouchEnd={drag.onTouchEnd} />
+        {/* Handle — touchAction:none so native drag listener fires cleanly */}
+        <SheetHandle handleRef={handleRef} />
 
-        {/* Header */}
+        {/* Header — fixed, never scrolls */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '8px 20px 12px', flexShrink: 0,
@@ -358,14 +402,25 @@ export function MobileBottomSheet({
           >×</button>
         </div>
 
-        {/* Actions */}
-        <div style={{ flex: 1, overflowY: 'auto' }}>
+        {/* Scrollable body — KEY: data-sheet-scroll + touchAction:pan-y */}
+        <div
+          data-sheet-scroll
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            WebkitOverflowScrolling: 'touch',
+            // pan-y: browser handles vertical scroll, our drag handle
+            // lives on a separate element above so there's no conflict
+            touchAction: 'pan-y',
+          }}
+        >
           {/* Image-specific */}
           {isImageBlock && onReplaceImage && (
             <>
               <Row icon="🔄" label={isZh ? '替换图片' : 'Replace image'} sub={isZh ? '从相册或文件选择' : 'From photos or files'} onClick={() => onReplaceImage(block.id)} />
-              {onEditImage && <Row icon="✂️" label={isZh ? '编辑图片' : 'Edit image'} sub={isZh ? '裁剪 · 滤镜' : 'Crop · Filters'} onClick={() => onEditImage(block.id)} />}
-              {onRemoveBg && <Row icon="⊡" label={isZh ? 'AI 智能抠图' : 'Remove background'} sub={isZh ? 'AI 去除背景' : 'AI-powered'} onClick={() => onRemoveBg(block.id, block.content || '')} />}
+              {onEditImage  && <Row icon="✂️" label={isZh ? '编辑图片' : 'Edit image'}          sub={isZh ? '裁剪 · 滤镜' : 'Crop · Filters'} onClick={() => onEditImage(block.id)} />}
+              {onRemoveBg   && <Row icon="⊡"  label={isZh ? 'AI 智能抠图' : 'Remove background'} sub={isZh ? 'AI 去除背景' : 'AI-powered'}     onClick={() => onRemoveBg(block.id, block.content || '')} />}
               <Divider />
             </>
           )}
@@ -378,7 +433,7 @@ export function MobileBottomSheet({
             </>
           )}
 
-          {/* Properties — shown inline without closing sheet */}
+          {/* Inline properties */}
           <TextProps />
           <ImageProps />
 
@@ -392,10 +447,10 @@ export function MobileBottomSheet({
           <SectionLabel text={isZh ? '层级' : 'Layer order'} />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
             {[
-              { icon: '⇑', label: isZh ? '置顶' : 'To front', onClick: () => onBringToFront(block.id) },
-              { icon: '↑', label: isZh ? '上移' : 'Forward', onClick: () => onBringForward(block.id) },
-              { icon: '↓', label: isZh ? '下移' : 'Backward', onClick: () => onSendBackward(block.id) },
-              { icon: '⇓', label: isZh ? '置底' : 'To back', onClick: () => onSendToBack(block.id) },
+              { icon: '⇑', label: isZh ? '置顶'  : 'To front',  onClick: () => onBringToFront(block.id)  },
+              { icon: '↑',  label: isZh ? '上移'  : 'Forward',   onClick: () => onBringForward(block.id)  },
+              { icon: '↓',  label: isZh ? '下移'  : 'Backward',  onClick: () => onSendBackward(block.id)  },
+              { icon: '⇓', label: isZh ? '置底'  : 'To back',   onClick: () => onSendToBack(block.id)    },
             ].map(item => (
               <button
                 key={item.label}
@@ -407,7 +462,7 @@ export function MobileBottomSheet({
                   borderTop: '1px solid rgba(26,26,26,0.05)',
                 }}
                 onTouchStart={e => { (e.currentTarget.style.background = 'rgba(26,26,26,0.04)') }}
-                onTouchEnd={e => { (e.currentTarget.style.background = 'transparent') }}
+                onTouchEnd={e =>   { (e.currentTarget.style.background = 'transparent') }}
               >
                 <span style={{ fontSize: 18, color: '#555' }}>{item.icon}</span>
                 <span style={{ fontSize: '0.7rem', color: '#888', fontFamily: 'Inter, DM Sans, sans-serif' }}>{item.label}</span>
@@ -434,7 +489,6 @@ export function MobileBottomSheet({
 }
 
 // ── MobileAddSheet ─────────────────────────────────────────────────────────
-// 点 + FAB 弹出：选择要添加的元素类型
 interface MobileAddSheetProps {
   isOpen: boolean
   isZh: boolean
@@ -447,7 +501,7 @@ interface MobileAddSheetProps {
 export function MobileAddSheet({
   isOpen, isZh, onClose, onAddText, onAddTitle, onAddImage,
 }: MobileAddSheetProps) {
-  const drag = useDragToDismiss(onClose)
+  const { handleRef, sheetRef, dragOffset, isDragging } = useDragToDismiss(onClose)
 
   const handleBackdrop = (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) onClose()
@@ -466,7 +520,7 @@ export function MobileAddSheet({
         flex: 1,
       }}
       onTouchStart={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.04)'; e.currentTarget.style.borderColor = 'rgba(26,26,26,0.25)' }}
-      onTouchEnd={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'rgba(26,26,26,0.1)' }}
+      onTouchEnd={e =>   { e.currentTarget.style.background = 'transparent';          e.currentTarget.style.borderColor = 'rgba(26,26,26,0.1)'  }}
     >
       <span style={{ fontSize: 28 }}>{icon}</span>
       <div style={{ textAlign: 'center' }}>
@@ -478,7 +532,6 @@ export function MobileAddSheet({
 
   return (
     <>
-      {/* Backdrop */}
       <div
         onClick={handleBackdrop}
         style={{
@@ -488,22 +541,25 @@ export function MobileAddSheet({
           WebkitBackdropFilter: isOpen ? 'blur(2px)' : 'none',
           transition: 'background 0.24s ease',
           pointerEvents: isOpen ? 'auto' : 'none',
+          touchAction: isOpen ? 'none' : 'auto',
         }}
       />
 
-      {/* Sheet */}
-      <div style={{
-        position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 1201,
-        background: '#fff',
-        borderRadius: '20px 20px 0 0',
-        boxShadow: '0 -4px 40px rgba(0,0,0,0.18)',
-        transform: isOpen ? `translateY(${drag.dragOffset}px)` : 'translateY(100%)',
-        transition: drag.isDragging ? 'none' : 'transform 0.32s cubic-bezier(0.34,1.05,0.64,1)',
-        paddingBottom: 'env(safe-area-inset-bottom)',
-      }}>
-        <SheetHandle onTouchStart={drag.onTouchStart} onTouchMove={drag.onTouchMove} onTouchEnd={drag.onTouchEnd} />
+      <div
+        ref={sheetRef}
+        style={{
+          position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 1201,
+          background: '#fff',
+          borderRadius: '20px 20px 0 0',
+          boxShadow: '0 -4px 40px rgba(0,0,0,0.18)',
+          transform: isOpen ? `translateY(${dragOffset}px)` : 'translateY(100%)',
+          transition: isDragging.current ? 'none' : 'transform 0.32s cubic-bezier(0.34,1.05,0.64,1)',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+          overflow: 'hidden',
+        }}
+      >
+        <SheetHandle handleRef={handleRef} />
 
-        {/* Header */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '4px 20px 16px',
@@ -517,26 +573,10 @@ export function MobileAddSheet({
           >×</button>
         </div>
 
-        {/* Items grid */}
         <div style={{ display: 'flex', gap: 10, padding: '0 20px 20px' }}>
-          <Item
-            icon="✦"
-            label={isZh ? '标题' : 'Title'}
-            sub={isZh ? '大标题文字' : 'Heading text'}
-            onClick={onAddTitle}
-          />
-          <Item
-            icon="✎"
-            label={isZh ? '文字' : 'Text'}
-            sub={isZh ? '正文段落' : 'Body text'}
-            onClick={onAddText}
-          />
-          <Item
-            icon="🖼"
-            label={isZh ? '图片' : 'Image'}
-            sub={isZh ? '从相册选择' : 'From photos'}
-            onClick={onAddImage}
-          />
+          <Item icon="✦" label={isZh ? '标题' : 'Title'} sub={isZh ? '大标题文字' : 'Heading text'} onClick={onAddTitle} />
+          <Item icon="✎" label={isZh ? '文字' : 'Text'}  sub={isZh ? '正文段落'   : 'Body text'}    onClick={onAddText}  />
+          <Item icon="🖼" label={isZh ? '图片' : 'Image'} sub={isZh ? '从相册选择' : 'From photos'}  onClick={onAddImage} />
         </div>
       </div>
     </>
@@ -552,7 +592,7 @@ interface MobileBottomBarProps {
   currentPage: number
   totalPages: number
   isZh: boolean
-  onAdd: () => void   // ← 新增
+  onAdd: () => void
 }
 
 export function MobileBottomBar({
@@ -573,7 +613,7 @@ export function MobileBottomBar({
         WebkitTapHighlightColor: 'transparent',
       }}
       onTouchStart={e => { (e.currentTarget.style.background = 'rgba(26,26,26,0.08)') }}
-      onTouchEnd={e => { (e.currentTarget.style.background = 'rgba(255,255,255,0.85)') }}
+      onTouchEnd={e =>   { (e.currentTarget.style.background = 'rgba(255,255,255,0.85)') }}
     >
       {label}
     </button>
@@ -591,19 +631,16 @@ export function MobileBottomBar({
       WebkitBackdropFilter: 'blur(16px)',
       borderTop: '1px solid rgba(26,26,26,0.08)',
     }}>
-      {/* Zoom controls */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <Btn label="−" onPress={onZoomOut} />
+        <Btn label="−"                            onPress={onZoomOut} />
         <Btn label={`${Math.round(zoom * 100)}%`} onPress={onZoomFit} wide />
-        <Btn label="+" onPress={onZoomIn} />
+        <Btn label="+"                            onPress={onZoomIn} />
       </div>
 
-      {/* Page indicator */}
       <div style={{ fontSize: '0.7rem', color: '#888', fontFamily: 'Space Mono, monospace', letterSpacing: '0.05em' }}>
         {isZh ? `第 ${currentPage} / ${totalPages} 页` : `${currentPage} / ${totalPages}`}
       </div>
 
-      {/* Add FAB */}
       <button
         onClick={onAdd}
         style={{
@@ -616,7 +653,7 @@ export function MobileBottomBar({
           flexShrink: 0,
         }}
         onTouchStart={e => { e.currentTarget.style.transform = 'scale(0.92)' }}
-        onTouchEnd={e => { e.currentTarget.style.transform = 'scale(1)' }}
+        onTouchEnd={e =>   { e.currentTarget.style.transform = 'scale(1)' }}
       >＋</button>
     </div>
   )
