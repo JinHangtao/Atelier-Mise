@@ -41,6 +41,18 @@ export default function ExportPage() {
   const prevPanRef = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 })
   const canvasWrapRef = s.canvasWrapRef
   const [canvasExportOpen, setCanvasExportOpen] = React.useState(false)
+  const [mobileExportOpen, setMobileExportOpen] = React.useState(false)
+  const mobileExportRef = React.useRef<HTMLDivElement>(null)
+  React.useEffect(() => {
+    if (!mobileExportOpen) return
+    const handler = (e: MouseEvent) => {
+      if (mobileExportRef.current && !mobileExportRef.current.contains(e.target as Node)) {
+        setMobileExportOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [mobileExportOpen])
   const [canvasFilename, setCanvasFilename] = React.useState(s.project?.title ?? 'untitled')
 const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); setCanvasExportOpen(true) }
   // ── Emoji state ───────────────────────────────────────────────────────────
@@ -612,11 +624,40 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
 
           {!isMobile && <div style={{ width: '1px', height: '18px', background: 'rgba(26,26,26,0.08)' }} />}
 
-          {/* Export HTML - always visible, compact on mobile */}
-          <button onClick={() => setExportDialogOpen(true)} style={{ background: '#1a1a1a', color: '#f7f7f5', border: 'none', padding: isMobile ? '6px 12px' : '8px 16px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.1em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 600 }}>
-            {isZh ? '导出' : 'Export'}
-            {!isMobile && <span style={{ fontSize: '0.6rem', background: 'rgba(255,255,255,0.18)', padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.06em' }}>HTML</span>}
-          </button>
+          {/* Export — desktop: HTML button only; mobile: dropdown with HTML/PDF/Word */}
+          {isMobile ? (
+            <div ref={mobileExportRef} style={{ position: 'relative' }}>
+              <button
+                onClick={() => setMobileExportOpen(v => !v)}
+                style={{ background: '#1a1a1a', color: '#f7f7f5', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.1em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 600 }}
+              >
+                {isZh ? '导出' : 'Export'}
+                <span style={{ fontSize: '0.6rem', opacity: 0.6 }}>{mobileExportOpen ? '▲' : '▼'}</span>
+              </button>
+              {mobileExportOpen && (
+                <div style={{ position: 'fixed', top: 'auto', right: 16, marginTop: 6, background: '#fff', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.14), 0 0 0 1px rgba(26,26,26,0.07)', zIndex: 300, overflow: 'hidden', minWidth: 140, animation: 'fadeIn 0.15s ease', fontFamily: 'Inter, DM Sans, sans-serif' }}>
+                  {[
+                    { label: 'HTML', sub: isZh ? '网页文件' : 'Web file', action: () => { setMobileExportOpen(false); setExportDialogOpen(true) } },
+                    { label: 'PDF',  sub: isZh ? '打印 / 分享' : 'Print / share', action: () => { setMobileExportOpen(false); doExportPDF() } },
+                    { label: 'Word', sub: isZh ? '.docx 文档' : '.docx document', action: () => { setMobileExportOpen(false); doExportDOCX() } },
+                  ].map(({ label, sub, action }) => (
+                    <button key={label} onClick={action} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: '12px 16px', border: 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left', borderBottom: label !== 'Word' ? '1px solid rgba(26,26,26,0.06)' : 'none' }}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.04)' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+                    >
+                      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: '#1a1a1a' }}>{label}</span>
+                      <span style={{ fontSize: '0.65rem', color: '#aaa', marginLeft: 10 }}>{sub}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <button onClick={() => setExportDialogOpen(true)} style={{ background: '#1a1a1a', color: '#f7f7f5', border: 'none', padding: '8px 16px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.1em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 600 }}>
+              {isZh ? '导出' : 'Export'}
+              <span style={{ fontSize: '0.6rem', background: 'rgba(255,255,255,0.18)', padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.06em' }}>HTML</span>
+            </button>
+          )}
 
           {!isMobile && <><button onClick={() => doExportPDF()} style={{ background: 'transparent', color: '#666', border: '1px solid rgba(26,26,26,0.12)', padding: '8px 14px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.08em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', transition: 'all 0.12s' }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.04)'; e.currentTarget.style.color = '#1a1a1a' }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#666' }}>PDF</button>
           <button onClick={() => doExportDOCX()} style={{ background: 'transparent', color: '#666', border: '1px solid rgba(26,26,26,0.12)', padding: '8px 14px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.08em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', transition: 'all 0.12s' }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.04)'; e.currentTarget.style.color = '#1a1a1a' }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#666' }}>Word</button></>}
