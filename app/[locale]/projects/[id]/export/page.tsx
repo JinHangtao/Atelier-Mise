@@ -1245,6 +1245,12 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
           totalPages={s.pages.length}
           isZh={isZh}
           onAdd={() => setMobileAddOpen(true)}
+          onAddPage={() => s.addPage(s.activePage?.aspect ?? 'free')}
+          onDeletePage={() => s.deletePage(s.activePageId)}
+          onGoToPage={pg => {
+            const target = s.pages[pg - 1]
+            if (target) s.setActivePageId(target.id)
+          }}
         />
       )}
 
