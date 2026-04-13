@@ -1746,8 +1746,8 @@ export function CanvasArea(s: ExportPageState) {
         const panLayerEl = panLayerRef.current
         const liveTransform = panLayerEl?.style.transform ?? ''
         const mat = liveTransform && liveTransform !== 'none' ? new DOMMatrix(liveTransform) : null
-        const livePx = mat ? mat.m41 : (canvasPanRef as any)?.current?.x ?? 0
-        const livePy = mat ? mat.m42 : (canvasPanRef as any)?.current?.y ?? 0
+        const livePx = mat ? mat.m41 : canvasPan.x
+        const livePy = mat ? mat.m42 : canvasPan.y
         touchPanRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, px: livePx, py: livePy }
         _touchPanPos.current = { x: livePx, y: livePy }
       } else if (e.touches.length === 2) {
@@ -1760,8 +1760,8 @@ export function CanvasArea(s: ExportPageState) {
         const panLayerEl = panLayerRef.current
         const liveTransform = panLayerEl?.style.transform ?? ''
         const mat = liveTransform && liveTransform !== 'none' ? new DOMMatrix(liveTransform) : null
-        const livePx = mat ? mat.m41 : (canvasPanRef as any)?.current?.x ?? 0
-        const livePy = mat ? mat.m42 : (canvasPanRef as any)?.current?.y ?? 0
+        const livePx = mat ? mat.m41 : canvasPan.x
+        const livePy = mat ? mat.m42 : canvasPan.y
         touchPinchRef.current = { dist, midX, midY, startZoom: canvasZoomRef.current, startPanX: livePx, startPanY: livePy, wRect: wrap?.getBoundingClientRect() ?? null }
         e.preventDefault()
       }
