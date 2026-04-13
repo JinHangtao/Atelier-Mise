@@ -1827,6 +1827,7 @@ export function CanvasArea(s: ExportPageState) {
           : cursorStyle === 'arrow' ? CURSOR_DEFAULT
           : CURSOR_GRAB,
         height: '100%',
+        flex: 1,
       }}
       onMouseDown={e => {
         if (isDrawMode) return  // draw mode: canvas overlay handles all pointer events

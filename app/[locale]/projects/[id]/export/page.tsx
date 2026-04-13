@@ -686,10 +686,8 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
       {/* ── Main layout ── */}
       {isMobile ? (
         // ── Mobile: full-screen canvas only, no side panel ──
-        <div style={{ flex: 1, minHeight: 0, height: 0, position: 'relative' }}>
+        <div style={{ flex: 1, minHeight: 0, position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <CanvasArea {...sWithGrid} />
-          {/* Mobile bottom bar padding so canvas isn't hidden under bottom bar */}
-          <div style={{ height: 60 }} />
         </div>
       ) : (
       (() => {
