@@ -1948,7 +1948,8 @@ export function CanvasArea(s: ExportPageState) {
           if (window.innerWidth > 768) return
         }
         if (window.innerWidth <= 768) {
-          // 手机端：native handler 已处理 pan，这里只同步 React refs
+          // 手机端：阻止浏览器默认scroll/zoom手势，防止touchcancel打断native pan
+          e.preventDefault()
         } else {
           _stopMomentum()
         }
