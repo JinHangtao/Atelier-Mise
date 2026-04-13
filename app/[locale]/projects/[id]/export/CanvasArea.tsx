@@ -1715,7 +1715,14 @@ export function CanvasArea(s: ExportPageState) {
   // touchPanRef/touchPinchRef, so the synthetic handlers just re-confirm the same
   // state (harmless double-write to refs). The actual DOM transform is driven here.
   // ── Native touch — 挂 document，绕开 canvasWrapRef 首帧为 null 的时序陷阱 ──
+  // ── Native touch listeners 绑在 canvasWrapRef 上而非 document ──────────────
+  // Chrome Android 对 window/document/body 强制 passive:true，
+  // e.preventDefault() 在那里完全失效，浏览器抢走手势发 touchcancel，pan永远启动不了。
+  // 绑在具体 DOM 节点上，{ passive: false } 才真实有效。
   React.useEffect(() => {
+    const wrap = canvasWrapRef.current
+    if (!wrap) return
+
     const isScrollTarget = (target: HTMLElement) =>
       !!(target.closest('.block-body') ||
          target.closest('.page-scroll-wrap') ||
@@ -1726,8 +1733,6 @@ export function CanvasArea(s: ExportPageState) {
 
     const onNativeTouchStart = (e: TouchEvent) => {
       if (isDrawModeRef.current) return
-      const wrap = canvasWrapRef.current
-      if (!wrap || !wrap.contains(e.target as Node)) return
       const target = e.target as HTMLElement
       if (isScrollTarget(target)) return
       if (target.closest('[data-toolbar]')) return
@@ -1777,15 +1782,14 @@ export function CanvasArea(s: ExportPageState) {
         _panDisplay.current  = { x: nx, y: ny }
         _mousePanPos.current = { x: nx, y: ny }
 
-        // ── 速度采样：px/ms 单位（帧率无关，120fps/60fps 结果一致）──
         const now = performance.now()
         const prev = _touchPrevRef.current
         if (prev) {
-          const dt = Math.max(4, now - prev.t)   // 最小4ms，防除以0或单帧噪声
-          const vx = (nx - prev.x) / dt          // px/ms
+          const dt = Math.max(4, now - prev.t)
+          const vx = (nx - prev.x) / dt
           const vy = (ny - prev.y) / dt
           _touchVelBuf.current.push({ vx, vy })
-          if (_touchVelBuf.current.length > 5) _touchVelBuf.current.shift()  // 5帧窗口
+          if (_touchVelBuf.current.length > 5) _touchVelBuf.current.shift()
         }
         _touchPrevRef.current = { x: nx, y: ny, t: now }
 
@@ -1814,14 +1818,14 @@ export function CanvasArea(s: ExportPageState) {
       }
     }
 
-    document.addEventListener('touchstart', onNativeTouchStart, { passive: false })
-    document.addEventListener('touchmove',  onNativeTouchMove,  { passive: false })
+    wrap.addEventListener('touchstart', onNativeTouchStart, { passive: false })
+    wrap.addEventListener('touchmove',  onNativeTouchMove,  { passive: false })
     return () => {
-      document.removeEventListener('touchstart', onNativeTouchStart)
-      document.removeEventListener('touchmove',  onNativeTouchMove)
+      wrap.removeEventListener('touchstart', onNativeTouchStart)
+      wrap.removeEventListener('touchmove',  onNativeTouchMove)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [canvasWrapRef.current])
 
   // wheel 缩放/平移统一由 useExportPage DOM 直驱，CanvasArea 不重复绑定。
 
