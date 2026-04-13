@@ -1728,6 +1728,8 @@ export function CanvasArea(s: ExportPageState) {
       if (isDrawModeRef.current) return
       const target = e.target as HTMLElement
       if (isScrollTarget(target)) return
+      // toolbar: toolbar 자체 pointer handler가 처리
+      if (target.closest('[data-toolbar]')) return
       // rnd-block 区域：不干预 Rnd 的 pointer 事件，也不打断惯性（手指碰到 block 边缘不应硬刹车）
       if (target.closest('.rnd-block')) return
       // 空白 canvas 区域才 preventDefault + 停止惯性
@@ -1890,6 +1892,8 @@ export function CanvasArea(s: ExportPageState) {
         if (isDrawMode) return
         clearLongPress()
         const target = e.target as HTMLElement
+        // toolbar 터치는 toolbar 자체 handler가 처리
+        if (target.closest('[data-toolbar]')) return
         // 1-finger on a block → let the block handle drag, but arm long-press timer
         if (target.closest('.rnd-block')) {
           const cardEl = target.closest('[data-block-id]') as HTMLElement | null
@@ -2097,6 +2101,7 @@ export function CanvasArea(s: ExportPageState) {
       {/* ── Floating toolbar ── */}
       <div
         ref={toolbarRef}
+        data-toolbar
         style={{
           position: 'absolute', zIndex: 30,
           display: 'flex', alignItems: 'center', gap: '10px',
@@ -2112,11 +2117,13 @@ export function CanvasArea(s: ExportPageState) {
           ...posStyle,
         }}
         onPointerDown={e => {
-          e.stopPropagation()
+          // button/zoom/select 클릭은 toolbar drag 아님 — 전파도 막지 않음
           if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('span[data-zoom]') || (e.target as HTMLElement).closest('select')) return
           // 只响应主按键/主触点，忽略多指
           if (e.pointerType === 'mouse' && e.button !== 0) return
           if (e.pointerType === 'touch' && !e.isPrimary) return
+          // 여기서만 stopPropagation — toolbar body를 잡았을 때만 canvas pan 차단
+          e.stopPropagation()
           e.preventDefault()
           // setPointerCapture 保证 touch/pen 在 toolbar 外移动时事件不丢
           ;(e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId)
