@@ -42,11 +42,14 @@ export default function ExportPage() {
   const canvasWrapRef = s.canvasWrapRef
   const [canvasExportOpen, setCanvasExportOpen] = React.useState(false)
   const [mobileExportOpen, setMobileExportOpen] = React.useState(false)
+  const [mobileExportPos, setMobileExportPos] = React.useState<{ top: number; right: number }>({ top: 0, right: 16 })
   const mobileExportRef = React.useRef<HTMLDivElement>(null)
+  const mobileExportBtnRef = React.useRef<HTMLButtonElement>(null)
   React.useEffect(() => {
     if (!mobileExportOpen) return
     const handler = (e: MouseEvent) => {
-      if (mobileExportRef.current && !mobileExportRef.current.contains(e.target as Node)) {
+      if (mobileExportRef.current && !mobileExportRef.current.contains(e.target as Node) &&
+          mobileExportBtnRef.current && !mobileExportBtnRef.current.contains(e.target as Node)) {
         setMobileExportOpen(false)
       }
     }
@@ -626,16 +629,23 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
 
           {/* Export — desktop: HTML button only; mobile: dropdown with HTML/PDF/Word */}
           {isMobile ? (
-            <div ref={mobileExportRef} style={{ position: 'relative' }}>
+            <div style={{ position: 'relative' }}>
               <button
-                onClick={() => setMobileExportOpen(v => !v)}
+                ref={mobileExportBtnRef}
+                onClick={() => {
+                  if (!mobileExportOpen && mobileExportBtnRef.current) {
+                    const r = mobileExportBtnRef.current.getBoundingClientRect()
+                    setMobileExportPos({ top: r.bottom + 6, right: window.innerWidth - r.right })
+                  }
+                  setMobileExportOpen(v => !v)
+                }}
                 style={{ background: '#1a1a1a', color: '#f7f7f5', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.1em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 600 }}
               >
                 {isZh ? '导出' : 'Export'}
                 <span style={{ fontSize: '0.6rem', opacity: 0.6 }}>{mobileExportOpen ? '▲' : '▼'}</span>
               </button>
               {mobileExportOpen && (
-                <div style={{ position: 'fixed', top: 'auto', right: 16, marginTop: 6, background: '#fff', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.14), 0 0 0 1px rgba(26,26,26,0.07)', zIndex: 300, overflow: 'hidden', minWidth: 140, animation: 'fadeIn 0.15s ease', fontFamily: 'Inter, DM Sans, sans-serif' }}>
+                <div ref={mobileExportRef} style={{ position: 'fixed', top: mobileExportPos.top, right: mobileExportPos.right, background: '#fff', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.14), 0 0 0 1px rgba(26,26,26,0.07)', zIndex: 300, overflow: 'hidden', minWidth: 160, animation: 'fadeIn 0.15s ease', fontFamily: 'Inter, DM Sans, sans-serif' }}>
                   {[
                     { label: 'HTML', sub: isZh ? '网页文件' : 'Web file', action: () => { setMobileExportOpen(false); setExportDialogOpen(true) } },
                     { label: 'PDF',  sub: isZh ? '打印 / 分享' : 'Print / share', action: () => { setMobileExportOpen(false); doExportPDF() } },
