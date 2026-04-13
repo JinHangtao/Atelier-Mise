@@ -1651,105 +1651,49 @@ export function CanvasArea(s: ExportPageState) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ── Native touch handlers (passive:false) — all touch logic lives here ──────
-  // React synthetic touch events are passive on modern browsers and cannot call
-  // preventDefault(). Moving everything native ensures:
-  //   1. preventDefault() actually works (no browser-native scroll fighting JS pan)
-  //   2. Single source of truth for pan/pinch state
-  //   3. No double-handling between React and native layers
+  // ── Native touch handlers ─────────────────────────────────────────────────
+  // React synthetic touch events are PASSIVE on modern browsers — e.preventDefault()
+  // inside onTouchMove/onTouchStart does nothing, so the browser runs its own
+  // scroll/zoom simultaneously and fights our JS pan. We must use native listeners
+  // with { passive: false } to actually suppress browser default behaviour.
+  // The React synthetic handlers below are kept as-is; native fires first and sets
+  // touchPanRef/touchPinchRef, so the synthetic handlers just re-confirm the same
+  // state (harmless double-write to refs). The actual DOM transform is driven here.
   React.useEffect(() => {
     const el = canvasWrapRef.current
     if (!el) return
 
-    const onTouchStart = (e: TouchEvent) => {
+    const onNativeTouchStart = (e: TouchEvent) => {
       if (isDrawModeRef.current) return
-      clearLongPress()
-      const target = e.target as HTMLElement
-
-      // 1-finger on a block → arm long-press, let block handle drag
-      if (target.closest('.rnd-block')) {
-        const cardEl = target.closest('[data-block-id]') as HTMLElement | null
-        const bid = cardEl?.getAttribute('data-block-id')
-        if (bid && e.touches.length === 1) {
-          const t = e.touches[0]
-          longPressBlockRef.current = { blockId: bid, clientX: t.clientX, clientY: t.clientY }
-          longPressTimerRef.current = setTimeout(() => {
-            const lp = longPressBlockRef.current
-            if (!lp) return
-            const openMobileSheet = (s as any).__openMobileSheet
-            if (openMobileSheet && window.innerWidth <= 768) {
-              const block = (s as any).activePage?.blocks?.find((b: any) => b.id === lp.blockId)
-              if (block) { openMobileSheet(block) }
-            } else {
-              setCtxMenu({ x: lp.clientX, y: lp.clientY, gridX: 0, gridY: 0, blockId: lp.blockId })
-            }
-            suppressNextMouseDownRef.current = true
-            setTimeout(() => { suppressNextMouseDownRef.current = false }, 600)
-            clearLongPress()
-          }, 550)
-        }
-        return
-      }
-
-      if (e.touches.length === 1) {
-        // Single-finger pan on empty canvas
-        e.preventDefault()
-        const panLayerEl = panLayerRef.current
-        const liveTransform = panLayerEl?.style.transform ?? ''
-        const mat = liveTransform && liveTransform !== 'none' ? new DOMMatrix(liveTransform) : null
-        const livePx = mat ? mat.m41 : canvasPan.x
-        const livePy = mat ? mat.m42 : canvasPan.y
-        touchPanRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, px: livePx, py: livePy }
-        _touchPanPos.current = { x: livePx, y: livePy }
-        // Sync lerp display so RAF loop starts from correct position
-        _panDisplay.current  = { x: livePx, y: livePy }
-        _panTarget.current   = { x: livePx, y: livePy }
-        _mousePanPos.current = { x: livePx, y: livePy }
-      } else if (e.touches.length === 2) {
-        // Two-finger pinch
-        e.preventDefault()
-        touchPanRef.current = null
-        const wrap = canvasWrapRef.current
-        const t0 = e.touches[0], t1 = e.touches[1]
-        const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY)
-        const midX = (t0.clientX + t1.clientX) / 2
-        const midY = (t0.clientY + t1.clientY) / 2
-        const panLayerEl = panLayerRef.current
-        const liveTransform = panLayerEl?.style.transform ?? ''
-        const mat = liveTransform && liveTransform !== 'none' ? new DOMMatrix(liveTransform) : null
-        const livePx = mat ? mat.m41 : canvasPan.x
-        const livePy = mat ? mat.m42 : canvasPan.y
-        touchPinchRef.current = { dist, midX, midY, startZoom: canvasZoomRef.current, startPanX: livePx, startPanY: livePy, wRect: wrap?.getBoundingClientRect() ?? null }
-      }
-    }
-
-    const onTouchMove = (e: TouchEvent) => {
-      if (isDrawModeRef.current) return
-
-      // Cancel long-press if finger moved
-      if (longPressBlockRef.current && e.touches.length === 1) {
-        const t = e.touches[0]
-        const lp = longPressBlockRef.current
-        if (Math.hypot(t.clientX - lp.clientX, t.clientY - lp.clientY) > 10) clearLongPress()
-      }
-
-      // Scrollable children: let browser handle natively
       const target = e.target as HTMLElement
       if (
         target.closest('.block-body') ||
         target.closest('.page-scroll-wrap') ||
         target.closest('[data-allow-scroll]')
       ) return
+      // Prevent browser pan/zoom so only our JS handles it
+      if (!target.closest('.rnd-block')) {
+        e.preventDefault()
+      }
+    }
+
+    const onNativeTouchMove = (e: TouchEvent) => {
+      if (isDrawModeRef.current) return
+      const target = e.target as HTMLElement
+      if (
+        target.closest('.block-body') ||
+        target.closest('.page-scroll-wrap') ||
+        target.closest('[data-allow-scroll]')
+      ) return
+      e.preventDefault()
 
       if (e.touches.length === 1 && touchPanRef.current) {
-        e.preventDefault()
         const wrap = canvasWrapRef.current
         const W = wrap ? wrap.offsetWidth : 800
         const H = wrap ? wrap.offsetHeight : 600
         const MARGIN = 120
         const nx = Math.min(W - MARGIN, Math.max(-(W * 2), touchPanRef.current.px + e.touches[0].clientX - touchPanRef.current.startX))
         const ny = Math.min(H - MARGIN, Math.max(-(H * 4), touchPanRef.current.py + e.touches[0].clientY - touchPanRef.current.startY))
-        // Direct DOM write — touch pan must be instant (no lerp lag), finger must track 1:1
         if (panLayerRef.current) {
           panLayerRef.current.style.transform = `translate(${nx}px,${ny}px) scale(${canvasZoomRef.current})`
         }
@@ -1758,7 +1702,6 @@ export function CanvasArea(s: ExportPageState) {
         _panDisplay.current  = { x: nx, y: ny }
         _mousePanPos.current = { x: nx, y: ny }
       } else if (e.touches.length === 2 && touchPinchRef.current) {
-        e.preventDefault()
         const t0 = e.touches[0], t1 = e.touches[1]
         const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY)
         const pinch = touchPinchRef.current
@@ -1783,34 +1726,11 @@ export function CanvasArea(s: ExportPageState) {
       }
     }
 
-    const onTouchEnd = (e: TouchEvent) => {
-      clearLongPress()
-      if (touchPanRef.current) {
-        touchPanRef.current = null
-        setCanvasPan({ x: _touchPanPos.current.x, y: _touchPanPos.current.y })
-      }
-      if (touchPinchRef.current && e.touches.length < 2) {
-        setCanvasZoom(canvasZoomRef.current)
-        setCanvasPan({ x: _touchPanPos.current.x, y: _touchPanPos.current.y })
-        touchPinchRef.current = null
-      }
-    }
-
-    const onTouchCancel = () => {
-      clearLongPress()
-      touchPanRef.current = null
-      touchPinchRef.current = null
-    }
-
-    el.addEventListener('touchstart',  onTouchStart,  { passive: false })
-    el.addEventListener('touchmove',   onTouchMove,   { passive: false })
-    el.addEventListener('touchend',    onTouchEnd,    { passive: true  })
-    el.addEventListener('touchcancel', onTouchCancel, { passive: true  })
+    el.addEventListener('touchstart', onNativeTouchStart, { passive: false })
+    el.addEventListener('touchmove',  onNativeTouchMove,  { passive: false })
     return () => {
-      el.removeEventListener('touchstart',  onTouchStart)
-      el.removeEventListener('touchmove',   onTouchMove)
-      el.removeEventListener('touchend',    onTouchEnd)
-      el.removeEventListener('touchcancel', onTouchCancel)
+      el.removeEventListener('touchstart', onNativeTouchStart)
+      el.removeEventListener('touchmove',  onNativeTouchMove)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -1829,7 +1749,7 @@ export function CanvasArea(s: ExportPageState) {
         backgroundSize: (s as any).dotGrid ? '24px 24px' : 'auto',
         backgroundPosition: (s as any).dotGrid ? '0 0' : '0 0',
         overflow: 'hidden', position: 'relative',
-        touchAction: isDrawMode ? 'none' : 'pan-x pan-y',
+        touchAction: 'none',
         cursor: isDrawMode
           ? (sharedDrawState.brushType === 'eraser' ? CURSOR_ERASER
             : sharedDrawState.shapeType ? CURSOR_SHAPE
@@ -1896,13 +1816,122 @@ export function CanvasArea(s: ExportPageState) {
         setPanningCursor(false)
         setCanvasPan({ x: _mousePanPos.current.x, y: _mousePanPos.current.y })
       }}
-      // ── Touch events handled by native addEventListener above ──
-      // React synthetic touch events are passive and cannot preventDefault().
-      // All pan/pinch/longpress logic lives in the useEffect native handlers.
-      onTouchStart={undefined}
-      onTouchMove={undefined}
-      onTouchEnd={undefined}
-      onTouchCancel={undefined}
+      // ── Tablet touch: pan (1 finger on empty canvas) + pinch zoom (2 fingers) ──
+      onTouchStart={e => {
+        if (isDrawMode) return
+        clearLongPress()
+        const target = e.target as HTMLElement
+        // 1-finger on a block → let the block handle drag, but arm long-press timer
+        if (target.closest('.rnd-block')) {
+          // data-block-id lives on .block-card inside Rnd, climb up to find it
+          const cardEl = target.closest('[data-block-id]') as HTMLElement | null
+          const bid = cardEl?.getAttribute('data-block-id')
+          if (bid && e.touches.length === 1) {
+            const t = e.touches[0]
+            longPressBlockRef.current = { blockId: bid, clientX: t.clientX, clientY: t.clientY }
+            longPressTimerRef.current = setTimeout(() => {
+              const lp = longPressBlockRef.current
+              if (!lp) return
+              // On mobile: open bottom sheet instead of context menu
+              const openMobileSheet = (s as any).__openMobileSheet
+              if (openMobileSheet && window.innerWidth <= 768) {
+                const block = (s as any).activePage?.blocks?.find((b: any) => b.id === lp.blockId)
+                if (block) { openMobileSheet(block) }
+              } else {
+                setCtxMenu({ x: lp.clientX, y: lp.clientY, gridX: 0, gridY: 0, blockId: lp.blockId })
+              }
+              suppressNextMouseDownRef.current = true
+              setTimeout(() => { suppressNextMouseDownRef.current = false }, 600)
+              clearLongPress()
+            }, 550)
+          }
+          return
+        }
+        if (e.touches.length === 1) {
+          // Single-finger pan on empty canvas
+          const panLayerEl = panLayerRef.current
+          const liveTransform = panLayerEl?.style.transform ?? ''
+          const mat = liveTransform && liveTransform !== 'none' ? new DOMMatrix(liveTransform) : null
+          const livePx = mat ? mat.m41 : canvasPan.x
+          const livePy = mat ? mat.m42 : canvasPan.y
+          touchPanRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, px: livePx, py: livePy }
+          _touchPanPos.current = { x: livePx, y: livePy }
+        } else if (e.touches.length === 2) {
+          // Two-finger pinch
+          touchPanRef.current = null
+          const wrap = canvasWrapRef.current
+          const t0 = e.touches[0], t1 = e.touches[1]
+          const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY)
+          const midX = (t0.clientX + t1.clientX) / 2
+          const midY = (t0.clientY + t1.clientY) / 2
+          const panLayerEl = panLayerRef.current
+          const liveTransform = panLayerEl?.style.transform ?? ''
+          const mat = liveTransform && liveTransform !== 'none' ? new DOMMatrix(liveTransform) : null
+          const livePx = mat ? mat.m41 : canvasPan.x
+          const livePy = mat ? mat.m42 : canvasPan.y
+          touchPinchRef.current = { dist, midX, midY, startZoom: canvasZoomRef.current, startPanX: livePx, startPanY: livePy, wRect: wrap?.getBoundingClientRect() ?? null }
+          e.preventDefault()
+        }
+      }}
+      onTouchMove={e => {
+        if (isDrawMode) return
+        // If finger moved more than 10px, cancel long-press
+        if (longPressBlockRef.current && e.touches.length === 1) {
+          const t = e.touches[0]
+          const lp = longPressBlockRef.current
+          if (Math.hypot(t.clientX - lp.clientX, t.clientY - lp.clientY) > 10) clearLongPress()
+        }
+        if (e.touches.length === 1 && touchPanRef.current) {
+          e.preventDefault()
+          const wrap = canvasWrapRef.current
+          const W = wrap ? wrap.offsetWidth : 800
+          const H = wrap ? wrap.offsetHeight : 600
+          const MARGIN = 120
+          const nx = Math.min(W - MARGIN, Math.max(-(W * 2), touchPanRef.current.px + e.touches[0].clientX - touchPanRef.current.startX))
+          const ny = Math.min(H - MARGIN, Math.max(-(H * 4), touchPanRef.current.py + e.touches[0].clientY - touchPanRef.current.startY))
+          // Native handler already drove the transform; sync refs so touchEnd commits correctly
+          _touchPanPos.current = { x: nx, y: ny }
+        } else if (e.touches.length === 2 && touchPinchRef.current) {
+          e.preventDefault()
+          const t0 = e.touches[0], t1 = e.touches[1]
+          const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY)
+          const pinch = touchPinchRef.current
+          const rawZoom = pinch.startZoom * (dist / pinch.dist)
+          const newZoom = +Math.min(3, Math.max(0.2, rawZoom)).toFixed(3)
+          // Pan so pinch midpoint stays fixed on canvas
+          // ── 用 touchStart 时缓存的 wRect，避免每帧强制 layout reflow ──
+          const wRect = pinch.wRect
+          const midX = (t0.clientX + t1.clientX) / 2
+          const midY = (t0.clientY + t1.clientY) / 2
+          const originX = wRect ? midX - wRect.left : midX
+          const originY = wRect ? midY - wRect.top  : midY
+          const scaleDelta = newZoom / pinch.startZoom
+          const newPanX = originX + (pinch.startPanX - originX) * scaleDelta + (midX - pinch.midX)
+          const newPanY = originY + (pinch.startPanY - originY) * scaleDelta + (midY - pinch.midY)
+          if (panLayerRef.current) {
+            panLayerRef.current.style.transform = `translate(${newPanX}px,${newPanY}px) scale(${newZoom})`
+          }
+          _touchPanPos.current = { x: newPanX, y: newPanY }
+          canvasZoomRef.current = newZoom
+        }
+      }}
+      onTouchEnd={e => {
+        clearLongPress()
+        if (touchPanRef.current) {
+          touchPanRef.current = null
+          setCanvasPan({ x: _touchPanPos.current.x, y: _touchPanPos.current.y })
+        }
+        if (touchPinchRef.current && e.touches.length < 2) {
+          setCanvasZoom(canvasZoomRef.current)
+          setCanvasPan({ x: _touchPanPos.current.x, y: _touchPanPos.current.y })
+          touchPinchRef.current = null
+        }
+      }}
+      onTouchCancel={() => {
+        clearLongPress()
+        touchPanRef.current = null
+        touchPinchRef.current = null
+      }}
     >
       {/* CSS for canvas/blocks */}
       <style>{`
