@@ -1714,69 +1714,46 @@ export function CanvasArea(s: ExportPageState) {
   // The React synthetic handlers below are kept as-is; native fires first and sets
   // touchPanRef/touchPinchRef, so the synthetic handlers just re-confirm the same
   // state (harmless double-write to refs). The actual DOM transform is driven here.
-  // ── Native touch — 挂 document，绕开 canvasWrapRef 首帧为 null 的时序陷阱 ──
-  // ── Native touch listeners 绑在 canvasWrapRef 上而非 document ──────────────
-  // Chrome Android 对 window/document/body 强制 passive:true，
-  // e.preventDefault() 在那里完全失效，浏览器抢走手势发 touchcancel，pan永远启动不了。
-  // 绑在具体 DOM 节点上，{ passive: false } 才真实有效。
+  // ── Hammer.js: 手机端 pan + pinch ────────────────────────────────────────
+  // 用 Hammer 代替 native touch listener，绕开 Chrome Android 强制 passive 的问题。
   React.useEffect(() => {
-    let cleanup: (() => void) | null = null
+    if (typeof window === 'undefined' || window.innerWidth > 768) return
+    let hammer: any = null
 
     const bind = () => {
       const wrap = canvasWrapRef.current
       if (!wrap) { setTimeout(bind, 50); return }
 
-    const isScrollTarget = (target: HTMLElement) =>
-      !!(target.closest('.block-body') ||
-         target.closest('.page-scroll-wrap') ||
-         target.closest('[data-allow-scroll]') ||
-         target.closest('[data-sheet-scroll]') ||
-         target.closest('input[type="range"]') ||
-         target.closest('[data-fixed-overlay]'))
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const Hammer = require('hammerjs')
+      hammer = new Hammer.Manager(wrap, { touchAction: 'none' })
 
-    const onNativeTouchStart = (e: TouchEvent) => {
-      if (isDrawModeRef.current) return
-      const target = e.target as HTMLElement
-      if (isScrollTarget(target)) return
-      if (target.closest('[data-toolbar]')) return
-      if (window.innerWidth > 768 && target.closest('.rnd-block')) return
-      e.preventDefault()
-      _stopMomentum()
-      _touchVelBuf.current = []
-      _touchPrevRef.current = null
-      if (e.touches.length === 1) {
+      const pan   = new Hammer.Pan({ direction: Hammer.DIRECTION_ALL, threshold: 0 })
+      const pinch = new Hammer.Pinch()
+      pinch.recognizeWith(pan)
+      hammer.add([pan, pinch])
+
+      let panStartPx = 0, panStartPy = 0
+
+      hammer.on('panstart', (e: any) => {
+        if (isDrawModeRef.current) return
+        _stopMomentum()
+        _touchVelBuf.current = []
+        _touchPrevRef.current = null
         const panLayerEl = panLayerRef.current
-        const liveTransform = panLayerEl?.style.transform ?? ''
-        const mat = liveTransform && liveTransform !== 'none' ? new DOMMatrix(liveTransform) : null
-        const livePx = mat ? mat.m41 : 0
-        const livePy = mat ? mat.m42 : 0
-        touchPanRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, px: livePx, py: livePy }
-        _touchPanPos.current = { x: livePx, y: livePy }
-      } else if (e.touches.length === 2) {
-        touchPanRef.current = null
-        const t0 = e.touches[0], t1 = e.touches[1]
-        const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY)
-        const midX = (t0.clientX + t1.clientX) / 2
-        const midY = (t0.clientY + t1.clientY) / 2
-        const panLayerEl = panLayerRef.current
-        const liveTransform = panLayerEl?.style.transform ?? ''
-        const mat = liveTransform && liveTransform !== 'none' ? new DOMMatrix(liveTransform) : null
-        const livePx = mat ? mat.m41 : 0
-        const livePy = mat ? mat.m42 : 0
-        touchPinchRef.current = { dist, midX, midY, startZoom: canvasZoomRef.current, startPanX: livePx, startPanY: livePy, wRect: wrap.getBoundingClientRect() }
-      }
-    }
+        const mat = panLayerEl?.style.transform && panLayerEl.style.transform !== 'none'
+          ? new DOMMatrix(panLayerEl.style.transform) : null
+        panStartPx = mat ? mat.m41 : 0
+        panStartPy = mat ? mat.m42 : 0
+        touchPanRef.current = { startX: e.center.x, startY: e.center.y, px: panStartPx, py: panStartPy }
+        _touchPanPos.current = { x: panStartPx, y: panStartPy }
+      })
 
-    const onNativeTouchMove = (e: TouchEvent) => {
-      if (isDrawModeRef.current) return
-      if (!touchPanRef.current && !touchPinchRef.current) return
-      const target = e.target as HTMLElement
-      if (isScrollTarget(target)) return
-      e.preventDefault()
-
-      if (e.touches.length === 1 && touchPanRef.current) {
-        const nx = touchPanRef.current.px + e.touches[0].clientX - touchPanRef.current.startX
-        const ny = touchPanRef.current.py + e.touches[0].clientY - touchPanRef.current.startY
+      hammer.on('panmove', (e: any) => {
+        if (isDrawModeRef.current) return
+        if (!touchPanRef.current) return
+        const nx = panStartPx + e.deltaX
+        const ny = panStartPy + e.deltaY
         if (panLayerRef.current) {
           panLayerRef.current.style.transform = `translate(${nx}px,${ny}px) scale(${canvasZoomRef.current})`
         }
@@ -1784,32 +1761,66 @@ export function CanvasArea(s: ExportPageState) {
         _panTarget.current   = { x: nx, y: ny }
         _panDisplay.current  = { x: nx, y: ny }
         _mousePanPos.current = { x: nx, y: ny }
-
         const now = performance.now()
         const prev = _touchPrevRef.current
         if (prev) {
           const dt = Math.max(4, now - prev.t)
-          const vx = (nx - prev.x) / dt
-          const vy = (ny - prev.y) / dt
-          _touchVelBuf.current.push({ vx, vy })
+          _touchVelBuf.current.push({ vx: (nx - prev.x) / dt, vy: (ny - prev.y) / dt })
           if (_touchVelBuf.current.length > 5) _touchVelBuf.current.shift()
         }
         _touchPrevRef.current = { x: nx, y: ny, t: now }
+      })
 
-      } else if (e.touches.length === 2 && touchPinchRef.current) {
-        const t0 = e.touches[0], t1 = e.touches[1]
-        const dist = Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY)
-        const pinch = touchPinchRef.current
-        const rawZoom = pinch.startZoom * (dist / pinch.dist)
-        const newZoom = +Math.min(3, Math.max(0.2, rawZoom)).toFixed(3)
-        const wRect = pinch.wRect
-        const midX = (t0.clientX + t1.clientX) / 2
-        const midY = (t0.clientY + t1.clientY) / 2
-        const originX = wRect ? midX - wRect.left : midX
-        const originY = wRect ? midY - wRect.top  : midY
-        const scaleDelta = newZoom / pinch.startZoom
-        const newPanX = originX + (pinch.startPanX - originX) * scaleDelta + (midX - pinch.midX)
-        const newPanY = originY + (pinch.startPanY - originY) * scaleDelta + (midY - pinch.midY)
+      hammer.on('panend pancancel', () => {
+        if (!touchPanRef.current) return
+        touchPanRef.current = null
+        _touchPrevRef.current = null
+        const buf = _touchVelBuf.current
+        if (buf.length > 0) {
+          const weights = [1, 1, 2, 2, 4]
+          let wvx = 0, wvy = 0, wsum = 0
+          buf.forEach((v: any, i: number) => {
+            const w = weights[Math.max(0, i + (5 - buf.length))] ?? 1
+            wvx += v.vx * w; wvy += v.vy * w; wsum += w
+          })
+          const avgVx = wvx / wsum, avgVy = wvy / wsum
+          if (Math.abs(avgVx) > 0.08 || Math.abs(avgVy) > 0.08) {
+            _startMomentum(avgVx, avgVy)
+            _touchVelBuf.current = []
+            return
+          }
+        }
+        _touchVelBuf.current = []
+        setCanvasPan({ x: _touchPanPos.current.x, y: _touchPanPos.current.y })
+      })
+
+      let pinchStartZoom = 1, pinchStartPx = 0, pinchStartPy = 0
+      let pinchStartMidX = 0, pinchStartMidY = 0
+      let wRect: DOMRect | null = null
+
+      hammer.on('pinchstart', (e: any) => {
+        if (isDrawModeRef.current) return
+        touchPanRef.current = null
+        const panLayerEl = panLayerRef.current
+        const mat = panLayerEl?.style.transform && panLayerEl.style.transform !== 'none'
+          ? new DOMMatrix(panLayerEl.style.transform) : null
+        pinchStartZoom = canvasZoomRef.current
+        pinchStartPx = mat ? mat.m41 : 0
+        pinchStartPy = mat ? mat.m42 : 0
+        pinchStartMidX = e.center.x
+        pinchStartMidY = e.center.y
+        wRect = wrap.getBoundingClientRect()
+        touchPinchRef.current = { dist: 1, midX: pinchStartMidX, midY: pinchStartMidY, startZoom: pinchStartZoom, startPanX: pinchStartPx, startPanY: pinchStartPy, wRect }
+      })
+
+      hammer.on('pinchmove', (e: any) => {
+        if (isDrawModeRef.current) return
+        const newZoom = +Math.min(3, Math.max(0.2, pinchStartZoom * e.scale)).toFixed(3)
+        const originX = wRect ? pinchStartMidX - wRect.left : pinchStartMidX
+        const originY = wRect ? pinchStartMidY - wRect.top  : pinchStartMidY
+        const scaleDelta = newZoom / pinchStartZoom
+        const newPanX = originX + (pinchStartPx - originX) * scaleDelta + (e.center.x - pinchStartMidX)
+        const newPanY = originY + (pinchStartPy - originY) * scaleDelta + (e.center.y - pinchStartMidY)
         if (panLayerRef.current) {
           panLayerRef.current.style.transform = `translate(${newPanX}px,${newPanY}px) scale(${newZoom})`
         }
@@ -1818,19 +1829,17 @@ export function CanvasArea(s: ExportPageState) {
         _panDisplay.current  = { x: newPanX, y: newPanY }
         _mousePanPos.current = { x: newPanX, y: newPanY }
         canvasZoomRef.current = newZoom
-      }
-    }
+      })
 
-      wrap.addEventListener('touchstart', onNativeTouchStart, { passive: false })
-      wrap.addEventListener('touchmove',  onNativeTouchMove,  { passive: false })
-      cleanup = () => {
-        wrap.removeEventListener('touchstart', onNativeTouchStart)
-        wrap.removeEventListener('touchmove',  onNativeTouchMove)
-      }
+      hammer.on('pinchend pinchcancel', () => {
+        setCanvasZoom(canvasZoomRef.current)
+        setCanvasPan({ x: _touchPanPos.current.x, y: _touchPanPos.current.y })
+        touchPinchRef.current = null
+      })
     }
 
     bind()
-    return () => { cleanup?.() }
+    return () => { hammer?.destroy() }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -1948,8 +1957,7 @@ export function CanvasArea(s: ExportPageState) {
           if (window.innerWidth > 768) return
         }
         if (window.innerWidth <= 768) {
-          // 手机端：阻止浏览器默认scroll/zoom手势，防止touchcancel打断native pan
-          e.preventDefault()
+          // 手机端：native handler 已处理 pan，这里只同步 React refs
         } else {
           _stopMomentum()
         }
