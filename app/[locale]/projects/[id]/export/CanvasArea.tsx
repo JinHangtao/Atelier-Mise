@@ -1999,7 +1999,7 @@ export function CanvasArea(s: ExportPageState) {
     >
       {/* CSS for canvas/blocks */}
       <style>{`
-        .rnd-canvas { background: transparent; }
+        .rnd-canvas { background: transparent; touch-action: none; }
         /* Rnd 内部 wrapper 强制 overflow visible，让删除按钮不被裁剪 */
         .rnd-block {
           border-radius: 4px; overflow: visible !important; will-change: transform;
@@ -2499,7 +2499,7 @@ export function CanvasArea(s: ExportPageState) {
 
         {/* ── Zoom + pan layers ── */}
         {/* 画布固定 860px，用 scale 适配屏幕，坐标系与导出完全一致 */}
-       <div ref={panLayerRef} style={{ transformOrigin: 'left top', transform: `translate(${canvasPan.x}px,${canvasPan.y}px) scale(${canvasZoom})`, willChange: 'transform', transition: 'none', width: '860px' }}>
+       <div ref={panLayerRef} style={{ transformOrigin: 'left top', transform: `translate(${canvasPan.x}px,${canvasPan.y}px) scale(${canvasZoom})`, willChange: 'transform', transition: 'none', width: '860px', touchAction: 'none' }}>
 <div style={{ paddingTop: 24 }}>
           {/* ── Render every page ── */}
           {pages.map((page, pageIdx) => {
