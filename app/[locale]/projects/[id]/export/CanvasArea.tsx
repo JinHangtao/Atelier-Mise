@@ -1722,7 +1722,10 @@ export function CanvasArea(s: ExportPageState) {
     const isScrollTarget = (target: HTMLElement) =>
       !!(target.closest('.block-body') ||
          target.closest('.page-scroll-wrap') ||
-         target.closest('[data-allow-scroll]'))
+         target.closest('[data-allow-scroll]') ||
+         target.closest('[data-sheet-scroll]') ||
+         target.closest('input[type="range"]') ||
+         target.closest('[data-fixed-overlay]'))
 
     const onNativeTouchStart = (e: TouchEvent) => {
       if (isDrawModeRef.current) return
@@ -1732,12 +1735,10 @@ export function CanvasArea(s: ExportPageState) {
       const isMobile = window.innerWidth <= 768
       // 桌面端：block 上不接管
       if (!isMobile && target.closest('.rnd-block')) return
-      // 手机端用 pan-x pan-y pinch-zoom，不 preventDefault，让浏览器原生处理缩放+滚动
-      // 我们只记录起始位置，用 touchmove 里的数据驱动 panLayer
-      if (!isMobile) {
-        e.preventDefault()
-        _stopMomentum()
-      }
+      // 手机端和桌面端都 preventDefault，阻止浏览器滚动跟 JS pan 打架
+      // (canvas wrap 上 touch-action:none 已声明，preventDefault 在此合法)
+      e.preventDefault()
+      _stopMomentum()
       _touchVelBuf.current = []
       _touchPrevRef.current = null
       // 记录起点——无论手机还是桌面都需要
@@ -1762,7 +1763,6 @@ export function CanvasArea(s: ExportPageState) {
         const livePx = mat ? mat.m41 : 0
         const livePy = mat ? mat.m42 : 0
         touchPinchRef.current = { dist, midX, midY, startZoom: canvasZoomRef.current, startPanX: livePx, startPanY: livePy, wRect: wrap?.getBoundingClientRect() ?? null }
-        if (!isMobile) e.preventDefault()
       }
     }
 
@@ -1770,9 +1770,8 @@ export function CanvasArea(s: ExportPageState) {
       if (isDrawModeRef.current) return
       const target = e.target as HTMLElement
       if (isScrollTarget(target)) return
-      const isMobile = window.innerWidth <= 768
-      // 桌面端 preventDefault 阻止浏览器默认行为；手机端不 preventDefault，让 pinch-zoom CSS 生效
-      if (!isMobile) e.preventDefault()
+      // touch-action:none on canvas wrap 已声明，preventDefault 合法且必须，阻止浏览器接管
+      e.preventDefault()
 
       if (e.touches.length === 1 && touchPanRef.current) {
         const nx = touchPanRef.current.px + e.touches[0].clientX - touchPanRef.current.startX
@@ -1845,7 +1844,7 @@ export function CanvasArea(s: ExportPageState) {
         backgroundSize: (s as any).dotGrid ? '24px 24px' : 'auto',
         backgroundPosition: (s as any).dotGrid ? '0 0' : '0 0',
         overflow: 'hidden', position: 'relative',
-        touchAction: window.innerWidth <= 768 ? 'pan-x pan-y pinch-zoom' : 'none',
+        touchAction: 'none',
         cursor: isDrawMode
           ? (sharedDrawState.brushType === 'eraser' ? CURSOR_ERASER
             : sharedDrawState.shapeType ? CURSOR_SHAPE

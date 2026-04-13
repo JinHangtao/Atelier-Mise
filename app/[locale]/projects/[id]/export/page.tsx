@@ -365,12 +365,12 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
         input[type="text"], input[type="number"], input[type="email"], textarea, [contenteditable="true"] { cursor: text !important }
         input[type="range"] { cursor: ew-resize !important }
         input[type="color"] { cursor: var(--custom-cursor) !important }
-        /* Tablet (landscape): lock viewport, prevent body scroll */
+        /* Tablet/mobile: lock body scroll but keep touch-action auto so JS pan can work */
         @media (max-width: 1200px) and (orientation: landscape) {
-          html, body { overflow: hidden !important; height: 100% !important; touch-action: none !important; overscroll-behavior: none !important; }
+          html, body { overflow: hidden !important; height: 100% !important; overscroll-behavior: none !important; }
         }
         @media (max-width: 1024px) {
-          html, body { overflow: hidden !important; height: 100% !important; touch-action: none !important; overscroll-behavior: none !important; }
+          html, body { overflow: hidden !important; height: 100% !important; overscroll-behavior: none !important; }
         }
         html, body { overscroll-behavior: none !important; }
       `}</style>

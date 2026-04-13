@@ -75,10 +75,13 @@ function useDragToDismiss(onClose: () => void) {
 
     const onTouchMove = (e: TouchEvent) => {
       if (!dragRef.current) return
+      // Must preventDefault on EVERY move from the handle (touchAction:none is set on handle).
+      // iOS Safari decides scroll vs drag on the first move event — if we skip preventDefault
+      // even once, it locks to scroll and our subsequent calls are ignored.
+      e.preventDefault()
       const dy = e.touches[0].clientY - dragRef.current.startY
       if (Math.abs(dy) > 4) isDraggingRef.current = true
       if (!isDraggingRef.current) return
-      e.preventDefault() // now safe — we know it's a drag, not a tap
       if (dy > 0) setDragOffset(dy)
       else setDragOffset(0)
     }
@@ -310,7 +313,9 @@ export function MobileBottomSheet({
           <input
             type="range" min={0} max={1} step={0.05} value={opacity}
             onChange={e => onPatchBlock(block.id, { opacity: parseFloat(e.target.value) })}
-            style={{ flex: 1, accentColor: '#1a1a1a' }}
+            onTouchStart={e => e.stopPropagation()}
+            onTouchMove={e => e.stopPropagation()}
+            style={{ flex: 1, accentColor: '#1a1a1a', touchAction: 'none' }}
           />
           <span style={{ fontSize: '0.75rem', color: '#888', fontFamily: 'Space Mono, monospace', width: 36, textAlign: 'right' }}>
             {Math.round(opacity * 100)}%
@@ -325,7 +330,9 @@ export function MobileBottomSheet({
           <input
             type="range" min={0} max={48} step={2} value={borderRadius}
             onChange={e => onPatchBlock(block.id, { borderRadius: parseInt(e.target.value) })}
-            style={{ flex: 1, accentColor: '#1a1a1a' }}
+            onTouchStart={e => e.stopPropagation()}
+            onTouchMove={e => e.stopPropagation()}
+            style={{ flex: 1, accentColor: '#1a1a1a', touchAction: 'none' }}
           />
           <span style={{ fontSize: '0.75rem', color: '#888', fontFamily: 'Space Mono, monospace', width: 36, textAlign: 'right' }}>
             {borderRadius}px
@@ -361,6 +368,7 @@ export function MobileBottomSheet({
           This way the handle drag always works and the content scrolls normally. */}
       <div
         ref={sheetRef}
+        data-fixed-overlay
         style={{
           position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 1201,
           background: '#fff',
@@ -373,6 +381,7 @@ export function MobileBottomSheet({
           flexDirection: 'column',
           // KEY FIX: no overflow here — overflow lives on the inner scroll div only
           overflow: 'hidden',
+          overscrollBehavior: 'none',
           paddingBottom: 'env(safe-area-inset-bottom)',
         }}
       >
