@@ -2358,12 +2358,14 @@ export function CanvasArea(s: ExportPageState) {
         <input ref={ctxImageInputRef} type="file" accept="image/*" style={{ display: 'none' }}
           onChange={e => {
             const file = e.target.files?.[0]
-            if (!file || !ctxMenu) return
+            if (!file) return
+            // 立即捕获 ctxMenu（异步回调里 state 可能已变 null）
+            const capturedCtxMenu = ctxMenu
             const reader = new FileReader()
             reader.onload = ev => {
               const dataUrl = ev.target?.result as string
               if (dataUrl) compressImage(dataUrl).then(compressed => {
-                addImageBlock(compressed, ctxMenu.gridX, ctxMenu.gridY)
+                addImageBlock(compressed, capturedCtxMenu?.gridX ?? 0, capturedCtxMenu?.gridY ?? 0)
                 addToMediaLibrary(compressed)
               })
             }

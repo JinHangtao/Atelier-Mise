@@ -408,13 +408,13 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
 
       {/* ── Nav ── */}
       <nav style={{ padding: isMobile ? '0 16px' : '0 32px', borderBottom: '1px solid rgba(26,26,26,0.1)', background: 'rgba(255,255,255,0.72)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', position: 'sticky',  top: 0, zIndex: 100, display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: immersive ? '0px' : isMobile ? '48px' : '52px', overflow: 'hidden', opacity: immersive ? 0 : 1, transition: 'height 0.32s cubic-bezier(0.4,0,0.2,1), opacity 0.24s ease', gap: '16px', flexShrink: 0, minHeight: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '8px' : '16px', minWidth: 0, overflow: 'hidden' }}>
           <button onClick={() => router.back()} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: '0.78rem', letterSpacing: '0.12em', fontFamily: 'Inter, DM Sans, sans-serif', flexShrink: 0, padding: '0', transition: 'color 0.12s' }} onMouseEnter={e => (e.currentTarget.style.color = '#1a1a1a')} onMouseLeave={e => (e.currentTarget.style.color = '#aaa')}>
             ← {isZh ? '返回' : 'Back'}
           </button>
 
           {/* ── 撤销历史记录 ── */}
-          <div style={{ flexShrink: 0 }}>
+          <div style={{ flexShrink: 0, display: isMobile ? 'none' : undefined }}>
             <button
               ref={historyBtnRef}
               onClick={openHistory}
@@ -551,42 +551,41 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
             )}
           </div>
 
-          <span style={{ width: '1px', height: '18px', background: 'rgba(26,26,26,0.1)', flexShrink: 0 }} />
-          <span style={{ fontSize: '0.8rem', letterSpacing: '0.06em', color: '#1a1a1a', fontFamily: 'Inter, DM Sans, sans-serif', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '220px' }}>
+          {!isMobile && <span style={{ width: '1px', height: '18px', background: 'rgba(26,26,26,0.1)', flexShrink: 0 }} />}
+          <span style={{ fontSize: '0.8rem', letterSpacing: '0.06em', color: '#1a1a1a', fontFamily: 'Inter, DM Sans, sans-serif', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? '110px' : '220px' }}>
             {project.title}
           </span>
-          <span style={{ fontSize: '0.68rem', letterSpacing: '0.1em', color: '#ccc', fontFamily: 'Inter, DM Sans, sans-serif', flexShrink: 0 }}>{isZh ? '导出编辑器' : 'Export Editor'}</span>
-          {s.activePage && (
+          {!isMobile && <span style={{ fontSize: '0.68rem', letterSpacing: '0.1em', color: '#ccc', fontFamily: 'Inter, DM Sans, sans-serif', flexShrink: 0 }}>{isZh ? '导出编辑器' : 'Export Editor'}</span>}
+          {!isMobile && s.activePage && (
             <span style={{ fontSize: '0.65rem', color: '#999', fontFamily: 'Space Mono, monospace', flexShrink: 0, background: s.activePage.isCover ? 'rgba(196,160,68,0.1)' : 'rgba(26,26,26,0.05)', padding: '3px 8px', borderRadius: '5px' }}>
               {s.activePage.isCover ? (isZh ? '封面' : 'Cover') : s.activePage.label} {' · '}{s.activePage.aspect}
             </span>
           )}
         </div>
 
-        {/* Save status */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
+        {/* Save status - desktop only (absolute positioning overlaps on mobile) */}
+        {!isMobile && <div style={{ display: 'flex', alignItems: 'center', gap: '6px', position: 'absolute', left: '50%', transform: 'translateX(-50%)' }}>
           {saveStatus === 'saving' && <><span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#e8c06a', display: 'inline-block', animation: 'pulse 0.8s ease-in-out infinite' }} /><span style={{ fontSize: '0.65rem', color: '#c8a84a', letterSpacing: '0.1em', fontFamily: 'Inter, DM Sans, sans-serif' }}>SAVING…</span></>}
           {saveStatus === 'saved' && <><span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#4aab6f', display: 'inline-block' }} /><span style={{ fontSize: '0.65rem', color: '#4aab6f', letterSpacing: '0.1em', fontFamily: 'Inter, DM Sans, sans-serif' }}>SAVED</span></>}
           {saveStatus === 'error' && <><span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#e05c5c', display: 'inline-block' }} /><span style={{ fontSize: '0.65rem', color: '#e05c5c', letterSpacing: '0.1em', fontFamily: 'Inter, DM Sans, sans-serif' }}>ERROR</span></>}
           {saveStatus === 'idle' && <span style={{ fontSize: '0.65rem', color: '#d0d0cc', letterSpacing: '0.1em', fontFamily: 'Inter, DM Sans, sans-serif' }}>{pages.length} PAGES · {allBlocksForExport.length} BLOCKS</span>}
-        </div>
+        </div>}
 
         {/* Actions */}
         <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
-                   {!isMobile && <button onClick={undo} disabled={undoStack.current.length === 0} title={isZh ? '撤销 (⌘Z)' : 'Undo (⌘Z)'} style={{ background: 'transparent', border: '1px solid rgba(26,26,26,0.1)', padding: '7px 12px', borderRadius: '8px', fontSize: '0.82rem', cursor: undoStack.current.length === 0 ? 'not-allowed' : 'pointer', color: undoStack.current.length === 0 ? '#ddd' : '#888', transition: 'all 0.12s' }}>↩</button>}
+          {!isMobile && <button onClick={undo} disabled={undoStack.current.length === 0} title={isZh ? '撤销 (⌘Z)' : 'Undo (⌘Z)'} style={{ background: 'transparent', border: '1px solid rgba(26,26,26,0.1)', padding: '7px 12px', borderRadius: '8px', fontSize: '0.82rem', cursor: undoStack.current.length === 0 ? 'not-allowed' : 'pointer', color: undoStack.current.length === 0 ? '#ddd' : '#888', transition: 'all 0.12s' }}>↩</button>}
           {!isMobile && <button onClick={redo} disabled={redoStack.current.length === 0} title={isZh ? '重做 (⌘⇧Z)' : 'Redo (⌘⇧Z)'} style={{ background: 'transparent', border: '1px solid rgba(26,26,26,0.1)', padding: '7px 12px', borderRadius: '8px', fontSize: '0.82rem', cursor: redoStack.current.length === 0 ? 'not-allowed' : 'pointer', color: redoStack.current.length === 0 ? '#ddd' : '#888', transition: 'all 0.12s' }}>↪</button>}
-          {allBlocksForExport.length > 0 && (
+          {!isMobile && allBlocksForExport.length > 0 && (
             <button onClick={() => {
               if (window.confirm(isZh ? '清空全部页面？此操作不可撤销。' : 'Clear all pages? This cannot be undone.')) clearAll()
             }} style={{ background: 'transparent', border: '1px solid rgba(180,80,80,0.18)', padding: '7px 12px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.06em', cursor: 'pointer', color: 'rgba(180,80,80,0.45)', fontFamily: 'Inter, DM Sans, sans-serif', transition: 'all 0.12s' }} onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(180,80,80,0.45)'; e.currentTarget.style.color = 'rgba(180,80,80,0.85)' }} onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(180,80,80,0.18)'; e.currentTarget.style.color = 'rgba(180,80,80,0.45)' }}>
-              {isZh ? 'Clear' : 'Clear'}
+              Clear
             </button>
           )}
-          <div style={{ width: '1px', height: '18px', background: 'rgba(26,26,26,0.08)' }} />
+          {!isMobile && <div style={{ width: '1px', height: '18px', background: 'rgba(26,26,26,0.08)' }} />}
 
-
-          {/* ⚙ Settings */}
-          <div style={{ position: 'relative' }} ref={settingsRef}>
+          {/* ⚙ Settings - desktop only */}
+          {!isMobile && <div style={{ position: 'relative' }} ref={settingsRef}>
             <button
               onClick={() => setSettingsOpen(v => !v)}
               title={isZh ? '工作台设置' : 'Workspace settings'}
@@ -594,29 +593,31 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
               onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.04)'; e.currentTarget.style.color = '#1a1a1a' }}
               onMouseLeave={e => { if (!settingsOpen) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#aaa' } }}
             >⚙</button>
-          </div>
+          </div>}
 
-          <div style={{ width: '1px', height: '18px', background: 'rgba(26,26,26,0.08)' }} />
-          <button onClick={() => enterImmersive()} title={isZh ? '沉浸模式 (F)' : 'Immersive mode (F)'} style={{ background: 'transparent', border: '1px solid rgba(26,26,26,0.1)', padding: '7px 11px', borderRadius: '8px', fontSize: '0.75rem', cursor: 'pointer', color: '#aaa', transition: 'all 0.12s', lineHeight: 1 }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.04)'; e.currentTarget.style.color = '#1a1a1a' }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#aaa' }}>
-            ⛶
-          </button>
-          <div style={{ width: '1px', height: '18px', background: 'rgba(26,26,26,0.08)' }} />
-          
+          {!isMobile && <div style={{ width: '1px', height: '18px', background: 'rgba(26,26,26,0.08)' }} />}
+          {!isMobile && <button onClick={() => enterImmersive()} title={isZh ? '沉浸模式 (F)' : 'Immersive mode (F)'} style={{ background: 'transparent', border: '1px solid rgba(26,26,26,0.1)', padding: '7px 11px', borderRadius: '8px', fontSize: '0.75rem', cursor: 'pointer', color: '#aaa', transition: 'all 0.12s', lineHeight: 1 }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.04)'; e.currentTarget.style.color = '#1a1a1a' }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#aaa' }}>⛶</button>}
+          {!isMobile && <div style={{ width: '1px', height: '18px', background: 'rgba(26,26,26,0.08)' }} />}
+
+          {/* Save - always visible, compact on mobile */}
           <button
-  onClick={handleOpen}
-  style={{ background: 'rgba(74,171,111,0.06)', color: '#4aab6f', border: '1px solid rgba(74,171,111,0.25)', padding: '8px 14px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.06em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}
-  onMouseEnter={e => { e.currentTarget.style.background = 'rgba(74,171,111,0.12)'; e.currentTarget.style.borderColor = 'rgba(74,171,111,0.5)' }}
-  onMouseLeave={e => { e.currentTarget.style.background = 'rgba(74,171,111,0.06)'; e.currentTarget.style.borderColor = 'rgba(74,171,111,0.25)' }}
->
-  {isZh ? '保存项目' : 'Save'}
-  <span style={{ fontSize: '0.58rem', background: 'rgba(74,171,111,0.15)', padding: '2px 6px', borderRadius: 4 }}>.sensei</span>
-</button>
-<div style={{ width: '1px', height: '18px', background: 'rgba(26,26,26,0.08)' }} />
-
-          <button onClick={() => setExportDialogOpen(true)} style={{ background: '#1a1a1a', color: '#f7f7f5', border: 'none', padding: '8px 16px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.1em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 600 }}>
-            {isZh ? '导出' : 'Export'}
-            <span style={{ fontSize: '0.6rem', background: 'rgba(255,255,255,0.18)', padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.06em' }}>HTML</span>
+            onClick={handleOpen}
+            style={{ background: 'rgba(74,171,111,0.06)', color: '#4aab6f', border: '1px solid rgba(74,171,111,0.25)', padding: isMobile ? '6px 10px' : '8px 14px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.06em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(74,171,111,0.12)'; e.currentTarget.style.borderColor = 'rgba(74,171,111,0.5)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(74,171,111,0.06)'; e.currentTarget.style.borderColor = 'rgba(74,171,111,0.25)' }}
+          >
+            {isMobile ? (isZh ? '保存' : 'Save') : (isZh ? '保存项目' : 'Save')}
+            {!isMobile && <span style={{ fontSize: '0.58rem', background: 'rgba(74,171,111,0.15)', padding: '2px 6px', borderRadius: 4 }}>.sensei</span>}
           </button>
+
+          {!isMobile && <div style={{ width: '1px', height: '18px', background: 'rgba(26,26,26,0.08)' }} />}
+
+          {/* Export HTML - always visible, compact on mobile */}
+          <button onClick={() => setExportDialogOpen(true)} style={{ background: '#1a1a1a', color: '#f7f7f5', border: 'none', padding: isMobile ? '6px 12px' : '8px 16px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.1em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '7px', fontWeight: 600 }}>
+            {isZh ? '导出' : 'Export'}
+            {!isMobile && <span style={{ fontSize: '0.6rem', background: 'rgba(255,255,255,0.18)', padding: '2px 6px', borderRadius: '4px', letterSpacing: '0.06em' }}>HTML</span>}
+          </button>
+
           {!isMobile && <><button onClick={() => doExportPDF()} style={{ background: 'transparent', color: '#666', border: '1px solid rgba(26,26,26,0.12)', padding: '8px 14px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.08em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', transition: 'all 0.12s' }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.04)'; e.currentTarget.style.color = '#1a1a1a' }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#666' }}>PDF</button>
           <button onClick={() => doExportDOCX()} style={{ background: 'transparent', color: '#666', border: '1px solid rgba(26,26,26,0.12)', padding: '8px 14px', borderRadius: '8px', fontSize: '0.72rem', letterSpacing: '0.08em', fontFamily: 'Inter, DM Sans, sans-serif', cursor: 'pointer', transition: 'all 0.12s' }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.04)'; e.currentTarget.style.color = '#1a1a1a' }} onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#666' }}>Word</button></>}
         </div>
@@ -1196,7 +1197,7 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
         />
       )}
 
-      {/* ── Mobile Image Input (hidden) ── */}
+      {/* ── Mobile Image Input ── */}
       <input
         ref={mobileImageInputRef}
         type="file"
@@ -1211,7 +1212,6 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
             if (!dataUrl) return
             s.compressImage(dataUrl).then(compressed => {
               s.addImageBlock(compressed, 0, 0)
-              s.addToMediaLibrary?.(compressed)
             })
           }
           reader.readAsDataURL(file)
@@ -1225,15 +1225,9 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
           isOpen={mobileAddOpen}
           isZh={isZh}
           onClose={() => setMobileAddOpen(false)}
-          onAddTitle={() => {
-            s.addBlockAt('title', isZh ? '新标题' : 'New Title', 0, 0)
-          }}
-          onAddText={() => {
-            s.addBlockAt('note', isZh ? '在此输入内容…' : 'Type something…', 0, 0)
-          }}
-          onAddImage={() => {
-            mobileImageInputRef.current?.click()
-          }}
+          onAddTitle={() => s.addBlockAt('title', isZh ? '新标题' : 'New Title', 0, 0)}
+          onAddText={() => s.addBlockAt('note', isZh ? '在此输入内容…' : 'Type something…', 0, 0)}
+          onAddImage={() => mobileImageInputRef.current?.click()}
         />
       )}
 
