@@ -37,7 +37,7 @@ interface MobileBottomSheetProps {
 
 // ── SheetHandle ────────────────────────────────────────────────────────────
 // Purely visual — drag logic is wired via native listeners in useDragToDismiss
-function SheetHandle({ handleRef }: { handleRef: React.RefObject<HTMLDivElement> }) {
+function SheetHandle({ handleRef }: { handleRef: React.RefObject<HTMLDivElement | null> }) {
   return (
     <div
       ref={handleRef}
