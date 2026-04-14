@@ -15,14 +15,6 @@ import { sharedDrawState, BRUSHES, universalRenderStroke, catmullRomToSVGPath } 
 import { getDrawLayerManager, destroyDrawLayerManager, DrawnShape } from './DrawLayerManager'
 
 
-// ── Touch device detection ─────────────────────────────────────────────────
-// 用 pointer: coarse 检测触摸设备，替代 window.innerWidth 判断。
-// 这样 F12 模拟器平板、真实平板都能正确走触摸逻辑。
-function isTouchDevice(): boolean {
-  if (typeof window === 'undefined') return false
-  return window.matchMedia('(pointer: coarse)').matches
-}
-
 // ── Cursor system — tldraw production-grade SVG data-URI cursors ───────────
 // SVG paths sourced directly from @tldraw/editor v4.5.8 (editor.css, MIT).
 // Drop shadow filter gives the professional floating appearance used in tldraw/Figma.
@@ -1570,7 +1562,7 @@ export function CanvasArea(s: ExportPageState) {
 
   // 只在手机端（≤768px）启动惯性，桌面不动
   const _startMomentum = React.useCallback((initVx: number, initVy: number) => {
-    if (typeof window === 'undefined' || !isTouchDevice()) return
+    if (typeof window === 'undefined' || window.innerWidth > 768) return
     _stopMomentum()
     const wrap = canvasWrapRef.current
     const W = wrap ? wrap.offsetWidth : 800
@@ -1698,7 +1690,7 @@ export function CanvasArea(s: ExportPageState) {
 
     // ── Mobile: auto zoom-to-fit on mount ────────────────────────────────────
   React.useEffect(() => {
-    if (typeof window === 'undefined' || !isTouchDevice()) return
+    if (typeof window === 'undefined' || window.innerWidth > 768) return
     // Small timeout to let layout settle
     const t = setTimeout(() => {
       const wrap = canvasWrapRef.current
@@ -1728,7 +1720,7 @@ export function CanvasArea(s: ExportPageState) {
   // ── Hammer.js: 手机端 pan + pinch ────────────────────────────────────────
   // 用 Hammer 代替 native touch listener，绕开 Chrome Android 强制 passive 的问题。
   React.useEffect(() => {
-    if (typeof window === 'undefined' || !isTouchDevice()) return
+    if (typeof window === 'undefined' || window.innerWidth > 768) return
     let hammer: any = null
 
     const bind = () => {
@@ -1748,6 +1740,9 @@ export function CanvasArea(s: ExportPageState) {
 
       hammer.on('panstart', (e: any) => {
         if (isDrawModeRef.current) return
+        // 手指按在块上时不触发画布 pan，让 Rnd 处理拖拽
+        const target = document.elementFromPoint(e.center.x, e.center.y)
+        if (target?.closest('.rnd-block')) return
         _stopMomentum()
         _touchVelBuf.current = []
         _touchPrevRef.current = null
@@ -1959,7 +1954,7 @@ export function CanvasArea(s: ExportPageState) {
               const lp = longPressBlockRef.current
               if (!lp) return
               const openMobileSheet = (s as any).__openMobileSheet
-              if (openMobileSheet && isTouchDevice()) {
+              if (openMobileSheet && window.innerWidth <= 768) {
                 const block = (s as any).activePage?.blocks?.find((b: any) => b.id === lp.blockId)
                 if (block) { openMobileSheet(block) }
               } else {
@@ -1971,9 +1966,9 @@ export function CanvasArea(s: ExportPageState) {
             }, 550)
           }
           // 桌面端 block 不接管；手机端继续初始化 pan state
-          if (!isTouchDevice()) return
+          if (window.innerWidth > 768) return
         }
-        if (isTouchDevice()) {
+        if (window.innerWidth <= 768) {
           // 手机端：native handler 已处理 pan，这里只同步 React refs
         } else {
           _stopMomentum()
@@ -2022,7 +2017,7 @@ export function CanvasArea(s: ExportPageState) {
 
           // ── 加权平均速度（5帧，越新权重越高：1/1/2/2/4）─────────────
           const buf = _touchVelBuf.current
-          if (buf.length > 0 && isTouchDevice()) {
+          if (buf.length > 0 && window.innerWidth <= 768) {
             const weights = [1, 1, 2, 2, 4]
             let wvx = 0, wvy = 0, wsum = 0
             buf.forEach((v, i) => {
@@ -3306,7 +3301,7 @@ export function CanvasArea(s: ExportPageState) {
                                   setRightTab('blocks')
                                   // On mobile: open bottom sheet instead of context menu
                                   const openMobileSheet = (s as any).__openMobileSheet
-                                  if (openMobileSheet && isTouchDevice()) {
+                                  if (openMobileSheet && window.innerWidth <= 768) {
                                     openMobileSheet(block)
                                   } else {
                                     setCtxMenu({ x: lp.clientX, y: lp.clientY, gridX: 0, gridY: 0, blockId: lp.blockId })
