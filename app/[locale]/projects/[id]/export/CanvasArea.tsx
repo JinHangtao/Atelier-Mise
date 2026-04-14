@@ -3022,6 +3022,9 @@ export function CanvasArea(s: ExportPageState) {
         _ctx.setTransform(1, 0, 0, 1, 0, 0)
         
         getDrawLayerManager(page.id).mount(el, _ctx)
+        // mount 后立即触发 React 重渲染，确保非 draw 模式下 shapes SVG 能拿到已加载的数据
+        // 否则初始渲染时 getShapes() 返回 [] → SVG 不渲染，切换到 draw 模式后才出现
+        requestAnimationFrame(() => { (window as any).__forceShapesUpdate?.() })
       }
       // re-render 触发（尺寸未变、已初始化）：什么都不做，保护已有 ctx/transform
     } else {
