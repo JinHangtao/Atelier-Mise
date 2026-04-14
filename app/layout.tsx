@@ -1,5 +1,6 @@
 import './globals.css'
 import { CanvasImportWrapper } from '@/lib/CanvasImportWrapper'
+import TitleBar from '@/components/TitleBar'
 
 export default function RootLayout({
   children,
@@ -8,7 +9,8 @@ export default function RootLayout({
 }) {
   return (
     <html suppressHydrationWarning>
-      <body>
+      <body style={{ display: 'flex', flexDirection: 'column', height: '100dvh', margin: 0 }}>
+        <TitleBar />
         {children}
         <CanvasImportWrapper />
       </body>

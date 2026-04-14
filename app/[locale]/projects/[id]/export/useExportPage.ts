@@ -255,17 +255,20 @@ export function useExportPage() {
       settleTimer = window.setTimeout(settle, 160)
     }
 
+    let retryTimer = 0
     const tryBind = () => {
       const target = canvasWrapRef.current
       if (target && target !== el) {
         if (el) el.removeEventListener('wheel', handler)
         el = target
         el.addEventListener('wheel', handler, { passive: false })
+      } else if (!target) {
+        // PC 端 ref 附着可能晚于 effect mount，轮询直到绑上
+        retryTimer = window.setTimeout(tryBind, 50)
       }
     }
-    tryBind()
     const raf = requestAnimationFrame(tryBind)
-    return () => { cancelAnimationFrame(raf); cancelAnimationFrame(rafId); if (el) el.removeEventListener('wheel', handler); clearTimeout(settleTimer) }
+    return () => { cancelAnimationFrame(raf); clearTimeout(retryTimer); cancelAnimationFrame(rafId); if (el) el.removeEventListener('wheel', handler); clearTimeout(settleTimer) }
   }, [applyTransform]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ResizeObserver

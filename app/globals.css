@@ -10,8 +10,23 @@
   --fg:      #1a1a1a;
   --fg-d:    #555552;
   --fg-dd:   #888884;
+
+  --titlebar-bg: rgba(247, 247, 245, 0.85);
+  --titlebar-border: rgba(26, 26, 26, 0.08);
+  --titlebar-text: #aaa;
+  --titlebar-btn-hover: rgba(26, 26, 26, 0.06);
 }
 
+@media (prefers-color-scheme: dark) {
+  :root {
+    --titlebar-bg: rgba(18, 18, 18, 0.85);
+    --titlebar-border: rgba(255, 255, 255, 0.08);
+    --titlebar-text: #666;
+    --titlebar-btn-hover: rgba(255, 255, 255, 0.06);
+  }
+}
+
+/* 以下不动 */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
@@ -24,15 +39,8 @@ body {
   overflow-x: hidden;
 }
 
-.font-mono {
-  font-family: 'Space Mono', monospace;
-  font-weight: 700;
-}
-
-.font-serif {
-  font-family: 'Space Mono', monospace;
-  font-weight: 700;
-}
+.font-mono { font-family: 'Space Mono', monospace; font-weight: 700; }
+.font-serif { font-family: 'Space Mono', monospace; font-weight: 700; }
 
 h1, h2, h3, h4 {
   font-family: 'Space Mono', monospace;
@@ -41,11 +49,7 @@ h1, h2, h3, h4 {
   text-transform: uppercase;
 }
 
-p {
-  font-size: 0.95rem;
-  color: #555552;
-  line-height: 1.7;
-}
+p { font-size: 0.95rem; color: #555552; line-height: 1.7; }
 
 a { text-decoration: none; }
 
