@@ -1740,9 +1740,11 @@ export function CanvasArea(s: ExportPageState) {
 
       hammer.on('panstart', (e: any) => {
         if (isDrawModeRef.current) return
-        // 手指按在块上时不触发画布 pan，让 Rnd 处理拖拽
-        const target = document.elementFromPoint(e.center.x, e.center.y)
-        if (target?.closest('.rnd-block')) return
+        // 单指在块上时不触发画布 pan，让 Rnd 处理拖拽；双指 pinch 不拦截
+        if (e.pointers?.length === 1) {
+          const target = document.elementFromPoint(e.center.x, e.center.y)
+          if (target?.closest('.rnd-block')) return
+        }
         _stopMomentum()
         _touchVelBuf.current = []
         _touchPrevRef.current = null
