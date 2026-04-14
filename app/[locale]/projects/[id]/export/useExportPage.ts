@@ -13,6 +13,7 @@ import {
   generateId, aspectLabel, pageHeight, migrateOrLoad,
   defaultPages, makeNewPage, draftKey, optKey, pagesKey,
 } from './pageHelpers'
+import { destroyDrawLayerManager } from './DrawLayerManager'
 
 export type Anchor = 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right'
 
@@ -337,6 +338,9 @@ export function useExportPage() {
     setActivePageId(newPage.id)
   }
   const deletePage = (pageId: string) => {
+    // 删除页面时同时销毁其绘图数据（shapes + snapshot），
+    // 否则 localStorage 残留会在"新建同 id 页面"时被错误恢复。
+    destroyDrawLayerManager(pageId)
     setPages(prev => {
       const next = prev.filter(p => p.id !== pageId)
       if (activePageId === pageId) setActivePageId(next[0]?.id ?? '')
@@ -355,6 +359,14 @@ export function useExportPage() {
         isCover: false,
         blocks: original.blocks.map(b => ({ ...b, id: generateId() })),
       }
+      // 复制原页面的矢量图形到新页面（shapes 存入 localStorage，
+      // 新 manager mount 时会通过 _restoreShapes 读取）
+      try {
+        const srcShapesRaw = localStorage.getItem(`dlm-shapes-${pageId}`)
+        if (srcShapesRaw) {
+          localStorage.setItem(`dlm-shapes-${clone.id}`, srcShapesRaw)
+        }
+      } catch {}
       const next = [...prev]
       next.splice(idx + 1, 0, clone)
       setActivePageId(clone.id)
@@ -382,6 +394,8 @@ export function useExportPage() {
   }
   const clearAll = useCallback(() => {
     try { localStorage.removeItem(pagesKey(id)); localStorage.removeItem(draftKey(id)) } catch {}
+    // 清空所有页面的绘图数据，防止 _restoreShapes 在下次进入时读回旧图形
+    pagesRef.current.forEach(p => destroyDrawLayerManager(p.id))
     const fresh = defaultPages()
     setPagesRaw(fresh)
     setActivePageId(fresh[0].id)

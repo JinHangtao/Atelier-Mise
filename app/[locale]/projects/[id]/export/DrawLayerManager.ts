@@ -503,7 +503,17 @@ export function getDrawLayerManager(pageId: string): DrawLayerManager {
   return _registry.get(pageId)!
 }
 
+/**
+ * 销毁 manager 实例，并清除该页面所有持久化数据（shapes + snapshot）。
+ * 删除页面、清空全部时必须调用，否则旧 localStorage 数据会在下次
+ * 进入页面时被 _restoreShapes 读回，导致"进入页面就已有图形"的 bug。
+ */
 export function destroyDrawLayerManager(pageId: string) {
   _registry.get(pageId)?.unmount()
   _registry.delete(pageId)
+  // 清除该页面的持久化数据，防止下次建立同名 pageId 时读回旧数据
+  try {
+    localStorage.removeItem(`dlm-shapes-${pageId}`)
+    localStorage.removeItem(`dlm-snap-${pageId}`)
+  } catch {}
 }
