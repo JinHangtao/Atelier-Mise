@@ -801,6 +801,14 @@ function ShapeContextMenu({ shape, screenX, screenY, pageId, onClose, onDelete }
   )
 }
 
+// ── Shape drag lock ───────────────────────────────────────────────────────────
+// Module-level flag: true while a NonDrawShape drag is in progress.
+// Hammer.js panstart/panmove reads this to suppress canvas panning whenever
+// the user's finger is actually dragging a shape — not the canvas background.
+// Using a plain variable (not React state/ref) so both NonDrawShape closures
+// and CanvasArea Hammer closures read the same value synchronously.
+let _shapeDragActive = false
+
 // ── NonDrawShape ─────────────────────────────────────────────────────────────
 // tldraw / Excalidraw スタイル。react-rnd 不使用。
 // drag: gRef に直接 translate を書いて re-render ゼロ。
@@ -889,6 +897,9 @@ function NonDrawShape({ shape, isSel, PAD, minX, minY, maxX, maxY, canvasZoom, p
     const startX = e.clientX, startY = e.clientY
     dragRef.current = { startX, startY, dx: 0, dy: 0 }
 
+    // Lock out Hammer canvas-pan for the duration of this shape drag
+    _shapeDragActive = true
+
     const onMove = (ev: PointerEvent) => {
       if (!dragRef.current) return
       const rawDx = (ev.clientX - dragRef.current.startX) / canvasZoomRef.current
@@ -900,6 +911,7 @@ function NonDrawShape({ shape, isSel, PAD, minX, minY, maxX, maxY, canvasZoom, p
       applyTranslate(rawDx, rawDy)
     }
     const onUp = (ev: PointerEvent) => {
+      _shapeDragActive = false
       if (!dragRef.current) return
       const { dx, dy } = dragRef.current
       dragRef.current = null
@@ -953,6 +965,9 @@ function NonDrawShape({ shape, isSel, PAD, minX, minY, maxX, maxY, canvasZoom, p
     if (previewGRef.current)
       imperativeResizePreview(previewGRef.current, shape, resizeRef.current.origCoords, canvasZoomRef.current)
 
+    // Lock out Hammer canvas-pan for the duration of this resize
+    _shapeDragActive = true
+
     const onMove = (ev: PointerEvent) => {
       if (!resizeRef.current || !previewGRef.current) return
       const dx = (ev.clientX - resizeRef.current.startX) / canvasZoomRef.current
@@ -962,6 +977,7 @@ function NonDrawShape({ shape, isSel, PAD, minX, minY, maxX, maxY, canvasZoom, p
         canvasZoomRef.current)
     }
     const onUp = (ev: PointerEvent) => {
+      _shapeDragActive = false
       if (!resizeRef.current) return
       const dx = (ev.clientX - resizeRef.current.startX) / canvasZoomRef.current
       const dy = (ev.clientY - resizeRef.current.startY) / canvasZoomRef.current
@@ -1758,6 +1774,10 @@ export function CanvasArea(s: ExportPageState) {
         if (e.pointers?.length === 1) {
           const target = document.elementFromPoint(e.center.x, e.center.y)
           if (target?.closest('.rnd-block')) return
+          // Also block when a NonDrawShape (SVG shape) drag is in progress
+          if (_shapeDragActive) return
+          // If the touch started on a NonDrawShape element, block canvas pan too
+          if (target?.closest('[data-draw-shape-id]')) return
         }
         _stopMomentum()
         _touchVelBuf.current = []
@@ -1773,6 +1793,7 @@ export function CanvasArea(s: ExportPageState) {
 
       hammer.on('panmove', (e: any) => {
         if (isDrawModeRef.current) return
+        if (_shapeDragActive) return  // shape drag in progress — don't pan canvas
         if (!touchPanRef.current) return
         const _hmWrap = canvasWrapRef.current
         const _hmW = _hmWrap ? _hmWrap.offsetWidth : 390
@@ -1984,6 +2005,8 @@ export function CanvasArea(s: ExportPageState) {
           // block 上的 touch 交给 Rnd 处理
           return
         }
+        // 1-finger on a NonDrawShape (SVG) → let the shape handle drag, don't start canvas pan
+        if (e.touches.length === 1 && target.closest('[data-draw-shape-id]')) return
         // Hammer 处理 pan transform，这里只同步 React refs
         _stopMomentum()
         if (e.touches.length === 1) {
