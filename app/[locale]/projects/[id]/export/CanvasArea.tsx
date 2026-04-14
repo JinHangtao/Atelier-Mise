@@ -2732,6 +2732,10 @@ export function CanvasArea(s: ExportPageState) {
                         }
 
                         // ── 图形模式 ──────────────────────────────────────────
+                        // 平板上必须 setPointerCapture，否则 Hammer.js 的 pan 手势会同时
+                        // 触发，导致绘制图形时整个画布视角跟着移动。
+                        // 笔刷模式已经 capture；图形模式同样需要，防止事件被 Hammer 抢走。
+                        ;(e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId)
                         const mgr = getDrawLayerManager(page.id)
                         const g   = shapeGesture.current
 
