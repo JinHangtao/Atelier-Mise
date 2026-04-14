@@ -1507,7 +1507,7 @@ export function CanvasArea(s: ExportPageState) {
 
   // ── Draw canvas: mount + 事件绑定 ──────────────────────────────────────────
   const isDrawModeRef = React.useRef(isDrawMode)
-  isDrawModeRef.current = isDrawMode  // 渲染时同步赋值，不等 useEffect
+  isDrawModeRef.current = isDrawMode
 
   // 切换工具（shapeType 变化）时，退出任何进行中的 bezier 编辑/绘制
   // sharedDrawState 是可变对象，用 DrawPanel 传入的 shapeType state 做 dep
@@ -1717,19 +1717,33 @@ export function CanvasArea(s: ExportPageState) {
   // The React synthetic handlers below are kept as-is; native fires first and sets
   // touchPanRef/touchPinchRef, so the synthetic handlers just re-confirm the same
   // state (harmless double-write to refs). The actual DOM transform is driven here.
+  const hammerRef = React.useRef<any>(null)
+
+  // draw모드 변경시 Hammer pan/pinch enable/disable
+  React.useEffect(() => {
+    const h = hammerRef.current
+    if (!h) return
+    if (isDrawMode) {
+      h.get('pan').set({ enable: false })
+      h.get('pinch').set({ enable: false })
+    } else {
+      h.get('pan').set({ enable: true })
+      h.get('pinch').set({ enable: true })
+    }
+  }, [isDrawMode])
+
   // ── Hammer.js: 手机端 pan + pinch ────────────────────────────────────────
   // 用 Hammer 代替 native touch listener，绕开 Chrome Android 强制 passive 的问题。
   React.useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia('(pointer: coarse)').matches) return
-    let hammer: any = null
-
     const bind = () => {
       const wrap = canvasWrapRef.current
       if (!wrap) { setTimeout(bind, 50); return }
 
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const Hammer = require('hammerjs')
-      hammer = new Hammer.Manager(wrap, { touchAction: 'none' })
+      hammerRef.current = new Hammer.Manager(wrap, { touchAction: 'none' })
+      const hammer = hammerRef.current
 
       const pan   = new Hammer.Pan({ direction: Hammer.DIRECTION_ALL, threshold: 0 })
       const pinch = new Hammer.Pinch()
@@ -1744,7 +1758,6 @@ export function CanvasArea(s: ExportPageState) {
         if (e.pointers?.length === 1) {
           const target = document.elementFromPoint(e.center.x, e.center.y)
           if (target?.closest('.rnd-block')) return
-          if (target?.closest('[data-draw-overlay]')) return
         }
         _stopMomentum()
         _touchVelBuf.current = []
@@ -1852,7 +1865,7 @@ export function CanvasArea(s: ExportPageState) {
     }
 
     bind()
-    return () => { hammer?.destroy() }
+    return () => { hammerRef.current?.destroy(); hammerRef.current = null }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -2680,7 +2693,6 @@ export function CanvasArea(s: ExportPageState) {
                     // ── Draw 模式：SVG overlay 统一接管笔刷 + 图形的全部 pointer 事件 ──
                     // canvas 永远 pointerEvents:none，事件入口唯一，无争抢问题。
                     <svg
-                      data-draw-overlay="true"
                       style={{
                         position: 'absolute', inset: 0, width: '100%', height: '100%',
                         zIndex: 960, overflow: 'visible',
