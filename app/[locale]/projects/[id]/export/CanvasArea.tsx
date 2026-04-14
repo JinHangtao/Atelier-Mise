@@ -1507,7 +1507,7 @@ export function CanvasArea(s: ExportPageState) {
 
   // ── Draw canvas: mount + 事件绑定 ──────────────────────────────────────────
   const isDrawModeRef = React.useRef(isDrawMode)
-  React.useEffect(() => { isDrawModeRef.current = isDrawMode }, [isDrawMode])
+  isDrawModeRef.current = isDrawMode  // 渲染时同步赋值，不等 useEffect
 
   // 切换工具（shapeType 变化）时，退出任何进行中的 bezier 编辑/绘制
   // sharedDrawState 是可变对象，用 DrawPanel 传入的 shapeType state 做 dep
@@ -1744,6 +1744,7 @@ export function CanvasArea(s: ExportPageState) {
         if (e.pointers?.length === 1) {
           const target = document.elementFromPoint(e.center.x, e.center.y)
           if (target?.closest('.rnd-block')) return
+          if (target?.closest('[data-draw-overlay]')) return
         }
         _stopMomentum()
         _touchVelBuf.current = []
@@ -2679,6 +2680,7 @@ export function CanvasArea(s: ExportPageState) {
                     // ── Draw 模式：SVG overlay 统一接管笔刷 + 图形的全部 pointer 事件 ──
                     // canvas 永远 pointerEvents:none，事件入口唯一，无争抢问题。
                     <svg
+                      data-draw-overlay="true"
                       style={{
                         position: 'absolute', inset: 0, width: '100%', height: '100%',
                         zIndex: 960, overflow: 'visible',
