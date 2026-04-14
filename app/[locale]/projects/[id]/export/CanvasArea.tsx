@@ -1720,7 +1720,7 @@ export function CanvasArea(s: ExportPageState) {
   // ── Hammer.js: 手机端 pan + pinch ────────────────────────────────────────
   // 用 Hammer 代替 native touch listener，绕开 Chrome Android 强制 passive 的问题。
   React.useEffect(() => {
-    if (typeof window === 'undefined' || window.innerWidth > 768) return
+    if (typeof window === 'undefined' || !window.matchMedia('(pointer: coarse)').matches) return
     let hammer: any = null
 
     const bind = () => {
@@ -1967,14 +1967,11 @@ export function CanvasArea(s: ExportPageState) {
               clearLongPress()
             }, 550)
           }
-          // 桌面端 block 不接管；手机端继续初始化 pan state
-          if (window.innerWidth > 768) return
+          // block 上的 touch 交给 Rnd 处理
+          return
         }
-        if (window.innerWidth <= 768) {
-          // 手机端：native handler 已处理 pan，这里只同步 React refs
-        } else {
-          _stopMomentum()
-        }
+        // Hammer 处理 pan transform，这里只同步 React refs
+        _stopMomentum()
         if (e.touches.length === 1) {
           const panLayerEl = panLayerRef.current
           const liveTransform = panLayerEl?.style.transform ?? ''
