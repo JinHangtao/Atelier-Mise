@@ -2677,7 +2677,7 @@ export function CanvasArea(s: ExportPageState) {
                                 imgEl.onload = () => {
                                   const ratio = imgEl.naturalHeight / imgEl.naturalWidth
                                   const curW  = bTarget.pixelPos?.w ?? contentWidth
-                                  patchBlock(bid!, { content: compressed, imgNaturalRatio: ratio, pixelPos: bTarget.pixelPos ? { ...bTarget.pixelPos, h: Math.round(curW * ratio) } : bTarget.pixelPos })
+                                  patchBlock(bid!, { content: compressed, imgNaturalRatio: ratio, pixelPos: bTarget.pixelPos ? { ...bTarget.pixelPos, h: Math.round(curW * ratio) } : bTarget.pixelPos } as any)
                                 }
                                 imgEl.src = compressed
                               })
