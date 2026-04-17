@@ -32,6 +32,21 @@ importers:
       '@imgly/background-removal':
         specifier: ^1.7.0
         version: 1.7.0(onnxruntime-web@1.24.3)
+      '@tauri-apps/api':
+        specifier: ^2.10.1
+        version: 2.10.1
+      '@tauri-apps/plugin-dialog':
+        specifier: ^2.7.0
+        version: 2.7.0
+      '@tauri-apps/plugin-fs':
+        specifier: ^2.5.0
+        version: 2.5.0
+      '@tauri-apps/plugin-os':
+        specifier: ^2.3.2
+        version: 2.3.2
+      '@tauri-apps/plugin-window':
+        specifier: ^2.0.0-alpha.1
+        version: 2.0.0-alpha.1
       '@types/d3-geo':
         specifier: ^3.1.0
         version: 3.1.0
@@ -47,6 +62,9 @@ importers:
       ai:
         specifier: ^3.4.33
         version: 3.4.33(react@19.2.3)(sswr@2.2.0(svelte@5.55.1))(svelte@5.55.1)(vue@3.5.32(typescript@5.9.3))(zod@4.3.6)
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
       d3-geo:
         specifier: ^3.1.1
         version: 3.1.1
@@ -113,6 +131,12 @@ importers:
       replicate:
         specifier: ^1.4.0
         version: 1.4.0
+      tailwind-merge:
+        specifier: ^3.5.0
+        version: 3.5.0
+      tauri-controls:
+        specifier: ^0.4.0
+        version: 0.4.0(clsx@2.1.1)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(tailwind-merge@3.5.0)
       world-map-country-shapes:
         specifier: ^1.0.0
         version: 1.0.0
@@ -1021,6 +1045,13 @@ packages:
   '@tailwindcss/postcss@4.2.2':
     resolution: {integrity: sha512-n4goKQbW8RVXIbNKRB/45LzyUqN451deQK0nzIeauVEqjlI49slUlgKYJM2QyUzap/PcpnS7kzSUmPb1sCRvYQ==}
 
+  '@tauri-apps/api@2.0.0-alpha.6':
+    resolution: {integrity: sha512-ZMOc3eu9amwvkC6M69h3hWt4/EsFaAXmtkiw4xd2LN59/lTb4ZQiVfq2QKlRcu1rj3n/Tcr7U30ZopvHwXBGIg==}
+    engines: {node: '>= 14.6.0', npm: '>= 6.6.0', yarn: '>= 1.19.1'}
+
+  '@tauri-apps/api@2.10.1':
+    resolution: {integrity: sha512-hKL/jWf293UDSUN09rR69hrToyIXBb8CjGaWC7gfinvnQrBVvnLr08FeFi38gxtugAVyVcTa5/FD/Xnkb1siBw==}
+
   '@tauri-apps/cli-darwin-arm64@2.10.1':
     resolution: {integrity: sha512-Z2OjCXiZ+fbYZy7PmP3WRnOpM9+Fy+oonKDEmUE6MwN4IGaYqgceTjwHucc/kEEYZos5GICve35f7ZiizgqEnQ==}
     engines: {node: '>= 10'}
@@ -1096,6 +1127,18 @@ packages:
     resolution: {integrity: sha512-jQNGF/5quwORdZSSLtTluyKQ+o6SMa/AUICfhf4egCGFdMHqWssApVgYSbg+jmrZoc8e1DscNvjTnXtlHLS11g==}
     engines: {node: '>= 10'}
     hasBin: true
+
+  '@tauri-apps/plugin-dialog@2.7.0':
+    resolution: {integrity: sha512-4nS/hfGMGCXiAS3LtVjH9AgsSAPJeG/7R+q8agTFqytjnMa4Zq95Bq8WzVDkckpanX+yyRHXnRtrKXkANKDHvw==}
+
+  '@tauri-apps/plugin-fs@2.5.0':
+    resolution: {integrity: sha512-c83kbz61AK+rKjhS+je9+stIO27nXj7p9cqeg36TwkIUtxpCFTttlHHtqon6h6FN54cXjyAjlMPOJcW3mwE5XQ==}
+
+  '@tauri-apps/plugin-os@2.3.2':
+    resolution: {integrity: sha512-n+nXWeuSeF9wcEsSPmRnBEGrRgOy6jjkSU+UVCOV8YUGKb2erhDOxis7IqRXiRVHhY8XMKks00BJ0OAdkpf6+A==}
+
+  '@tauri-apps/plugin-window@2.0.0-alpha.1':
+    resolution: {integrity: sha512-dFOAgal/3Txz3SQ+LNQq0AK1EPC+acdaFlwPVB/6KXUZYmaFleIlzgxDVoJCQ+/xOhxvYrdQaFLefh0I/Kldbg==}
 
   '@tybys/wasm-util@0.10.1':
     resolution: {integrity: sha512-9tTaPJLSiejZKx+Bmog4uSubteqTvFrVrURwkmHixBo0G4seD0zUxp98E1DzUBJxLQ3NPwXrGKDiVjwx/DpPsg==}
@@ -3056,12 +3099,23 @@ packages:
     peerDependencies:
       vue: '>=3.2.26 < 4'
 
+  tailwind-merge@3.5.0:
+    resolution: {integrity: sha512-I8K9wewnVDkL1NTGoqWmVEIlUcB9gFriAEkXkfCjX5ib8ezGxtR3xD7iZIxrfArjEsH7F1CHD4RFUtxefdqV/A==}
+
   tailwindcss@4.2.2:
     resolution: {integrity: sha512-KWBIxs1Xb6NoLdMVqhbhgwZf2PGBpPEiwOqgI4pFIYbNTfBXiKYyWoTsXgBQ9WFg/OlhnvHaY+AEpW7wSmFo2Q==}
 
   tapable@2.3.2:
     resolution: {integrity: sha512-1MOpMXuhGzGL5TTCZFItxCc0AARf1EZFQkGqMm7ERKj8+Hgr5oLvJOVFcC+lRmR8hCe2S3jC4T5D7Vg/d7/fhA==}
     engines: {node: '>=6'}
+
+  tauri-controls@0.4.0:
+    resolution: {integrity: sha512-M+by1V9wO6GPHL7/MXb2weAaUc0T6JzDhcuTvQF92x3kGsmfkj37F/HXHeslgQwLVLOaIBxwzTFmwsVWVH8o0g==}
+    peerDependencies:
+      clsx: ^2.0.0
+      react: ^18.2.0
+      react-dom: ^18.2.0
+      tailwind-merge: ^1.14.0
 
   text-segmentation@1.0.3:
     resolution: {integrity: sha512-iOiPUo/BGnZ6+54OsWxZidGCsdU8YbE4PSpdPinp7DeMtUJNJBoJ/ouUSTJjHkh1KntHaltHl/gDs2FC4i5+Nw==}
@@ -3989,6 +4043,10 @@ snapshots:
       postcss: 8.5.8
       tailwindcss: 4.2.2
 
+  '@tauri-apps/api@2.0.0-alpha.6': {}
+
+  '@tauri-apps/api@2.10.1': {}
+
   '@tauri-apps/cli-darwin-arm64@2.10.1':
     optional: true
 
@@ -4035,6 +4093,22 @@ snapshots:
       '@tauri-apps/cli-win32-arm64-msvc': 2.10.1
       '@tauri-apps/cli-win32-ia32-msvc': 2.10.1
       '@tauri-apps/cli-win32-x64-msvc': 2.10.1
+
+  '@tauri-apps/plugin-dialog@2.7.0':
+    dependencies:
+      '@tauri-apps/api': 2.10.1
+
+  '@tauri-apps/plugin-fs@2.5.0':
+    dependencies:
+      '@tauri-apps/api': 2.10.1
+
+  '@tauri-apps/plugin-os@2.3.2':
+    dependencies:
+      '@tauri-apps/api': 2.10.1
+
+  '@tauri-apps/plugin-window@2.0.0-alpha.1':
+    dependencies:
+      '@tauri-apps/api': 2.0.0-alpha.6
 
   '@tybys/wasm-util@0.10.1':
     dependencies:
@@ -6304,9 +6378,18 @@ snapshots:
     dependencies:
       vue: 3.5.32(typescript@5.9.3)
 
+  tailwind-merge@3.5.0: {}
+
   tailwindcss@4.2.2: {}
 
   tapable@2.3.2: {}
+
+  tauri-controls@0.4.0(clsx@2.1.1)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(tailwind-merge@3.5.0):
+    dependencies:
+      clsx: 2.1.1
+      react: 19.2.3
+      react-dom: 19.2.3(react@19.2.3)
+      tailwind-merge: 3.5.0
 
   text-segmentation@1.0.3:
     dependencies:
