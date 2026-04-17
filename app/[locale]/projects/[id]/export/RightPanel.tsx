@@ -1189,7 +1189,7 @@ function AIWriterPanel({
   addBlock,
 }: {
   isZh: boolean
-  addBlock: (type: string, content: string) => void
+  addBlock: ExportPageState['addBlock']
 }) {
   const [scene, setScene] = React.useState(AI_SCENES[0].key)
   const [input, setInput] = React.useState('')
