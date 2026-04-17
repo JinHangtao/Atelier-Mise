@@ -22,7 +22,7 @@ export function useSegmentation(
   const [status, setStatus]               = useState<ModelStatus>('idle')
   const [points, setPoints]               = useState<MarkPoint[]>([])
   const [mask, setMask]                   = useState<MaskState | null>(null)
-  const [brushMode, setBrushMode]         = useState<BrushMode>('point_positive')
+  const [brushMode, setBrushMode]         = useState<BrushMode>('quick_select')
   const [brushRadius, setBrushRadius]     = useState(18)
   // tolerance 现在对应 CIE ΔE，默认 28 ≈ PS 默认容差 32 的感知等效值
   const [tolerance, setTolerance]         = useState(16)
@@ -410,6 +410,23 @@ export function useSegmentation(
     [mask, featherRadius, featherMask],
   )
 
+  // ── 钢笔工具 mask 合并 ────────────────────────────────────────────────────────
+  const mergePenMask = useCallback((
+    penData: Uint8ClampedArray, w: number, h: number,
+  ) => {
+    pushUndo(mask)
+    const merged = new Uint8ClampedArray(penData.length)
+    if (mask && mask.width === w && mask.height === h) {
+      for (let i = 0; i < penData.length; i++) {
+        merged[i] = Math.max(mask.data[i], penData[i])
+      }
+    } else {
+      merged.set(penData)
+    }
+    setMask({ data: merged, width: w, height: h, score: 1 })
+    setCanUndo(true)
+  }, [mask, pushUndo])
+
   return {
     status,
     points,
@@ -432,6 +449,7 @@ export function useSegmentation(
     canUndo,
     reset,
     applyMaskToImage,
+    mergePenMask,
     _setCanvasSize: setCanvasSize,
   }
 }

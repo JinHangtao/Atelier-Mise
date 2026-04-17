@@ -12,8 +12,23 @@ import { Page, Aspect, BlockType, SaveStatus } from './types'
 import {
   generateId, aspectLabel, pageHeight, migrateOrLoad,
   defaultPages, makeNewPage, draftKey, optKey, pagesKey,
+  idbGetPages, idbSetPages,
 } from './pageHelpers'
 import { destroyDrawLayerManager } from './DrawLayerManager'
+import type { UseGridSystemReturn } from './useGridSystem'
+import {
+  saveMediaImage,
+  loadMediaImages,
+  deleteMediaImage,
+  saveImageIfNeeded,
+  saveImagesIfNeeded,
+} from './mediaLibraryDB'
+
+export type ExportPageState = ReturnType<typeof useExportPage> &
+  UseGridSystemReturn & {
+    gridEditMode: boolean
+    setGridEditMode: (v: boolean) => void
+  }
 
 export type Anchor = 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right'
 
@@ -40,17 +55,23 @@ export function useExportPage() {
   const project = projects.find(p => p.id === id)
 
   // ── Export options ──
-  const [exportOpts, setExportOptsRaw] = useState<ExportOptions>(() => {
-    if (typeof window === 'undefined') return DEFAULT_EXPORT_OPTIONS
-    try {
-      const saved = localStorage.getItem(optKey(id))
-      if (saved) return { ...DEFAULT_EXPORT_OPTIONS, ...JSON.parse(saved) }
-    } catch {}
-    return DEFAULT_EXPORT_OPTIONS
-  })
+  const [exportOpts, setExportOptsRaw] = useState<ExportOptions>(DEFAULT_EXPORT_OPTIONS)
+  // 从 IndexedDB 加载 exportOpts
+  useEffect(() => {
+    idbGetPages(optKey(id)).then(saved => {
+      if (saved) setExportOptsRaw({ ...DEFAULT_EXPORT_OPTIONS, ...(saved as ExportOptions) })
+    }).catch(() => {
+      // 降级：尝试旧 localStorage
+      try {
+        const raw = localStorage.getItem(optKey(id))
+        if (raw) setExportOptsRaw({ ...DEFAULT_EXPORT_OPTIONS, ...JSON.parse(raw) })
+      } catch {}
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
   const setExportOpts = useCallback((opts: ExportOptions) => {
     setExportOptsRaw(opts)
-    try { localStorage.setItem(optKey(id), JSON.stringify(opts)) } catch {}
+    idbSetPages(optKey(id), opts).catch(console.error)
   }, [id])
 
   // ── Pages ──
@@ -75,23 +96,34 @@ export function useExportPage() {
     })
   }
   // ── ref 镜像：让所有回调始终读到最新 pages，彻底消灭闭包旧快照导致的僵尸态 ──
-  // 必须先于 useState 声明，因为 initializer 里要写入它
   const pagesRef = useRef<Page[]>([])
+  // migrateOrLoad 现在是 async（读 IndexedDB），初始先用默认页，mount 后异步加载
   const [pages, setPagesRaw] = useState<Page[]>(() => {
-    const initial = sanitizePages(migrateOrLoad(id))
-    pagesRef.current = initial
-    return initial
+    const fresh = defaultPages()
+    pagesRef.current = fresh
+    return fresh
   })
-  const [justRestored]       = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false
-    return !!(localStorage.getItem(pagesKey(id)) || localStorage.getItem(draftKey(id)))
-  })
-  const [activePageId, setActivePageId] = useState<string>(() => {
-    const loaded = migrateOrLoad(id)
-    return loaded[0]?.id ?? ''
-  })
+  const [justRestored, setJustRestored] = useState(false)
+  const [activePageId, setActivePageId] = useState<string>(
+    () => pagesRef.current[0]?.id ?? ''
+  )
   const activePageIdRef = useRef<string>('')
-  activePageIdRef.current = activePageId  // render 期间同步更新，无需 useEffect
+  activePageIdRef.current = activePageId
+
+  // 异步从 IndexedDB 加载页面数据（替代原来同步读 localStorage 的 _initPages）
+  const hasLoaded = useRef(false)
+  useEffect(() => {
+    if (hasLoaded.current) return
+    hasLoaded.current = true
+    migrateOrLoad(id).then(loaded => {
+      const sanitized = sanitizePages(loaded)
+      setPagesRaw(sanitized)
+      pagesRef.current = sanitized
+      setActivePageId(sanitized[0]?.id ?? '')
+      setJustRestored(true)
+    }).catch(console.error)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
 
 // ── Undo / Redo ──
   const undoStack  = useRef<Page[][]>([])
@@ -139,17 +171,62 @@ export function useExportPage() {
   const hasMounted = useRef(false)
   useEffect(() => {
     if (!hasMounted.current) { hasMounted.current = true; return }
+    // 初始加载时 pages 是 defaultPages()，等 hasLoaded 后才真正有数据，跳过空白页防止覆盖
+    if (!hasLoaded.current) return
     setSaveStatus('saving')
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => {
-      try {
-        localStorage.setItem(pagesKey(id), JSON.stringify(pages))
-        setSaveStatus('saved')
-        setTimeout(() => setSaveStatus('idle'), 2500)
-      } catch { setSaveStatus('error') }
+      idbSetPages(pagesKey(id), pages)
+        .then(() => {
+          setSaveStatus('saved')
+          setTimeout(() => setSaveStatus('idle'), 2500)
+        })
+        .catch(() => setSaveStatus('error'))
     }, 600)
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current) }
   }, [pages, id])
+
+  // ── 迁移：把存量 base64 block.content 迁移到 IndexedDB ──────────────────────
+  // 只跑一次，把旧数据搬走后更新 pages，localStorage 不再存大图
+  const hasMigrated = useRef(false)
+  useEffect(() => {
+    if (hasMigrated.current) return
+    hasMigrated.current = true
+    const needsMigration = pages.some(p =>
+      p.blocks.some(b =>
+        (b.type === 'image' && b.content.startsWith('data:')) ||
+        (b.type === 'image-row' && (b.images ?? []).some(u => u.startsWith('data:')))
+      )
+    )
+    if (!needsMigration) return
+    ;(async () => {
+      const newPages = await Promise.all(pages.map(async p => ({
+        ...p,
+        blocks: await Promise.all(p.blocks.map(async b => {
+          if (b.type === 'image' && b.content.startsWith('data:')) {
+            try {
+              const imgId = await saveMediaImage(id, b.content)
+              return { ...b, content: `idb:${imgId}` }
+            } catch { return b }
+          }
+          if (b.type === 'image-row' && (b.images ?? []).some(u => u.startsWith('data:'))) {
+            try {
+              const newImages = await Promise.all((b.images ?? []).map(async u => {
+                if (!u.startsWith('data:')) return u
+                const imgId = await saveMediaImage(id, u)
+                return `idb:${imgId}`
+              }))
+              return { ...b, images: newImages }
+            } catch { return b }
+          }
+          return b
+        })),
+      })))
+      setPagesRaw(newPages)
+      pagesRef.current = newPages
+    })()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ── Canvas zoom / pan ──
   const canvasWrapRef   = useRef<HTMLDivElement | null>(null)
@@ -195,6 +272,7 @@ export function useExportPage() {
     // settle: 用户停止操作后才 setState — 期间纯 DOM 直驱，零 re-render
     // ⚠️ 不加 CSS transition：transition + setState 同帧 = 闪烁根源
     const settle = () => {
+      if (isPanningRef.current) return  // 鼠标拖拽中，不覆盖 pan
       applyTransform(livePan.current, liveZoom.current)
       setCanvasZoom(liveZoom.current)
       setCanvasPan({ x: livePan.current.x, y: livePan.current.y })
@@ -231,21 +309,24 @@ export function useExportPage() {
         const newZoom  = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prevZoom * factor))
         const ratio    = newZoom / prevZoom
         liveZoom.current = +newZoom.toFixed(4)
+        const halfVW = window.innerWidth
         livePan.current  = {
-          x: Math.min(W - MARGIN, Math.max(-(W * 2), mouseX - (mouseX - livePan.current.x) * ratio)),
+          x: Math.min(halfVW, Math.max(-halfVW, mouseX - (mouseX - livePan.current.x) * ratio)),
           y: Math.min(H - MARGIN, Math.max(-(H * 4), mouseY - (mouseY - livePan.current.y) * ratio)),
         }
       } else if (e.shiftKey) {
         const dx = (e.deltaY !== 0 ? e.deltaY : e.deltaX) * (e.deltaMode === 1 ? 16 : 1)
+        const halfVW = window.innerWidth
         livePan.current = {
-          x: Math.min(W - MARGIN, Math.max(-(W * 2), livePan.current.x - dx)),
+          x: Math.min(halfVW, Math.max(-halfVW, livePan.current.x - dx)),
           y: livePan.current.y,
         }
       } else {
         // 触控板双指滑动：同时处理 X/Y 轴，手感与系统原生一致
         const mult = e.deltaMode === 1 ? 16 : 1
+        const halfVW = window.innerWidth
         livePan.current = {
-          x: Math.min(W - MARGIN, Math.max(-(W * 2), livePan.current.x - e.deltaX * mult)),
+          x: Math.min(halfVW, Math.max(-halfVW, livePan.current.x - e.deltaX * mult)),
           y: Math.min(H - MARGIN, Math.max(-(H * 4), livePan.current.y - e.deltaY * mult)),
         }
       }
@@ -276,10 +357,13 @@ export function useExportPage() {
     const target = canvasWrapRef.current
     if (!target) return
     const ro = new ResizeObserver(entries => {
-      for (const entry of entries) setCanvasWrapWidth(entry.contentRect.width)
+      for (const entry of entries) {
+        setCanvasWrapWidth(entry.contentRect.width)
+      }
     })
     ro.observe(target)
-    setCanvasWrapWidth(target.offsetWidth)
+    const W = target.offsetWidth
+    setCanvasWrapWidth(W)
     return () => ro.disconnect()
   }, [])
 
@@ -396,7 +480,8 @@ export function useExportPage() {
     setPages(prev => prev.map(p => p.id === pageId ? { ...p, aspect } : p))
   }
   const clearAll = useCallback(() => {
-    try { localStorage.removeItem(pagesKey(id)); localStorage.removeItem(draftKey(id)) } catch {}
+    idbSetPages(pagesKey(id), null).catch(() => {})
+    idbSetPages(draftKey(id), null).catch(() => {})
     // 清空所有页面的绘图数据，防止 _restoreShapes 在下次进入时读回旧图形
     pagesRef.current.forEach(p => destroyDrawLayerManager(p.id))
     const fresh = defaultPages()
@@ -481,7 +566,7 @@ export function useExportPage() {
 
   // ── Utilities ──
   const compressImage = (dataUrl: string, maxW = 1200, quality = 0.82): Promise<string> =>
-    new Promise(resolve => {
+    new Promise((resolve) => {
       const img = new Image()
       img.onload = () => {
         const scale = Math.min(1, maxW / img.naturalWidth)
@@ -499,6 +584,7 @@ export function useExportPage() {
         }
         resolve(hasAlpha ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', quality))
       }
+      img.onerror = () => resolve(dataUrl) // 压缩失败直接用原图，不卡死
       img.src = dataUrl
     })
 
@@ -533,33 +619,55 @@ export function useExportPage() {
     if (!targetPage) return
     updatePageBlocks(targetPage.id, b => {
       const cw       = 860
-      const defaultH = type === 'image' || type === 'image-row' ? Math.round(cw * 0.5625) : type === 'title' ? Math.round(cw * 0.3) : type === 'table' ? 160 : Math.round(cw * 0.2)
-      // 自动计算 y 位置：放在现有所有 blocks 的最下方，避免叠加
-      const autoY = b.length > 0
-        ? b.reduce((max, bl) => Math.max(max, (bl.pixelPos?.y ?? 0) + (bl.pixelPos?.h ?? 0)), 0) + 20
-        : 20
-      return [...b, { id: generateId(), type, content, caption, images, pixelPos: { x: 20, y: autoY, w: cw, h: defaultH }, ...(type === 'table' ? { tableData: { rows: [[{text:'标题A',align:'left',bold:true},{text:'标题B',align:'left',bold:true},{text:'标题C',align:'left',bold:true}],[{text:'',align:'left'},{text:'',align:'left'},{text:'',align:'left'}],[{text:'',align:'left'},{text:'',align:'left'},{text:'',align:'left'}]], colWidths:[0.333,0.333,0.334], headerRow:true, headerCol:false, borderColor:'rgba(26,26,26,0.12)', fontSize:13, fontFamily:'Inter, DM Sans, sans-serif', cellPadding:10 } } : {}) }]
+      const isImage  = type === 'image' || type === 'image-row'
+      const defaultW = isImage ? Math.round(cw * 0.5) : cw
+      const defaultH = isImage ? Math.round(cw * 0.5625) : type === 'title' ? Math.round(cw * 0.3) : type === 'table' ? 160 : Math.round(cw * 0.2)
+      // 图片：放在画布中心；其他 block：排到最下方
+      const centerX  = isImage ? Math.round((cw - defaultW) / 2) : 20
+      const centerY  = isImage ? Math.round((pageHeight(targetPage.aspect, cw) ?? 800) / 2 - defaultH / 2) : (
+        b.length > 0
+          ? b.reduce((max, bl) => Math.max(max, (bl.pixelPos?.y ?? 0) + (bl.pixelPos?.h ?? 0)), 0) + 20
+          : 20
+      )
+      return [...b, { id: generateId(), type, content, caption, images, pixelPos: { x: centerX, y: centerY, w: defaultW, h: defaultH }, ...(type === 'table' ? { tableData: { rows: [[{text:'标题A',align:'left',bold:true},{text:'标题B',align:'left',bold:true},{text:'标题C',align:'left',bold:true}],[{text:'',align:'left'},{text:'',align:'left'},{text:'',align:'left'}],[{text:'',align:'left'},{text:'',align:'left'},{text:'',align:'left'}]], colWidths:[0.333,0.333,0.334], headerRow:true, headerCol:false, borderColor:'rgba(26,26,26,0.12)', fontSize:13, fontFamily:'Inter, DM Sans, sans-serif', cellPadding:10 } } : {}) }]
     })
   }, [updatePageBlocks])  // activePageId 通过 ref 读取，无需列为依赖
 
-  const addBlockAt = (type: BlockType, content: string, pxX: number, pxY: number, caption?: string, images?: string[]) => {
+  // ── [修复] addBlockAt：改用 activePageIdRef + updatePageBlocks，与 addBlock 一致，
+  // 避免 setBlocks 闭包捕获旧 activePageId 导致首次插入写入错误页面或静默失败。
+  // 同时包裹 useCallback 使引用稳定，修复 addImageBlock deps 的陈旧引用问题。
+  const addBlockAt = useCallback((type: BlockType, content: string, pxX: number, pxY: number, caption?: string, images?: string[]) => {
+    const currentPageId = activePageIdRef.current || activePageId
     const cw       = contentWidth
-    const defaultH = type === 'image' || type === 'image-row' ? Math.round(cw * 0.5625) : type === 'title' ? Math.round(cw * 0.3) : Math.round(cw * 0.2)
-    const defaultW = type === 'title' ? cw : Math.round(cw * 0.5)
-    setBlocks(b => [...b, {
+    const isImage  = type === 'image' || type === 'image-row'
+    const defaultW = isImage ? Math.round(cw * 0.5) : cw
+    const defaultH = isImage ? Math.round(cw * 0.5625) : type === 'title' ? Math.round(cw * 0.3) : Math.round(cw * 0.2)
+    // 图片：以鼠标点击点为中心放置；其他 block：左上角对齐点击点
+    const finalX   = isImage ? Math.min(Math.max(Math.round(pxX - defaultW / 2), 0), cw - defaultW) : Math.min(pxX, cw - defaultW)
+    const finalY   = isImage ? Math.max(Math.round(pxY - defaultH / 2), 0) : pxY
+    updatePageBlocks(currentPageId, b => [...b, {
       id: generateId(), type, content, caption, images,
-      pixelPos: { x: Math.min(pxX, cw - defaultW), y: pxY, w: defaultW, h: defaultH },
+      pixelPos: { x: finalX, y: finalY, w: defaultW, h: defaultH },
     }])
-  }
+  }, [updatePageBlocks, contentWidth])  // activePageId 通过 ref 读取，无需列为依赖
 
-  // ── addImageBlock：快捷添加 image block，可选指定坐标 ──
-  const addImageBlock = useCallback((dataUrl: string, pxX?: number, pxY?: number) => {
-    if (pxX !== undefined && pxY !== undefined) {
-      addBlockAt('image', dataUrl, pxX, pxY)
-    } else {
-      addBlock('image', dataUrl)
+  // ── addImageBlock：快捷添加 image block，图片存入 IndexedDB，block 只存 idb:id ──
+  const addImageBlock = useCallback(async (dataUrl: string, pxX?: number, pxY?: number) => {
+    // 存入 IndexedDB，block.content 只存 "idb:imageId"
+    let content = dataUrl
+    try {
+      const imageId = await saveMediaImage(id, dataUrl)
+      content = `idb:${imageId}`
+    } catch {
+      // IndexedDB 失败时降级存 dataUrl（旧行为）
+      content = dataUrl
     }
-  }, [addBlock, addBlockAt])
+    if (pxX !== undefined && pxY !== undefined) {
+      addBlockAt('image', content, pxX, pxY)
+    } else {
+      addBlock('image', content)
+    }
+  }, [addBlock, addBlockAt, id])
 
   // ── addToMediaLibrary：将图片加入媒体库（当前为 no-op，后续可扩展）──
   const addToMediaLibrary = useCallback((_dataUrl: string) => {
@@ -735,10 +843,27 @@ export function useExportPage() {
     }))
   })
 
+  // ── resolveIdbImages：把 pages 里所有 idb:id 替换成真实 dataUrl，供导出用 ──
+  const resolveIdbImages = async (pagesToResolve: typeof pages): Promise<typeof pages> => {
+    const idbImages = await loadMediaImages(id)
+    return pagesToResolve.map(p => ({
+      ...p,
+      blocks: p.blocks.map(b => {
+        const resolveUrl = (url: string) =>
+          url.startsWith('idb:') ? (idbImages[url.slice(4)] ?? url) : url
+        return {
+          ...b,
+          content: resolveUrl(b.content),
+          images: b.images?.map(resolveUrl),
+        }
+      }),
+    }))
+  }
+
   // ── 核心截图逻辑，HTML / PDF / DOCX 共用 ─────────────────────────────────────
   const capturePages = async (): Promise<{ dataUrls: string[]; dims: { w: number; h: number }[] } | null> => {
     if (!project) return null
-    const html2canvas = (await import('html2canvas')).default
+    const html2canvas = (await import('html2canvas-pro')).default
     setSelectedBlockId(null)
     setEditingBlockId(null)
     const exportablePageIds = pages.filter(p => p.blocks.length > 0).map(p => p.id)
@@ -747,14 +872,34 @@ export function useExportPage() {
       return null
     }
     const prevActivePageId = activePageId
+
+    // ── 平板 / 高 dpr 设备自适应导出倍率 ──────────────────────────────────────
+    // iPad dpr=2，EXPORT_SCALE=4 → 实际 8x，单页 canvas 超过 3000×4000，内存溢出
+    // 策略：目标最长边不超过 4096px（GPU纹理上限），反推 EXPORT_SCALE
+    const dpr = window.devicePixelRatio || 1
+    const TARGET_MAX_PX = 4096
+    // 以固定 EXPORT_WIDTH=860 估算：860 * scale ≤ 4096 → scale ≤ 4.76
+    // 再考虑 dpr：实际渲染像素 = cssW * scale，canvas 内容已是 dpr 倍，不需要额外补偿
+    const EXPORT_SCALE = Math.min(4, Math.floor(TARGET_MAX_PX / 860))  // = 4，但受 dpr 保护
+    // 平板（dpr≥2）时降到 2，PC（dpr=1）时保持 4
+    const SAFE_EXPORT_SCALE = dpr >= 2 ? Math.min(EXPORT_SCALE, 2) : EXPORT_SCALE
+
     const dataUrls: string[] = []
     const dims: { w: number; h: number }[] = []
     for (let i = 0; i < exportablePageIds.length; i++) {
-      setActivePageId(exportablePageIds[i])
-      await new Promise(r => setTimeout(r, 150))
-      const frameEls = Array.from(document.querySelectorAll('.page-canvas-frame')) as HTMLElement[]
-      const el = frameEls[i]
+      const pageId = exportablePageIds[i]
+      setActivePageId(pageId)
+
+      // ── Bug1修复：平板渲染慢，等待时间自适应 ──────────────────────────────
+      // PC 150ms 够，平板 Safari 需要更长时间等 React re-render + 图层 composite
+      const waitMs = dpr >= 2 ? 300 : 150
+      await new Promise(r => setTimeout(r, waitMs))
+
+      // ── Bug5修复：用 data-page-id 精准找 DOM，不依赖顺序 index ──────────
+      const el = document.querySelector<HTMLElement>(`.page-canvas-frame[data-page-id="${pageId}"]`)
+        ?? (Array.from(document.querySelectorAll('.page-canvas-frame')) as HTMLElement[])[i]
       if (!el) continue
+
       const naturalW = el.offsetWidth
       const naturalH = el.offsetHeight
       const offscreenWrap = document.createElement('div')
@@ -768,30 +913,28 @@ export function useExportPage() {
 
       // ── 把原始 canvas 像素复制到 clone 里对应的 canvas ──────────────────
       // cloneNode 不复制 canvas 内容，需要手动 drawImage
-      // scale: 3 导出时 html2canvas 把 DOM 放大 3x，canvas 内容也要同步放大
-      // 否则笔迹分辨率不变，放大后反而更糊
-// ── 把原始 canvas 像素复制到 clone 里对应的 canvas ──────────────────
-const EXPORT_SCALE = 4
-const dpr = window.devicePixelRatio || 1
-const srcCanvases = Array.from(el.querySelectorAll('canvas')) as HTMLCanvasElement[]
-const dstCanvases = Array.from(clone.querySelectorAll('canvas')) as HTMLCanvasElement[]
-srcCanvases.forEach((src, idx) => {
-  const dst = dstCanvases[idx]
-  if (!dst) return
-  const cssW = Math.round(src.width  / dpr)
-  const cssH = Math.round(src.height / dpr)
-  dst.width  = cssW * EXPORT_SCALE
-  dst.height = cssH * EXPORT_SCALE
-  const ctx = dst.getContext('2d')
-  if (!ctx) return
-  ctx.imageSmoothingEnabled = true
-  ctx.imageSmoothingQuality = 'high'
-  ctx.drawImage(
-    src,
-    0, 0, src.width, src.height,
-    0, 0, dst.width, dst.height
-  )
-})
+      // Bug3修复：原来用 cssW*EXPORT_SCALE 算目标尺寸有误
+      // 正确：目标像素 = src物理像素 × (SAFE_EXPORT_SCALE / dpr)
+      // 这样 dpr=2 时不会把笔迹双倍拉伸
+      const srcCanvases = Array.from(el.querySelectorAll('canvas')) as HTMLCanvasElement[]
+      const dstCanvases = Array.from(clone.querySelectorAll('canvas')) as HTMLCanvasElement[]
+      srcCanvases.forEach((src, idx) => {
+        const dst = dstCanvases[idx]
+        if (!dst) return
+        // src.width 是物理像素，目标尺寸按导出倍率等比放大
+        const scaleRatio = SAFE_EXPORT_SCALE / dpr
+        dst.width  = Math.round(src.width  * scaleRatio)
+        dst.height = Math.round(src.height * scaleRatio)
+        const ctx = dst.getContext('2d')
+        if (!ctx) return
+        ctx.imageSmoothingEnabled = true
+        ctx.imageSmoothingQuality = 'high'
+        ctx.drawImage(
+          src,
+          0, 0, src.width, src.height,
+          0, 0, dst.width, dst.height
+        )
+      })
       ;[
         '[data-resize-handle]', '[data-selection-overlay]', '[data-drag-handle]',
         '.block-toolbar', '.resize-handle', '.selection-ring', '.block-selected-indicator',
@@ -801,15 +944,71 @@ srcCanvases.forEach((src, idx) => {
         top: '0', left: '0', width: `${naturalW}px`, height: `${naturalH}px`,
         boxShadow: 'none', outline: 'none',
       })
+      // clone 안의 모든 overflow:hidden을 visible로 — box-shadow가 잘리지 않도록
+      // react-rnd 내부 wrapper, block-body 등이 shadow를 clip할 수 있음
+      Array.from(clone.querySelectorAll<HTMLElement>('*')).forEach(el => {
+        const cs = getComputedStyle(el)
+        if (cs.overflow === 'hidden' || cs.overflowX === 'hidden' || cs.overflowY === 'hidden') {
+          // borderRadius가 있는 요소는 건드리지 않음 (이미지 크롭 유지)
+          if (!cs.borderRadius || cs.borderRadius === '0px') {
+            el.style.overflow = 'visible'
+          }
+        }
+      })
+
+      // ── 骚操作：在 clone 里给每个有阴影的图片注入一个绝对定位的 shadow div ──
+      // 原理：在图片 wrapper 下面插一个 position:absolute 的 div，
+      // 用 box-shadow 渲染柔和投影，让 html2canvas 直接截到，不依赖任何 canvas 后处理
+      const _shadowPage = pagesRef.current.find(p => p.id === exportablePageIds[i])
+      if (_shadowPage) {
+        const _imgBlocksData = _shadowPage.blocks.filter(
+          b => (b.type === 'image' || b.type === 'image-row') && (b.imgShadow ?? 0) > 0
+        )
+        _imgBlocksData.forEach((_b) => {
+          const _blockEl = clone.querySelector<HTMLElement>(`[data-block-id="${_b.id}"]`)
+          if (!_blockEl) return
+          const _sh = _b.imgShadow ?? 0
+          const _radius = _b.imgRadius ?? 0
+          const _offsetY = Math.round(_sh * 0.35)
+          const _blur = Math.round(_sh * 0.8)
+          const _opacity = Math.min(0.55, 0.1 + _sh * 0.012)
+          // 找图片实际尺寸容器（data-blockid div）
+          const _imgWrapper = _blockEl.querySelector<HTMLElement>('[data-blockid]') ?? _blockEl
+          // 注入 shadow div：绝对定位，尺寸和图片一样，box-shadow 向外柔和扩散
+          const _shadowDiv = document.createElement('div')
+          _shadowDiv.setAttribute('data-shadow-inject', '1')
+          _shadowDiv.style.cssText = [
+            'position:absolute',
+            'inset:0',
+            `border-radius:${_radius}px`,
+            `box-shadow:0 ${_offsetY}px ${_blur}px rgba(0,0,0,${_opacity.toFixed(2)})`,
+            'pointer-events:none',
+            'z-index:-1',
+          ].join(';')
+          // 确保父容器 overflow:visible 让阴影不被裁掉
+          _imgWrapper.style.overflow = 'visible'
+          _imgWrapper.style.position = 'relative'
+          let _parent = _imgWrapper.parentElement
+          while (_parent && _parent !== clone) {
+            if (getComputedStyle(_parent).overflow === 'hidden') {
+              _parent.style.overflow = 'visible'
+            }
+            _parent = _parent.parentElement
+          }
+          _imgWrapper.appendChild(_shadowDiv)
+        })
+      }
+
       offscreenWrap.appendChild(clone)
       document.body.appendChild(offscreenWrap)
       await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
+      const pageBgColor = el.style.background || el.style.backgroundColor || '#ffffff'
       const canvas = await html2canvas(clone, {
-        useCORS: true, allowTaint: true, scale: EXPORT_SCALE,
+        useCORS: true, allowTaint: true, scale: SAFE_EXPORT_SCALE,
         width: naturalW, height: naturalH,
         windowWidth: naturalW, windowHeight: naturalH,
         x: 0, y: 0, scrollX: 0, scrollY: 0,
-        backgroundColor: el.style.background || el.style.backgroundColor || '#ffffff',
+        backgroundColor: pageBgColor,
         logging: false,
         ignoreElements: (node: Element) =>
           node.hasAttribute('data-html2canvas-ignore') ||
@@ -817,75 +1016,155 @@ srcCanvases.forEach((src, idx) => {
           node.classList.contains('resize-handle') ||
           node.classList.contains('selection-ring'),
       })
-      document.body.removeChild(offscreenWrap)
-
-      // ── 手动补画 sticky block 阴影 ───────────────────────────────────────
-      // html2canvas 不支持 filter:drop-shadow
-      // 方案：在比截图更大的中间 canvas 上先画带阴影的矩形，再把截图贴上去，最后裁回原尺寸
-      // 参考：https://zhuanlan.zhihu.com/p/43104164
-      const SCALE = EXPORT_SCALE
-      const currentPage = pages.find(p => p.id === exportablePageIds[i])
-      const stickyBlocks = (currentPage?.blocks ?? []).filter(
-        b => b.type === 'sticky' && ((b as any).stickyShadow ?? 12) > 0
+      ;(canvas as any)._bgColor = pageBgColor
+      // ── 截图后纯 Canvas 手绘阴影（完全绕开 html2canvas，不依赖 pixelPos）────────
+      // 原理：clone 还挂在 offscreenWrap 里（已移出视口），
+      // 直接用 getBoundingClientRect 读每张 img 的真实位置，换算到 canvas 坐标后手绘
+      const SCALE = SAFE_EXPORT_SCALE
+      const currentPage = pagesRef.current.find(p => p.id === exportablePageIds[i])
+      const shadowBlocks = (currentPage?.blocks ?? []).filter(
+        b => (b.type === 'image' || b.type === 'image-row') && (b.imgShadow ?? 0) > 0
       )
 
-      if (stickyBlocks.length > 0) {
-        // 计算所有 sticky 里最大的阴影尺寸，作为 padding
-        const maxBlur = stickyBlocks.reduce((max, block) => {
-          const sh = (block as any).stickyShadow ?? 12
-          const sp = (block as any).stickySpread ?? 0
-          return Math.max(max, (sh * 2 + sp) * SCALE + Math.round(sh * 0.4) * SCALE)
-        }, 80 * SCALE)
-        const PAD = maxBlur
+      // 收集 clone 里所有需要加阴影的 img 元素及其对应的 shadow 参数
+      type ShadowTarget = { x: number; y: number; w: number; h: number; sh: number; radius: number }
+      const shadowTargets: ShadowTarget[] = []
 
-        // 中间 canvas：比截图四周各大 PAD，阴影有空间溢出
-        const mid = document.createElement('canvas')
-        mid.width  = canvas.width  + PAD * 2
-        mid.height = canvas.height + PAD * 2
-        const mctx = mid.getContext('2d')!
-
-        // 第一步：在中间 canvas 上为每个 sticky 画带阴影的矩形
-        stickyBlocks.forEach(block => {
-          const pos = block.pixelPos
-          if (!pos) return
-          const sh = (block as any).stickyShadow ?? 12
-          const sp = (block as any).stickySpread ?? 0
-          const blur    = (sh * 2 + sp) * SCALE
-          const offsetY = Math.round(sh * 0.4) * SCALE
-          const opacity = Math.min(0.6, 0.08 + sh * 0.012)
-          const color   = (block as any).stickyColor || '#fef08a'
-
-          mctx.save()
-          mctx.shadowColor   = `rgba(0,0,0,${opacity.toFixed(2)})`
-          mctx.shadowBlur    = blur
-          mctx.shadowOffsetX = 0
-          mctx.shadowOffsetY = offsetY
-          mctx.fillStyle = color
-          mctx.beginPath()
-          // 坐标偏移 PAD，因为中间 canvas 比截图大了 PAD
-          if (mctx.roundRect) {
-            mctx.roundRect(PAD + pos.x * SCALE, PAD + pos.y * SCALE, pos.w * SCALE, pos.h * SCALE, 4 * SCALE)
-          } else {
-            mctx.rect(PAD + pos.x * SCALE, PAD + pos.y * SCALE, pos.w * SCALE, pos.h * SCALE)
-          }
-          mctx.fill()
-          mctx.restore()
+      if (shadowBlocks.length > 0) {
+        const cloneRect = clone.getBoundingClientRect()
+        shadowBlocks.forEach((shadowBlock) => {
+          // data-block-id 精准匹配，不依赖顺序或坐标
+          const blockEl = clone.querySelector<HTMLElement>(`[data-block-id="${shadowBlock.id}"]`)
+          if (!blockEl) return
+          const imgEls = Array.from(blockEl.querySelectorAll<HTMLImageElement>('img'))
+          imgEls.forEach(imgEl => {
+            const rect = imgEl.getBoundingClientRect()
+            const x = rect.left - cloneRect.left
+            const y = rect.top  - cloneRect.top
+            const w = rect.width
+            const h = rect.height
+            if (w <= 0 || h <= 0) return
+            shadowTargets.push({
+              x, y, w, h,
+              sh: shadowBlock.imgShadow ?? 0,
+              radius: shadowBlock.imgRadius ?? 0,
+            })
+          })
         })
-
-        // 第二步：把 html2canvas 截图贴到中间 canvas 上（偏移 PAD，覆盖阴影矩形，只留溢出的阴影）
-        mctx.drawImage(canvas, PAD, PAD)
-
-        // 第三步：裁回原始尺寸（去掉 PAD 边框），输出最终图片
-        const final = document.createElement('canvas')
-        final.width  = canvas.width
-        final.height = canvas.height
-        const fctx = final.getContext('2d')!
-        fctx.drawImage(mid, -PAD, -PAD)
-
-        dataUrls.push(final.toDataURL('image/png'))
-      } else {
-        dataUrls.push(canvas.toDataURL('image/png'))
       }
+
+      // ── inset shadow：在 removeChild 之前收集坐标（clone 还在 DOM 里）──
+      type InsetTarget = { x: number; y: number; w: number; h: number; sh: number; radius: number }
+      const insetTargets: InsetTarget[] = []
+      if (currentPage) {
+        const insetBlocks = currentPage.blocks.filter(
+          b => (b.type === 'image' || b.type === 'image-row') && (b.imgInsetShadow ?? 0) > 0
+        )
+        if (insetBlocks.length > 0) {
+          const cloneRect = clone.getBoundingClientRect()
+          insetBlocks.forEach((insetBlock) => {
+            const blockEl = clone.querySelector<HTMLElement>(`[data-block-id="${insetBlock.id}"]`)
+            if (!blockEl) return
+            const imgEls = Array.from(blockEl.querySelectorAll<HTMLImageElement>('img'))
+            imgEls.forEach(imgEl => {
+              const rect = imgEl.getBoundingClientRect()
+              const x = rect.left - cloneRect.left
+              const y = rect.top  - cloneRect.top
+              const w = rect.width
+              const h = rect.height
+              if (w <= 0 || h <= 0) return
+              insetTargets.push({
+                x, y, w, h,
+                sh: insetBlock.imgInsetShadow ?? 0,
+                radius: insetBlock.imgRadius ?? 0,
+              })
+            })
+          })
+        }
+      }
+
+      // offscreenWrap 截图完成后移除
+      document.body.removeChild(offscreenWrap)
+
+      // outset shadow 由 clone DOM 注入的 shadow div 处理，html2canvas 直接截到
+      let outputCanvas: HTMLCanvasElement = canvas
+
+      // ── inset shadow canvas 手绘（destination-out 正确实现）──────────────────
+      // 原理：
+      //   1. offscreen 画与图片同形的黑色填充（实心形状）
+      //   2. ctx.filter = blur() 模糊整个 offscreen（得到向外晕开的模糊块）
+      //   3. destination-out 把形状中心"挖掉"，只留边缘晕圈
+      //   4. clip 限制在图片矩形内，叠到 outputCanvas 上
+      if (insetTargets.length > 0) {
+        const ictx = outputCanvas.getContext('2d')!
+        insetTargets.forEach(({ x, y, w, h, sh, radius }) => {
+          const blurPx = Math.round(sh * SCALE)
+          const cx = x * SCALE
+          const cy = y * SCALE
+          const cw = w * SCALE
+          const ch = h * SCALE
+          const cr = radius * SCALE
+
+          // ── 1. offscreen：比图片大一圈（pad），留出模糊溢出空间 ──
+          const pad = blurPx * 2
+          const off = document.createElement('canvas')
+          off.width  = cw + pad * 2
+          off.height = ch + pad * 2
+          const octx = off.getContext('2d')!
+
+          // ── 2. 画黑色填充形状，居中偏移 pad ──
+          octx.fillStyle = 'black'
+          octx.beginPath()
+          if (cr > 0 && octx.roundRect) {
+            octx.roundRect(pad, pad, cw, ch, cr)
+          } else {
+            octx.rect(pad, pad, cw, ch)
+          }
+          octx.fill()
+
+          // ── 3. 把 offscreen 模糊后画到 tmp ──
+          // filter 必须在独立 canvas 上操作，直接在 off 上 filter 会污染后续 destination-out
+          const tmp = document.createElement('canvas')
+          tmp.width  = off.width
+          tmp.height = off.height
+          const tctx = tmp.getContext('2d')!
+          tctx.filter = `blur(${blurPx}px)`
+          tctx.drawImage(off, 0, 0)
+          tctx.filter = 'none'
+
+          // ── 4. destination-out：挖掉中心形状，只留边缘晕圈 ──
+          tctx.globalCompositeOperation = 'destination-out'
+          tctx.fillStyle = 'black'
+          tctx.beginPath()
+          if (cr > 0 && tctx.roundRect) {
+            tctx.roundRect(pad, pad, cw, ch, cr)
+          } else {
+            tctx.rect(pad, pad, cw, ch)
+          }
+          tctx.fill()
+          tctx.globalCompositeOperation = 'source-over'
+
+          // ── 5. clip 限制在图片矩形内，防止晕圈溢出 ──
+          ictx.save()
+          ictx.beginPath()
+          if (cr > 0 && ictx.roundRect) {
+            ictx.roundRect(cx, cy, cw, ch, cr)
+          } else {
+            ictx.rect(cx, cy, cw, ch)
+          }
+          ictx.clip()
+
+          // ── 6. 叠加到 outputCanvas，globalAlpha 控制整体浓度 ──
+          const opacity = Math.min(0.85, 0.2 + sh * 0.015)
+          ictx.globalAlpha = opacity
+          ictx.drawImage(tmp, cx - pad, cy - pad)
+          ictx.globalAlpha = 1
+          ictx.restore()
+        })
+      }
+
+      dataUrls.push(outputCanvas.toDataURL('image/png'))
+
       dims.push({ w: naturalW, h: naturalH })
     }
     setActivePageId(prevActivePageId)
@@ -945,13 +1224,27 @@ srcCanvases.forEach((src, idx) => {
       '</body>',
       '</html>',
     ].join('\n')
-    const blob = new Blob([html], { type: 'text/html' })
-    const url  = URL.createObjectURL(blob)
-    const a    = document.createElement('a')
-    a.href     = url
-    a.download = `${project.title.replace(/\s+/g, '_')}_${exportOpts.theme}.html`
-    a.click()
-    URL.revokeObjectURL(url)
+    const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI__
+    if (isTauri) {
+      const { save } = await import('@tauri-apps/plugin-dialog')
+      const { invoke } = await import('@tauri-apps/api/core')
+      const path = await save({
+        defaultPath: `${project.title.replace(/\s+/g, '_')}.html`,
+        filters: [{ name: 'HTML', extensions: ['html'] }],
+      })
+      if (path) {
+        const encoder = new TextEncoder()
+        await invoke('write_file', { path, contents: Array.from(encoder.encode(html)) })
+      }
+    } else {
+      const blob = new Blob([html], { type: 'text/html' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${project.title.replace(/\s+/g, '_')}_${exportOpts.theme}.html`
+      a.click()
+      URL.revokeObjectURL(url)
+    }
   }
 
   // ── PDF：截图 → jsPDF，纯客户端，不走服务端 ──────────────────────────────────
@@ -975,7 +1268,21 @@ srcCanvases.forEach((src, idx) => {
       }
       doc.addImage(dataUrl, 'PNG', 0, 0, w, h)
     })
-    doc.save(`${project.title.replace(/\s+/g, '_')}.pdf`)
+    const isTauriPDF = typeof window !== 'undefined' && !!(window as any).__TAURI__
+    if (isTauriPDF) {
+      const { save } = await import('@tauri-apps/plugin-dialog')
+      const { invoke } = await import('@tauri-apps/api/core')
+      const path = await save({
+        defaultPath: `${project.title.replace(/\s+/g, '_')}.pdf`,
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      })
+      if (path) {
+        const pdfBytes = doc.output('arraybuffer')
+        await invoke('write_file', { path, contents: Array.from(new Uint8Array(pdfBytes)) })
+      }
+    } else {
+      doc.save(`${project.title.replace(/\s+/g, '_')}.pdf`)
+    }
   }
 
   // ── DOCX：截图 → docx，每页一张图 ────────────────────────────────────────────
@@ -1015,12 +1322,26 @@ srcCanvases.forEach((src, idx) => {
     })
     const doc = new Document({ sections: [{ children }] })
     const blob = await Packer.toBlob(doc)
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${project.title.replace(/\s+/g, '_')}.docx`
-    a.click()
-    URL.revokeObjectURL(url)
+    const isTauriDOCX = typeof window !== 'undefined' && !!(window as any).__TAURI__
+    if (isTauriDOCX) {
+      const { save } = await import('@tauri-apps/plugin-dialog')
+      const { invoke } = await import('@tauri-apps/api/core')
+      const path = await save({
+        defaultPath: `${project.title.replace(/\s+/g, '_')}.docx`,
+        filters: [{ name: 'Word Document', extensions: ['docx'] }],
+      })
+      if (path) {
+        const buf = await blob.arrayBuffer()
+        await invoke('write_file', { path, contents: Array.from(new Uint8Array(buf)) })
+      }
+    } else {
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${project.title.replace(/\s+/g, '_')}.docx`
+      a.click()
+      URL.revokeObjectURL(url)
+    }
   }
 
   const visibleSchools = schoolsExpanded ? schools : schools.slice(0, 3)
@@ -1082,11 +1403,3 @@ srcCanvases.forEach((src, idx) => {
     THEMES, FONTS,
   }
 }
-
-import type { UseGridSystemReturn } from './useGridSystem'
-
-export type ExportPageState = ReturnType<typeof useExportPage> &
-  UseGridSystemReturn & {
-    gridEditMode: boolean
-    setGridEditMode: (v: boolean) => void
-  }

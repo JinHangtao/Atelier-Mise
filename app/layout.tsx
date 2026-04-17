@@ -9,7 +9,7 @@ export default function RootLayout({
 }) {
   return (
     <html suppressHydrationWarning>
-      <body style={{ display: 'flex', flexDirection: 'column', height: '100dvh', margin: 0 }}>
+      <body style={{ margin: 0 }}>
         <TitleBar />
         {children}
         <CanvasImportWrapper />

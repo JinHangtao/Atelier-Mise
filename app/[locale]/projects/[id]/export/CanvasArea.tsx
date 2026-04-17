@@ -13,7 +13,148 @@ import { Aspect, EmojiBlock as EmojiBlockType, ArrowDirection } from './types'
 import EmojiBlockComponent from './EmojiBlock'
 import { sharedDrawState, BRUSHES, universalRenderStroke, catmullRomToSVGPath } from './DrawPanel'
 import { getDrawLayerManager, destroyDrawLayerManager, DrawnShape } from './DrawLayerManager'
+import { loadMediaImages } from './mediaLibraryDB'
 
+// ── useIdbImage：把 idb:id 格式的 block.content 解析成真实 dataUrl ──
+// 支持 image / image-row 两种 block 类型
+function useIdbUrl(raw: string, projectId: string): string {
+  const [resolved, setResolved] = React.useState(raw)
+  React.useEffect(() => {
+    if (!raw.startsWith('idb:')) { setResolved(raw); return }
+    let cancelled = false
+    loadMediaImages(projectId).then(imgs => {
+      if (!cancelled) setResolved(imgs[raw.slice(4)] ?? raw)
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [raw, projectId])
+  return resolved
+}
+
+// 批量 resolve 一个 url 数组（用于 image-row）
+function useIdbUrls(raws: string[], projectId: string): string[] {
+  const [resolved, setResolved] = React.useState(raws)
+  const key = raws.join(',')
+  React.useEffect(() => {
+    const hasIdb = raws.some(u => u.startsWith('idb:'))
+    if (!hasIdb) { setResolved(raws); return }
+    let cancelled = false
+    loadMediaImages(projectId).then(imgs => {
+      if (!cancelled) setResolved(raws.map(u => u.startsWith('idb:') ? (imgs[u.slice(4)] ?? u) : u))
+    }).catch(() => {})
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, projectId])
+  return resolved
+}
+
+
+// ── ImageBlockRenderer：单张图片 block，自动 resolve idb: url ──
+function ImageBlockRenderer({ block, projectId, isImgPanning, patchBlock, contentWidth }: {
+  block: import('../../../../../lib/exportStyles').Block
+  projectId: string
+  isImgPanning: boolean
+  patchBlock: (id: string, patch: Partial<import('../../../../../lib/exportStyles').Block>) => void
+  contentWidth: number
+}) {
+  const resolvedSrc = useIdbUrl(block.content, projectId)
+  const tx = block.imgOffsetX ?? 0
+  const ty = block.imgOffsetY ?? 0
+  const scale = block.imgScale ?? 1
+  const clipRange = block.imgClipRange as [[number,number],[number,number]] | undefined
+  const imgPos = (() => {
+    if (!clipRange || !isImgPanning) return { top: '0', left: '0', width: '100%', height: '100%' }
+    const [start, end] = clipRange
+    const ws = (end[0] - start[0]) / 100; const hs = (end[1] - start[1]) / 100
+    return { left: -(start[0] / ws) + '%', top: -(start[1] / hs) + '%', width: 100 / ws + '%', height: 100 / hs + '%' }
+  })()
+  return (
+    <div data-blockid={block.id}
+      style={{ width: '100%', position: 'relative', borderRadius: `${block.imgRadius ?? 0}px`, boxShadow: block.imgShadow ? `0 ${Math.round(block.imgShadow / 2)}px ${block.imgShadow}px rgba(0,0,0,0.22)` : 'none', overflow: 'visible', cursor: isImgPanning ? 'grab' : 'default' }}
+      onMouseDown={!isImgPanning ? undefined : e => {
+        e.stopPropagation()
+        const startX = e.clientX - tx; const startY = e.clientY - ty
+        const onMove = (ev: MouseEvent) => {
+          const imgEl = document.querySelector(`.rnd-block [data-blockid="${block.id}"] img`) as HTMLImageElement | null
+          const maxX  = imgEl ? Math.max(0, (imgEl.naturalWidth * scale - (imgEl.parentElement?.offsetWidth ?? 0)) / 2) : 999
+          const maxY  = imgEl ? Math.max(0, (imgEl.naturalHeight * scale - (imgEl.parentElement?.offsetHeight ?? 0)) / 2) : 999
+          patchBlock(block.id, { imgOffsetX: Math.min(maxX, Math.max(-maxX, ev.clientX - startX)), imgOffsetY: Math.min(maxY, Math.max(-maxY, ev.clientY - startY)) })
+        }
+        const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+        window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp)
+      }}
+      onWheel={!isImgPanning ? undefined : e => { patchBlock(block.id, { imgScale: Math.min(3, Math.max(0.5, scale - e.deltaY * 0.001)) } as any) }}
+    >
+      <img src={resolvedSrc} alt="" draggable={false} onDragStart={e => e.preventDefault()}
+        onLoad={e => {
+          if (!(block as any).imgNaturalRatio) {
+            const el = e.currentTarget
+            const ratio = el.naturalHeight / el.naturalWidth
+            const curW = block.pixelPos?.w ?? contentWidth
+            patchBlock(block.id, { imgNaturalRatio: ratio, pixelPos: block.pixelPos ? { ...block.pixelPos, h: Math.round(curW * ratio) } : block.pixelPos } as any)
+          }
+        }}
+        style={{
+          position: isImgPanning ? 'absolute' : 'relative',
+          top: isImgPanning ? imgPos.top : undefined,
+          left: isImgPanning ? imgPos.left : undefined,
+          width: isImgPanning ? imgPos.width : '100%',
+          height: isImgPanning ? imgPos.height : undefined,
+          transform: isImgPanning ? `translate(${tx}px,${ty}px) scale(${scale})` : undefined,
+          transformOrigin: 'center',
+          display: 'block',
+          borderRadius: `${block.imgRadius ?? 0}px`,
+          objectFit: 'cover',
+          userSelect: 'none',
+          filter: block.imgBlur ? `blur(${block.imgBlur}px)` : 'none',
+          overflow: 'hidden',
+        } as React.CSSProperties}
+      />
+    </div>
+  )
+}
+
+// ── ImageRowBlockRenderer：多图排列 block，自动 resolve idb: urls ──
+function ImageRowBlockRenderer({ block, projectId, patchBlock, imageDragIndex }: {
+  block: import('../../../../../lib/exportStyles').Block
+  projectId: string
+  patchBlock: (id: string, patch: Partial<import('../../../../../lib/exportStyles').Block>) => void
+  imageDragIndex: React.MutableRefObject<number | null>
+}) {
+  const resolvedUrls = useIdbUrls(block.images ?? [], projectId)
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(resolvedUrls.length, 4)}, 1fr)`, gap: '6px' }}>
+      {resolvedUrls.map((url, idx) => (
+        <div key={idx} style={{ position: 'relative', overflow: 'visible' }}
+          onDragStart={() => { imageDragIndex.current = idx }}
+          onDragOver={e => e.preventDefault()}
+          onDrop={e => {
+            e.preventDefault()
+            if (imageDragIndex.current !== null && imageDragIndex.current !== idx) {
+              const fromIdx = imageDragIndex.current
+              const newImgs = [...(block.images ?? [])]
+              const newCaps = [...(block.imageCaptions ?? [])]
+              ;[newImgs[fromIdx], newImgs[idx]] = [newImgs[idx], newImgs[fromIdx]]
+              ;[newCaps[fromIdx], newCaps[idx]] = [newCaps[idx], newCaps[fromIdx]]
+              patchBlock(block.id, { images: newImgs, imageCaptions: newCaps })
+            }
+            imageDragIndex.current = null
+          }}
+          draggable
+        >
+          <img src={url} alt="" draggable={false} onDragStart={e => e.preventDefault()}
+            style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: `${block.imgRadius ?? 7}px`, display: 'block', userSelect: 'none', boxShadow: 'none', filter: block.imgBlur ? `blur(${block.imgBlur}px)` : 'none' } as React.CSSProperties}
+          />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── IdbImg：단순 img 태그 + idb: resolve ──
+function IdbImg({ src, projectId, style, ...rest }: { src: string; projectId: string; style?: React.CSSProperties; [k: string]: any }) {
+  const resolved = useIdbUrl(src, projectId)
+  return <img src={resolved} draggable={false} onDragStart={(e: React.DragEvent) => e.preventDefault()} style={style} {...rest} />
+}
 
 // ── Cursor system — tldraw production-grade SVG data-URI cursors ───────────
 // SVG paths sourced directly from @tldraw/editor v4.5.8 (editor.css, MIT).
@@ -1178,6 +1319,8 @@ export function CanvasArea(s: ExportPageState) {
 
   // bezier 双击检测：完全在 onPointerDown 里自行计时，绕开 onDoubleClick 的异步时序问题
   const lastBezierClickRef = React.useRef<{ time: number; x: number; y: number } | null>(null)
+  // 右键菜单图片插入：在按钮 onClick 时提前捕获坐标，防止 setCtxMenu(null) 先于 onChange 执行
+  const ctxMenuPositionRef = React.useRef<{ gridX: number; gridY: number } | null>(null)
 
   // draw 모드 그리기/bezier 실시간 프리뷰 — React state 대신 imperative innerHTML
   // setPreviewShape를 호출할 때마다 리렌더링이 터졌던 게 하드컷의 원인이었음
@@ -1293,7 +1436,7 @@ export function CanvasArea(s: ExportPageState) {
     return () => window.removeEventListener('mousedown', h)
   }, [guidesMenuOpen])
 
-  type SnapLine = { type: 'h' | 'v'; pos: number; from: number; to: number }
+  type SnapLine = { type: 'h' | 'v'; pos: number; from: number; to: number; isGap?: boolean }
   type SizeHint = { x: number; y: number; w: number; h: number } | null
 
   // ── Zero-re-render guide lines & size hint ────────────────────────────────
@@ -1310,10 +1453,10 @@ export function CanvasArea(s: ExportPageState) {
 
   // Imperatively paint guide lines into the SVG overlay of the active page.
   // Called from onDrag — zero React state updates.
+  // Alignment lines: gold. Gap (equal-spacing) lines: purple.
   const paintSnapLines = React.useCallback((lines: SnapLine[], pageId: string) => {
     const svg = snapSvgRefs.current.get(pageId)
     if (!svg) return
-    // Remove only guide-line children (leave sizeHint group if present)
     Array.from(svg.querySelectorAll('[data-snap-line]')).forEach(el => el.remove())
     const NS = 'http://www.w3.org/2000/svg'
     lines.forEach(line => {
@@ -1327,9 +1470,11 @@ export function CanvasArea(s: ExportPageState) {
       const ln = document.createElementNS(NS, 'line')
       ln.setAttribute('x1', String(x1)); ln.setAttribute('y1', String(y1))
       ln.setAttribute('x2', String(x2)); ln.setAttribute('y2', String(y2))
-      ln.setAttribute('stroke', 'rgba(196,160,68,0.75)')
-      ln.setAttribute('stroke-width', '0.75')
+      // Gap lines (equal-spacing) are purple; alignment lines are gold
+      ln.setAttribute('stroke', line.isGap ? 'rgba(139,92,246,0.80)' : 'rgba(196,160,68,0.75)')
+      ln.setAttribute('stroke-width', line.isGap ? '0.65' : '0.75')
       ln.setAttribute('stroke-linecap', 'round')
+      if (line.isGap) ln.setAttribute('stroke-dasharray', '2 2')
 
       g.appendChild(ln)
       svg.appendChild(g)
@@ -1368,9 +1513,12 @@ export function CanvasArea(s: ExportPageState) {
 
   // SNAP_OUTER: distance at which guide lines appear (visual hint, no position change)
   // SNAP_INNER: distance at which the block actually locks to the target
-  // Two-zone design mimics Figma/Sketch feel — guides appear early, snap happens late.
-  const SNAP_OUTER = 8
-  const SNAP_INNER = 3
+  // Both are in SCREEN pixels — divide by canvasZoom to get canvas-space threshold,
+  // so snap feel is identical regardless of zoom level (matches Figma behaviour).
+  const SNAP_OUTER_PX = 8   // screen pixels
+  const SNAP_INNER_PX = 3   // screen pixels
+  const SNAP_OUTER = SNAP_OUTER_PX / Math.max(0.1, canvasZoom)
+  const SNAP_INNER = SNAP_INNER_PX / Math.max(0.1, canvasZoom)
 
   // ── Snap candidate type ──────────────────────────────────────────────────
   // Precomputed once at dragStart; each candidate knows which source block it
@@ -1382,8 +1530,9 @@ export function CanvasArea(s: ExportPageState) {
     srcMax: number   // bottom for H-lines, right for V-lines
     isPage: boolean
   }
-  type SnapCandidates = { x: SnapCandidate[]; y: SnapCandidate[]; pageId: string }
-  const snapCandidatesRef = React.useRef<SnapCandidates>({ x: [], y: [], pageId: '' })
+  type OtherRect = { x: number; y: number; w: number; h: number }
+  type SnapCandidates = { x: SnapCandidate[]; y: SnapCandidate[]; others: OtherRect[]; pageId: string }
+  const snapCandidatesRef = React.useRef<SnapCandidates>({ x: [], y: [], others: [], pageId: '' })
 
   // Call this in onDragStart to build the candidate list once per drag gesture
   const buildSnapCandidates = React.useCallback((
@@ -1421,90 +1570,171 @@ export function CanvasArea(s: ExportPageState) {
         ]
       }),
     ]
-    snapCandidatesRef.current = { x: xCandidates, y: yCandidates, pageId }
+    // Raw rects stored for gap snapping (equal-spacing detection in computeSnap)
+    const otherRects: OtherRect[] = others.map(b => ({ ...b.pixelPos! }))
+    snapCandidatesRef.current = { x: xCandidates, y: yCandidates, others: otherRects, pageId }
   }, [])
 
   // ── Multi-axis independent snap solver ───────────────────────────────────
-  // Each of the 3 dragging-block edges (start/center/end) is tested against
-  // all candidates independently. The closest match on each axis wins.
-  // Guide lines span only between the dragging block and its matched source.
+  // FIX 1: guide line from/to now uses the post-snap position so lines always
+  //         land exactly on the aligned anchor (no offset in the outer zone).
+  // FIX 2: all candidates at the winning position within SNAP_OUTER are merged
+  //         into one continuous line (tldraw multi-guide behaviour).
   const computeSnap = React.useCallback((
     dx: number, dy: number, dw: number, dh: number,
     pageId: string,
   ): { sx: number; sy: number; lines: SnapLine[] } => {
-    // Guard: if candidates are from a different page, skip snap entirely
     if (snapCandidatesRef.current.pageId !== pageId) {
       return { sx: dx, sy: dy, lines: [] }
     }
     const { x: xCandidates, y: yCandidates } = snapCandidatesRef.current
 
-    // dragging block's three edges on each axis
     const dxEdges = [
-      { v: dx,           adj: 0        },   // left edge
-      { v: dx + dw / 2,  adj: -dw / 2  },   // center
-      { v: dx + dw,      adj: -dw      },   // right edge
+      { v: dx,          adj: 0       },
+      { v: dx + dw / 2, adj: -dw / 2 },
+      { v: dx + dw,     adj: -dw     },
     ]
     const dyEdges = [
-      { v: dy,           adj: 0        },
-      { v: dy + dh / 2,  adj: -dh / 2  },
-      { v: dy + dh,      adj: -dh      },
+      { v: dy,          adj: 0       },
+      { v: dy + dh / 2, adj: -dh / 2 },
+      { v: dy + dh,     adj: -dh     },
     ]
 
+    // ── X axis: pick best candidate ───────────────────────────────────────
     let bestXDelta = SNAP_OUTER + 1
-    let bestYDelta = SNAP_OUTER + 1
-    let sx = dx, sy = dy
-    let bestXCand: SnapCandidate | null = null
-    let bestYCand: SnapCandidate | null = null
-
+    let bestXPos = 0
+    let bestXAdj = 0
     for (const cand of xCandidates) {
       for (const { v, adj } of dxEdges) {
         const delta = Math.abs(v - cand.pos)
         if (delta < bestXDelta) {
           bestXDelta = delta
-          // Only actually snap position if within inner zone
-          sx = delta <= SNAP_INNER ? cand.pos + adj : dx
-          bestXCand = cand
+          bestXPos   = cand.pos
+          bestXAdj   = adj
         }
       }
     }
+
+    // ── Y axis ────────────────────────────────────────────────────────────
+    let bestYDelta = SNAP_OUTER + 1
+    let bestYPos = 0
+    let bestYAdj = 0
     for (const cand of yCandidates) {
       for (const { v, adj } of dyEdges) {
         const delta = Math.abs(v - cand.pos)
         if (delta < bestYDelta) {
           bestYDelta = delta
-          sy = delta <= SNAP_INNER ? cand.pos + adj : dy
-          bestYCand = cand
+          bestYPos   = cand.pos
+          bestYAdj   = adj
         }
       }
     }
 
-    // Guide lines appear in outer zone; snap position only commits in inner zone
-    const snappedX = bestXDelta <= SNAP_INNER ? sx : dx
-    const snappedY = bestYDelta <= SNAP_INNER ? sy : dy
+    const sx = bestXDelta <= SNAP_INNER ? bestXPos + bestXAdj : dx
+    const sy = bestYDelta <= SNAP_INNER ? bestYPos + bestYAdj : dy
+
+    // FIX 1: guide span uses actual display coords of the dragging block
+    const gx = sx   // after snap (or dx if no inner snap)
+    const gy = sy
 
     const lines: SnapLine[] = []
-    if (bestXDelta <= SNAP_OUTER && bestXCand) {
-      const dragMin = snappedY
-      const dragMax = snappedY + dh
-      lines.push({ type: 'v', pos: bestXCand.pos,
-        from: Math.min(bestXCand.srcMin, dragMin),
-        to:   Math.max(bestXCand.srcMax, dragMax),
-      })
-    }
-    if (bestYDelta <= SNAP_OUTER && bestYCand) {
-      const dragMin = snappedX
-      const dragMax = snappedX + dw
-      lines.push({ type: 'h', pos: bestYCand.pos,
-        from: Math.min(bestYCand.srcMin, dragMin),
-        to:   Math.max(bestYCand.srcMax, dragMax),
-      })
+
+    // FIX 2: merge all x-candidates at the winning position into one line
+    if (bestXDelta <= SNAP_OUTER) {
+      let mergedMin = gy
+      let mergedMax = gy + dh
+      for (const cand of xCandidates) {
+        if (Math.abs(cand.pos - bestXPos) < 0.5) {
+          mergedMin = Math.min(mergedMin, cand.srcMin)
+          mergedMax = Math.max(mergedMax, cand.srcMax)
+        }
+      }
+      lines.push({ type: 'v', pos: bestXPos, from: mergedMin, to: mergedMax })
     }
 
-    return {
-      sx: bestXDelta <= SNAP_INNER ? sx : dx,
-      sy: bestYDelta <= SNAP_INNER ? sy : dy,
-      lines,
+    if (bestYDelta <= SNAP_OUTER) {
+      let mergedMin = gx
+      let mergedMax = gx + dw
+      for (const cand of yCandidates) {
+        if (Math.abs(cand.pos - bestYPos) < 0.5) {
+          mergedMin = Math.min(mergedMin, cand.srcMin)
+          mergedMax = Math.max(mergedMax, cand.srcMax)
+        }
+      }
+      lines.push({ type: 'h', pos: bestYPos, from: mergedMin, to: mergedMax })
     }
+
+    // ── Gap snapping (equal-spacing detection) ────────────────────────────
+    // For each pair of other blocks, check if the dragging block fits between
+    // them at equal spacing on X or Y axis. Snap within SNAP_INNER; guide
+    // lines (purple) appear within SNAP_OUTER.
+    const { others } = snapCandidatesRef.current
+    let gapSx = sx, gapSy = sy  // may be overridden if gap snap is better
+
+    if (others.length >= 2) {
+      // ── Horizontal gap ───────────────────────────────────────────────────
+      let bestGapXDelta = SNAP_OUTER + 1
+      for (let i = 0; i < others.length; i++) {
+        for (let j = i + 1; j < others.length; j++) {
+          const a = others[i], b = others[j]
+          const left  = a.x + a.w <= b.x ? a : (b.x + b.w <= a.x ? b : null)
+          const right = left === a ? b : (left === b ? a : null)
+          if (!left || !right) continue
+          const totalGap = right.x - (left.x + left.w)
+          if (totalGap <= dw) continue  // dragging block won't fit
+          const targetX = left.x + left.w + (totalGap - dw) / 2
+          const delta = Math.abs(sx - targetX)
+          if (delta < bestGapXDelta) {
+            bestGapXDelta = delta
+            if (delta <= SNAP_OUTER) {
+              const snappedX = delta <= SNAP_INNER ? targetX : sx
+              gapSx = delta <= SNAP_INNER ? targetX : gapSx
+              const lineY = (Math.max(left.y, right.y, gy) + Math.min(left.y + left.h, right.y + right.h, gy + dh)) / 2
+              // Remove any conflicting alignment line on X already added
+              // Add gap guide: one vertical line through dragging block center
+              lines.push({ type: 'v', pos: snappedX + dw / 2,
+                from: Math.min(left.y, right.y, gy),
+                to: Math.max(left.y + left.h, right.y + right.h, gy + dh),
+                isGap: true })
+              // Two horizontal tick lines showing the equal gaps
+              lines.push({ type: 'h', pos: lineY, from: left.x + left.w, to: snappedX, isGap: true })
+              lines.push({ type: 'h', pos: lineY, from: snappedX + dw, to: right.x, isGap: true })
+            }
+          }
+        }
+      }
+
+      // ── Vertical gap ─────────────────────────────────────────────────────
+      let bestGapYDelta = SNAP_OUTER + 1
+      for (let i = 0; i < others.length; i++) {
+        for (let j = i + 1; j < others.length; j++) {
+          const a = others[i], b = others[j]
+          const top    = a.y + a.h <= b.y ? a : (b.y + b.h <= a.y ? b : null)
+          const bottom = top === a ? b : (top === b ? a : null)
+          if (!top || !bottom) continue
+          const totalGap = bottom.y - (top.y + top.h)
+          if (totalGap <= dh) continue
+          const targetY = top.y + top.h + (totalGap - dh) / 2
+          const delta = Math.abs(sy - targetY)
+          if (delta < bestGapYDelta) {
+            bestGapYDelta = delta
+            if (delta <= SNAP_OUTER) {
+              const snappedY = delta <= SNAP_INNER ? targetY : sy
+              gapSy = delta <= SNAP_INNER ? targetY : gapSy
+              const lineX = (Math.max(top.x, bottom.x, gx) + Math.min(top.x + top.w, bottom.x + bottom.w, gx + dw)) / 2
+              lines.push({ type: 'h', pos: snappedY + dh / 2,
+                from: Math.min(top.x, bottom.x, gx),
+                to: Math.max(top.x + top.w, bottom.x + bottom.w, gx + dw),
+                isGap: true })
+              lines.push({ type: 'v', pos: lineX, from: top.y + top.h, to: snappedY, isGap: true })
+              lines.push({ type: 'v', pos: lineX, from: snappedY + dh, to: bottom.y, isGap: true })
+            }
+          }
+        }
+      }
+    }
+
+    return { sx: gapSx, sy: gapSy, lines }
   }, [])
 
   type Anchor = 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right'
@@ -1795,11 +2025,8 @@ export function CanvasArea(s: ExportPageState) {
         if (isDrawModeRef.current) return
         if (_shapeDragActive) return  // shape drag in progress — don't pan canvas
         if (!touchPanRef.current) return
-        const _hmWrap = canvasWrapRef.current
-        const _hmW = _hmWrap ? _hmWrap.offsetWidth : 390
-        const _hmRenderedW = 860 * canvasZoomRef.current
-        const _hmOverflowX = Math.max(0, _hmRenderedW - _hmW)
-        const nx = Math.min(_hmW * 0.3, Math.max(-(_hmOverflowX + _hmW * 0.15), panStartPx + e.deltaX))
+        const halfVW = window.innerWidth
+        const nx = Math.min(halfVW, Math.max(-halfVW, panStartPx + e.deltaX))
         const ny = panStartPy + e.deltaY
         if (panLayerRef.current) {
           panLayerRef.current.style.transform = `translate(${nx}px,${ny}px) scale(${canvasZoomRef.current})`
@@ -1922,7 +2149,7 @@ export function CanvasArea(s: ExportPageState) {
         const target = e.target as HTMLElement
         // grid overlay 内部拖拽，不触发画布 pan
         if (target.closest('[data-grid-overlay]')) return
-        if (target.closest('.rnd-block') || target.closest('button') || target.closest('input') || target.closest('textarea')) return
+        if (target.closest('.rnd-block') || target.closest('button') || target.closest('input') || target.closest('textarea') || target.closest('[data-no-canvas-pan]')) return
         if (e.button !== 0) return
         // sticky 编辑中点空白：先保存内容再 preventDefault（preventDefault 会阻止 blur 触发）
         if (editingBlockId) {
@@ -1954,9 +2181,9 @@ export function CanvasArea(s: ExportPageState) {
         const W = wrap ? wrap.offsetWidth : 800
         const H = wrap ? wrap.offsetHeight : 600
         const MARGIN = 120
-        const _mouseRenderedW = 860 * canvasZoomRef.current
-        const _mouseOverflowX = Math.max(0, _mouseRenderedW - W)
-        const nx = Math.min(W * 0.3, Math.max(-(_mouseOverflowX + W * 0.15), panStart.current.px + e.clientX - panStart.current.mx))
+
+        const halfVW = window.innerWidth
+        const nx = Math.min(halfVW, Math.max(-halfVW, panStart.current.px + e.clientX - panStart.current.mx))
         const ny = Math.min(H - MARGIN, Math.max(-(H * 4), panStart.current.py + e.clientY - panStart.current.my))
         // 只更新目标，RAF lerp loop 负责平滑追随 → 丝滑延迟感
         _panTarget.current = { x: nx, y: ny }
@@ -2098,7 +2325,7 @@ export function CanvasArea(s: ExportPageState) {
           border-radius: 4px; overflow: visible !important; will-change: transform;
           transition: filter 0.24s cubic-bezier(0.34,1.2,0.64,1);
         }
-        .rnd-block:hover { filter: drop-shadow(0 3px 16px rgba(0,0,0,0.14)); }
+        .rnd-block:hover { box-shadow: 0 3px 16px rgba(0,0,0,0.14); }
         .rnd-block.dragging {
           filter: drop-shadow(0 12px 32px rgba(0,0,0,0.22)) !important;
           transition: filter 0s !important; z-index: 999;
@@ -2207,7 +2434,7 @@ export function CanvasArea(s: ExportPageState) {
         }}
         onPointerDown={e => {
           // button/zoom/select 클릭은 toolbar drag 아님 — 전파도 막지 않음
-          if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('span[data-zoom]') || (e.target as HTMLElement).closest('select')) return
+          if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('span[data-zoom]') || (e.target as HTMLElement).closest('select') || (e.target as HTMLElement).closest('[data-no-canvas-pan]')) return
           // 只响应主按键/主触点，忽略多指
           if (e.pointerType === 'mouse' && e.button !== 0) return
           if (e.pointerType === 'touch' && !e.isPrimary) return
@@ -2297,14 +2524,14 @@ export function CanvasArea(s: ExportPageState) {
             onMouseLeave={e => { if (!smartGuidesOn) (e.currentTarget as HTMLElement).style.background = 'none' }}
           >⊹</button>
           {guidesMenuOpen && (
-            <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 999, background: 'rgba(20,20,20,0.95)', backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)', borderRadius: '12px', padding: '12px 14px', boxShadow: '0 12px 40px rgba(0,0,0,0.32)', minWidth: '210px', fontFamily: 'Inter, DM Sans, sans-serif', border: '1px solid rgba(255,255,255,0.07)' }}>
+            <div data-no-canvas-pan onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 999, background: 'rgba(20,20,20,0.95)', backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)', borderRadius: '12px', padding: '12px 14px', boxShadow: '0 12px 40px rgba(0,0,0,0.32)', minWidth: '210px', fontFamily: 'Inter, DM Sans, sans-serif', border: '1px solid rgba(255,255,255,0.07)' }}>
               <div style={{ fontSize: '0.52rem', letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)', marginBottom: '10px', fontWeight: 600 }}>{isZh ? '辅助线' : 'Guides'}</div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '14px' }}>
                 <div>
                   <div style={{ fontSize: '0.78rem', color: '#eee', fontWeight: 500 }}>{isZh ? '智能辅助线' : 'Smart Guides'}</div>
                   <div style={{ fontSize: '0.62rem', color: 'rgba(255,255,255,0.32)', marginTop: '2px' }}>{isZh ? '拖拽磁吸对齐 · PS 级吸附' : 'Magnetic snap · PS-style'}</div>
                 </div>
-                <div onClick={toggleSmartGuides} style={{ width: '36px', height: '20px', borderRadius: '10px', flexShrink: 0, background: smartGuidesOn ? '#4aab6f' : 'rgba(255,255,255,0.15)', cursor: 'pointer', position: 'relative', transition: 'background 0.2s' }}>
+                <div onPointerDown={e => { e.stopPropagation(); e.preventDefault(); toggleSmartGuides() }} style={{ width: '36px', height: '20px', borderRadius: '10px', flexShrink: 0, background: smartGuidesOn ? '#4aab6f' : 'rgba(255,255,255,0.15)', cursor: 'pointer', position: 'relative', transition: 'background 0.2s' }}>
                   <div style={{ position: 'absolute', top: '3px', left: smartGuidesOn ? '19px' : '3px', width: '14px', height: '14px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
                 </div>
               </div>
@@ -2450,7 +2677,7 @@ export function CanvasArea(s: ExportPageState) {
                                 imgEl.onload = () => {
                                   const ratio = imgEl.naturalHeight / imgEl.naturalWidth
                                   const curW  = bTarget.pixelPos?.w ?? contentWidth
-                                  patchBlock(bid!, { content: compressed, pixelPos: bTarget.pixelPos ? { ...bTarget.pixelPos, h: Math.round(curW * ratio) } : bTarget.pixelPos })
+                                  patchBlock(bid!, { content: compressed, imgNaturalRatio: ratio, pixelPos: bTarget.pixelPos ? { ...bTarget.pixelPos, h: Math.round(curW * ratio) } : bTarget.pixelPos })
                                 }
                                 imgEl.src = compressed
                               })
@@ -2460,8 +2687,16 @@ export function CanvasArea(s: ExportPageState) {
                           inp.click()
                         })}
                         {menuBtn('🖼', isZh ? '编辑图片' : 'Edit image', isZh ? '裁剪 / 滤镜' : 'Crop / filters', () => {
-                          setImageEditorUrl(bTarget.content); setImageEditorIdx(-1);
-                          (window as any).__editingBlockId = bid; (window as any).__editingImageIdx = null
+                          const raw = bTarget.content
+                          const open = (src: string) => {
+                            setImageEditorUrl(src); setImageEditorIdx(-1);
+                            (window as any).__editingBlockId = bid; (window as any).__editingImageIdx = null
+                          }
+                          if (raw.startsWith('idb:')) {
+                            loadMediaImages(project?.id ?? '').then(imgs => open(imgs[raw.slice(4)] ?? raw))
+                          } else {
+                            open(raw)
+                          }
                         })}
                         {menuBtn('⊡', isZh ? '适应原始比例' : 'Fit original ratio', '', () => {
                           const imgEl = new window.Image()
@@ -2557,7 +2792,7 @@ export function CanvasArea(s: ExportPageState) {
                 ))}
                 <div style={{ height: '1px', background: 'rgba(0,0,0,0.07)', margin: '4px 6px' }} />
                 <button
-                  onClick={() => ctxImageInputRef.current?.click()}
+                  onClick={() => { ctxMenuPositionRef.current = ctxMenu; ctxImageInputRef.current?.click() }}
                   style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', border: 'none', background: 'transparent', borderRadius: '7px', cursor: 'pointer', textAlign: 'left', transition: 'background 0.1s' }}
                   onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.05)')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
@@ -2577,8 +2812,8 @@ export function CanvasArea(s: ExportPageState) {
           onChange={e => {
             const file = e.target.files?.[0]
             if (!file) return
-            // 立即捕获 ctxMenu（异步回调里 state 可能已变 null）
-            const capturedCtxMenu = ctxMenu
+            // 从 ref 读取坐标（onClick 时已提前捕获，此时 ctxMenu state 可能已为 null）
+            const capturedCtxMenu = ctxMenuPositionRef.current
             const reader = new FileReader()
             reader.onload = ev => {
               const dataUrl = ev.target?.result as string
@@ -2746,7 +2981,9 @@ export function CanvasArea(s: ExportPageState) {
                           // 笔刷需要 capture 保证笔迹连续，图形模式不 capture（避免页面内硬切）
                           ;(e.currentTarget as SVGSVGElement).setPointerCapture(e.pointerId)
                           const mgr = getDrawLayerManager(page.id)
-                          const pt = { x, y, pressure: e.pointerType === 'pen' ? Math.max(0.1, e.pressure) : 0.5, t: Date.now() }
+                          // pen 落笔第一点压力经常是蓝牙延迟导致的错误占位值，统一给 0.5 中性起点
+                          // touch/mouse 不受影响
+                          const pt = { x, y, pressure: 0.5, t: e.timeStamp }
                           drawDrawing.current = true
                           brushPendingPts.current = []
                           mgr.startStroke(pt)
@@ -2805,17 +3042,21 @@ export function CanvasArea(s: ExportPageState) {
                         // ── 笔刷模式 ──────────────────────────────────────────
                         if (!sharedDrawState.shapeType) {
                           if (!drawDrawing.current) return
-                          const evts: PointerEvent[] = typeof (e.nativeEvent as any).getCoalescedEvents === 'function'
-                            ? (e.nativeEvent as any).getCoalescedEvents() : [e.nativeEvent]
-                          const newPts = evts.map((re: PointerEvent) => {
-                            const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect()
-                            return {
-                              x: (re.clientX - r.left) / canvasZoom,
-                              y: (re.clientY - r.top)  / canvasZoom,
-                              pressure: re.pointerType === 'pen' ? Math.max(0.1, re.pressure) : 0.5,
-                              t: Date.now(),
-                            }
-                          })
+                          // rect 在循环外取一次，避免每个 coalesced event 都触发 layout reflow
+                          const coalescedRect = (e.currentTarget as SVGSVGElement).getBoundingClientRect()
+                          const evts: PointerEvent[] = (e.nativeEvent as any).getCoalescedEvents?.() ?? [e.nativeEvent]
+                          const newPts = evts.map((re: PointerEvent) => ({
+                            x: (re.clientX - coalescedRect.left) / canvasZoom,
+                            y: (re.clientY - coalescedRect.top)  / canvasZoom,
+                            // pen: 压力>0 用真实值，否则给 0.5（Safari 偶发 pressure=0 的空帧）
+                            // touch/mouse: 固定 0.5，行为完全不变
+                            pressure: re.pointerType === 'pen'
+                              ? (re.pressure > 0 ? re.pressure : 0.5)
+                              : 0.5,
+                            // 每个 coalesced event 有自己的真实时间戳
+                            // 原来用 Date.now() 导致同帧所有点 dt=0 → EMA速度爆炸 → alpha跑满 → 断笔
+                            t: re.timeStamp,
+                          }))
                           brushPendingPts.current.push(...newPts)
                           if (!brushRafId.current) {
                             brushRafId.current = requestAnimationFrame(() => {
@@ -3210,7 +3451,11 @@ export function CanvasArea(s: ExportPageState) {
                           className={`rnd-block${stickyBoxShadow ? ' sticky-shadow-on' : ''}${selectedBlockId === block.id ? ' tablet-selected' : ''}`}
                           style={undefined}
                           size={{ width: pos.w, height: pos.h }}
-                          position={{ x: pos.x, y: pos.y }}
+                          position={
+                            dragSnap && dragSnap.id === block.id
+                              ? { x: dragSnap.x, y: dragSnap.y }
+                              : { x: pos.x, y: pos.y }
+                          }
                           onDragStart={(e, _d) => {
                             didDragRef.current = false
                             const _me = e as unknown as MouseEvent
@@ -3235,14 +3480,18 @@ export function CanvasArea(s: ExportPageState) {
                               const { sx, sy, lines } = computeSnap(nx, ny, pos.w, pos.h, page.id)
                               nx = sx; ny = sy
                               paintSnapLines(lines, page.id)
-                            } else if (smartGuidesOn) {
-                              clearSnapLines(page.id)
+                              // Write snapped position back into Rnd via controlled position prop
+                              setDragSnap({ id: block.id, x: nx, y: ny })
+                            } else {
+                              if (smartGuidesOn) clearSnapLines(page.id)
+                              setDragSnap({ id: block.id, x: nx, y: ny })
                             }
                             snapActiveRef.current = { x: nx, y: ny }
                           }}
                           onDragStop={(_e, _d) => {
                             clearSnapLines(page.id)
                             clearSizeHint(page.id)
+                            setDragSnap(null)
                             draggingPageId.current = null
                             setDraggingPageIdState(null)
                             const blockBelongsHere = page.blocks.some(b => b.id === block.id)
@@ -3258,11 +3507,11 @@ export function CanvasArea(s: ExportPageState) {
                             dragOriginRef.current = null
                             if (final) onBlockDragStop(block.id, page.id, final.x, final.y)
                           }}
-                          onResize={block.type === 'image' ? (_e, dir, ref) => {
-                            const corners = ['topLeft', 'topRight', 'bottomLeft', 'bottomRight']
-                            if (corners.includes(dir)) {
-                              const ratio = pos.h / pos.w
-                              ref.style.height = Math.round(parseInt(ref.style.width) * ratio) + 'px'
+                          onResize={block.type === 'image' ? (_e, _dir, ref) => {
+                            // 图片 block: 始终按原始比例锁定，任意方向拖拽都保持比例
+                            const naturalRatio = (block as any).imgNaturalRatio as number | undefined
+                            if (naturalRatio) {
+                              ref.style.height = Math.round(parseInt(ref.style.width) * naturalRatio) + 'px'
                             }
                             if (smartGuidesOn) paintSizeHint({ x: pos.x, y: pos.y, w: parseInt(ref.style.width), h: parseInt(ref.style.height) }, page.id)
                           } : smartGuidesOn ? (_e, _dir, ref) => {
@@ -3273,9 +3522,11 @@ export function CanvasArea(s: ExportPageState) {
                             const blockBelongsHere = page.blocks.some(b => b.id === block.id)
                             if (!blockBelongsHere) return
                             const newW = parseInt(ref.style.width)
-                            const newH = parseInt(ref.style.height)
-                            // 如果只改了宽度（高度几乎没变），重置 userResizedH，
-                            // 让 auto-height 基于新宽度重新计算一次高度。
+                            const naturalRatio = (block as any).imgNaturalRatio as number | undefined
+                            // 图片 block: 高度由宽度 * 原始比例决定，确保无留白无变形
+                            const newH = block.type === 'image' && naturalRatio
+                              ? Math.round(newW * naturalRatio)
+                              : parseInt(ref.style.height)
                             const widthChanged = Math.abs(newW - pos.w) > 2
                             const heightChanged = Math.abs(newH - pos.h) > 2
                             const shouldResetAutoH = widthChanged && !heightChanged && TEXT_BLOCK_TYPES.includes(block.type)
@@ -3283,8 +3534,7 @@ export function CanvasArea(s: ExportPageState) {
                               ? {
                                   ...b,
                                   pixelPos: { x: position.x, y: position.y, w: newW, h: newH },
-                                  // 用户拖了高度 → 锁定；只拖了宽度 → 解锁让内容重新适配
-                                  userResizedH: heightChanged ? true : (shouldResetAutoH ? false : (b as any).userResizedH),
+                                  userResizedH: block.type === 'image' ? false : (heightChanged ? true : (shouldResetAutoH ? false : (b as any).userResizedH)),
                                 }
                               : b
                             ))
@@ -3396,7 +3646,7 @@ export function CanvasArea(s: ExportPageState) {
                             }}
                             style={{ width: '100%', height: '100%', opacity: 1, userSelect: editingBlockId === block.id ? 'text' : 'none', outline: 'none' } as React.CSSProperties}
                           >
-                            <div className="block-body" style={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative' }}>
+                            <div className="block-body" style={{ width: '100%', height: '100%', overflow: (block.type === 'image' || block.type === 'image-row') ? 'visible' : 'hidden', position: 'relative' }}>
                               {/* AI background removal overlay */}
                               {removingBgBlockId === block.id && (
                                 <div style={{ position: 'absolute', inset: 0, zIndex: 50, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '10px', background: 'rgba(255,255,255,0.82)', backdropFilter: 'blur(12px)', borderRadius: '8px' }}>
@@ -3419,7 +3669,7 @@ export function CanvasArea(s: ExportPageState) {
                                   {block.type === 'image' && (
                                     <div style={{ marginBottom: '10px' }}>
                                       <div style={{ position: 'relative', borderRadius: '8px', overflow: 'hidden', marginBottom: '10px', background: '#f0f0ee' }}>
-                                        <img src={block.content} alt="" draggable={false} onDragStart={e => e.preventDefault()} style={{ width: '100%', maxHeight: '160px', objectFit: 'cover', display: 'block', userSelect: 'none' } as React.CSSProperties} />
+                                        <IdbImg src={block.content} projectId={project?.id ?? ''} style={{ width: '100%', maxHeight: '160px', objectFit: 'cover', display: 'block', userSelect: 'none' } as React.CSSProperties} />
                                         <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.35) 0%, transparent 50%)' }} />
                                         <span style={{ position: 'absolute', bottom: '8px', left: '10px', fontSize: '0.6rem', color: 'rgba(255,255,255,0.8)', fontFamily: 'Space Mono, monospace', letterSpacing: '0.08em' }}>{isZh ? '图片预览' : 'preview'}</span>
                                       </div>
@@ -3508,7 +3758,7 @@ export function CanvasArea(s: ExportPageState) {
                                             <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0)', transition: 'background 0.15s', display: 'flex', alignItems: 'flex-start', justifyContent: 'flex-end', gap: '3px', padding: '4px' }}
                                               onMouseEnter={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.25)')}
                                               onMouseLeave={e => (e.currentTarget.style.background = 'rgba(0,0,0,0)')}>
-                                              <button onMouseDown={e => { e.stopPropagation(); e.preventDefault(); setImageEditorUrl(url); setImageEditorIdx(-1); (window as any).__editingBlockId = block.id; (window as any).__editingImageIdx = idx }}
+                                              <button onMouseDown={e => { e.stopPropagation(); e.preventDefault(); const openImgRow = (src: string) => { setImageEditorUrl(src); setImageEditorIdx(-1); (window as any).__editingBlockId = block.id; (window as any).__editingImageIdx = idx }; if (url.startsWith('idb:')) { loadMediaImages(project?.id ?? '').then(imgs => openImgRow(imgs[url.slice(4)] ?? url)) } else { openImgRow(url) } }}
                                                 style={{ background: 'rgba(255,255,255,0.9)', color: '#333', border: 'none', borderRadius: '4px', width: '20px', height: '20px', cursor: 'pointer', fontSize: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✎</button>
                                               <button onMouseDown={e => { e.stopPropagation(); e.preventDefault(); updatePageBlocks(page.id, prev => prev.map(bl => { if (bl.id !== block.id) return bl; const imgs = [...(bl.images || [])]; imgs.splice(idx, 1); const caps = [...editingImageCaptions]; caps.splice(idx, 1); setEditingImageCaptions(caps); return { ...bl, images: imgs } })) }}
                                                 style={{ background: 'rgba(180,60,60,0.85)', color: '#fff', border: 'none', borderRadius: '4px', width: '20px', height: '20px', cursor: 'pointer', fontSize: '11px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
@@ -3554,7 +3804,7 @@ export function CanvasArea(s: ExportPageState) {
                                 </div>
                               ) : (
                                 /* ── Block display mode ── */
-                                <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
+                                <div style={{ width: '100%', height: '100%', overflow: (block.type === 'image' || block.type === 'image-row') ? 'visible' : 'hidden' }}>
                                   {(block.type === 'title' || block.type === 'note' || block.type === 'custom') && (() => {
                                     // ── Auto-height ref (PPT "Resize shape to fit text") ──────────
                                     // ResizeObserver 监听内容真实高度，自动 patch pixelPos.h。
@@ -3608,53 +3858,21 @@ export function CanvasArea(s: ExportPageState) {
                                   })()}
                                   {block.type === 'image' && (() => {
                                     const isImgPanning = editingBlockId === block.id
-                                    const tx    = block.imgOffsetX ?? 0
-                                    const ty    = block.imgOffsetY ?? 0
-                                    const scale = block.imgScale ?? 1
-                                    const clipRange = block.imgClipRange as [[number,number],[number,number]] | undefined
-                                    const imgPos = (() => {
-                                      if (!clipRange || !isImgPanning) return { top: '0', left: '0', width: '100%', height: '100%' }
-                                      const [start, end] = clipRange
-                                      const ws = (end[0] - start[0]) / 100; const hs = (end[1] - start[1]) / 100
-                                      return { left: -(start[0] / ws) + '%', top: -(start[1] / hs) + '%', width: 100 / ws + '%', height: 100 / hs + '%' }
-                                    })()
                                     return (
-                                      <div data-blockid={block.id}
-                                        style={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative', cursor: isImgPanning ? 'grab' : 'default', borderRadius: `${block.imgRadius ?? 0}px` }}
-                                        onMouseDown={!isImgPanning ? undefined : e => {
-                                          e.stopPropagation()
-                                          const startX = e.clientX - tx; const startY = e.clientY - ty
-                                          const onMove = (ev: MouseEvent) => {
-                                            const imgEl = document.querySelector(`.rnd-block [data-blockid="${block.id}"] img`) as HTMLImageElement | null
-                                            const maxX  = imgEl ? Math.max(0, (imgEl.naturalWidth * scale - (imgEl.parentElement?.offsetWidth ?? 0)) / 2) : 999
-                                            const maxY  = imgEl ? Math.max(0, (imgEl.naturalHeight * scale - (imgEl.parentElement?.offsetHeight ?? 0)) / 2) : 999
-                                            patchBlock(block.id, { imgOffsetX: Math.min(maxX, Math.max(-maxX, ev.clientX - startX)), imgOffsetY: Math.min(maxY, Math.max(-maxY, ev.clientY - startY)) })
-                                          }
-                                          const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
-                                          window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp)
-                                        }}
-                                        onWheel={!isImgPanning ? undefined : e => { patchBlock(block.id, { imgScale: Math.min(3, Math.max(0.5, scale - e.deltaY * 0.001)) } as any) }}
-                                      >
-                                        <img src={block.content} alt="" draggable={false} onDragStart={e => e.preventDefault()}
-                                          style={{
-                                            position: isImgPanning ? 'absolute' : 'relative',
-                                            top: isImgPanning ? imgPos.top : '-0.5px',
-                                            left: isImgPanning ? imgPos.left : '-0.5px',
-                                            width: isImgPanning ? imgPos.width : 'calc(100% + 1px)',
-                                            height: isImgPanning ? imgPos.height : 'calc(100% + 1px)',
-                                            objectFit: isImgPanning ? undefined : 'fill',
-                                            transform: isImgPanning ? `translate(${tx}px, ${ty}px) scale(${scale})` : undefined,
-                                            transformOrigin: 'center center', display: 'block', userSelect: 'none',
-                                            boxShadow: block.imgShadow ? `0 ${Math.round(block.imgShadow / 2)}px ${block.imgShadow}px rgba(0,0,0,0.22)` : 'none',
-                                            filter: block.imgBlur ? `blur(${block.imgBlur}px)` : 'none',
-                                          } as React.CSSProperties}
+                                      <>
+                                        <ImageBlockRenderer
+                                          block={block}
+                                          projectId={project?.id ?? ''}
+                                          isImgPanning={isImgPanning}
+                                          patchBlock={patchBlock}
+                                          contentWidth={contentWidth}
                                         />
                                         {isImgPanning && (
                                           <div style={{ position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: '0.6rem', padding: '3px 8px', borderRadius: '4px', pointerEvents: 'none', fontFamily: 'Space Mono, monospace', whiteSpace: 'nowrap' }}>
                                             {isZh ? '拖动调整位置 · 滚轮缩放 · 单击外部退出' : 'Drag · Scroll zoom · Click outside to exit'}
                                           </div>
                                         )}
-                                      </div>
+                                      </>
                                     )
                                   })()}
                                   {block.type === 'image-row' && (
@@ -3662,7 +3880,7 @@ export function CanvasArea(s: ExportPageState) {
                                       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${(block.images || []).length}, 1fr)`, gap: '6px' }}>
                                         {(block.images || []).map((url, idx) => (
                                           <div key={idx} style={{ position: 'relative' }} className="img-row-item">
-                                            <img src={url} alt="" draggable={false} onDragStart={e => e.preventDefault()} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: '7px', display: 'block', userSelect: 'none' } as React.CSSProperties} />
+                                            <IdbImg src={url} projectId={project?.id ?? ''} style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', borderRadius: `${block.imgRadius ?? 7}px`, display: 'block', userSelect: 'none', boxShadow: 'none', filter: block.imgBlur ? `blur(${block.imgBlur}px)` : 'none' } as React.CSSProperties} />
                                             <button
                                               onClick={e => { e.stopPropagation(); updatePageBlocks(page.id, prev => prev.map(bl => { if (bl.id !== block.id) return bl; const imgs = [...(bl.images || [])]; imgs.splice(idx, 1); const caps = [...(bl.imageCaptions || [])]; caps.splice(idx, 1); return { ...bl, images: imgs, imageCaptions: caps } })) }}
                                               className="img-row-del"

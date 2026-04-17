@@ -9,6 +9,181 @@ interface DrawLayerPanelProps {
 
 const t = (en: string, zh: string, isZh: boolean) => isZh ? zh : en
 
+// ── Reuse the same tldraw-style cursor system from CanvasArea ────────────────
+function _makeTLCursor(
+  innerFn: (fill: string, stroke: string) => string,
+  hx: number, hy: number, fallback: string,
+  withShadow = true, fillColor = 'white', strokeColor = 'black'
+): string {
+  const enc = (c: string) => c.replace(/#/g, '%23')
+  const fill = enc(fillColor), stroke = enc(strokeColor)
+  const filter = withShadow
+    ? `<defs><filter id='shadow' y='-40%25' x='-40%25' width='180px' height='180%25' color-interpolation-filters='sRGB'><feDropShadow dx='1' dy='1' stdDeviation='1.2' flood-opacity='.5'/></filter></defs>`
+    : ''
+  const gAttr = withShadow ? `filter='url(%23shadow)'` : ''
+  return `url("data:image/svg+xml,<svg height='40' width='40' viewBox='0 0 32 32' xmlns='http://www.w3.org/2000/svg' style='color: black;'>${filter}<g fill='none' transform='rotate(0 16 16)' ${gAttr}>${innerFn(fill, stroke)}</g></svg>") ${Math.round(hx * 1.25)} ${Math.round(hy * 1.25)}, ${fallback}`
+}
+const _arrowInner = (fill: string, stroke: string) =>
+  `<path d='m12 24.4219v-16.015l11.591 11.619h-6.781l-.411.124z' fill='${fill}' stroke='${fill}' stroke-width='1.2' stroke-linejoin='round'/><path d='m12 24.4219v-16.015l11.591 11.619h-6.781l-.411.124z' fill='none' stroke='${stroke}' stroke-width='0.8' stroke-linejoin='round'/><path d='m13 10.814v11.188l2.969-2.866.428-.139h4.768z' fill='${stroke}' stroke='${stroke}' stroke-width='0.4' stroke-linejoin='round'/>`
+
+// 和编辑器主界面完全一样的箭头光标
+const LAYER_SLIDER_CURSOR = _makeTLCursor(_arrowInner, 12, 8, 'default', true, 'white', 'black')
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Professional opacity slider ──────────────────────────────────────────────
+interface OpacitySliderProps {
+  value: number           // 0–1
+  onChange: (v: number) => void
+  onClickCapture?: (e: React.MouseEvent) => void
+}
+
+function OpacitySlider({ value, onChange, onClickCapture }: OpacitySliderProps) {
+  const trackRef = useRef<HTMLDivElement>(null)
+  const [dragging, setDragging] = useState(false)
+  const [hovering, setHovering] = useState(false)
+  const [showTip, setShowTip] = useState(false)
+
+  const clamp = (n: number) => Math.min(1, Math.max(0, n))
+
+  const posFromEvent = useCallback((clientX: number) => {
+    const rect = trackRef.current?.getBoundingClientRect()
+    if (!rect) return value
+    return clamp((clientX - rect.left) / rect.width)
+  }, [value])
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    setDragging(true)
+    setShowTip(true)
+    onChange(Math.round(posFromEvent(e.clientX) * 20) / 20) // snap to 5%
+  }
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!dragging) return
+    onChange(Math.round(posFromEvent(e.clientX) * 20) / 20)
+  }
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    setDragging(false)
+    setTimeout(() => setShowTip(false), 600)
+  }
+
+  // Keyboard: left/right arrows, shift for ×10
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    e.stopPropagation()
+    const step = e.shiftKey ? 0.1 : 0.05
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+      e.preventDefault()
+      onChange(clamp(Math.round((value - step) * 20) / 20))
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      onChange(clamp(Math.round((value + step) * 20) / 20))
+    }
+  }
+
+  const pct = value * 100
+
+  return (
+    <div
+      style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '5px' }}
+      onClickCapture={onClickCapture}
+    >
+      {/* Track container */}
+      <div
+        ref={trackRef}
+        tabIndex={0}
+        role="slider"
+        aria-valuenow={Math.round(pct)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onMouseEnter={() => { setHovering(true); setShowTip(true) }}
+        onMouseLeave={() => { setHovering(false); if (!dragging) setShowTip(false) }}
+        onKeyDown={handleKeyDown}
+        style={{
+          position: 'relative',
+          width: '52px',
+          height: '16px',
+          cursor: LAYER_SLIDER_CURSOR,
+          userSelect: 'none',
+          touchAction: 'none',
+          outline: 'none',
+          flexShrink: 0,
+        }}
+      >
+        {/* Track background — checkerboard to show transparency concept */}
+        <div style={{
+          position: 'absolute',
+          inset: '6px 0',
+          borderRadius: '3px',
+          background: 'repeating-conic-gradient(#d0d0d0 0% 25%, #f0f0f0 0% 50%) 0 0 / 4px 4px',
+          overflow: 'hidden',
+        }}>
+          {/* Fill — soft dark, not full black */}
+          <div style={{
+            position: 'absolute',
+            inset: 0,
+            width: `${pct}%`,
+            background: 'rgba(26,26,26,0.72)',
+            borderRadius: 'inherit',
+            transition: dragging ? 'none' : 'width 0.08s ease',
+          }} />
+          {/* Track border */}
+          <div style={{
+            position: 'absolute',
+            inset: 0,
+            borderRadius: 'inherit',
+            boxShadow: 'inset 0 0 0 1px rgba(26,26,26,0.1)',
+          }} />
+        </div>
+
+        {/* Thumb */}
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: `calc(${pct}% - 6px)`,
+          transform: 'translateY(-50%)',
+          width: '12px',
+          height: '12px',
+          borderRadius: '50%',
+          background: '#fff',
+          boxShadow: `0 0 0 1.5px rgba(26,26,26,${hovering || dragging ? '0.35' : '0.2'}), 0 1px 3px rgba(0,0,0,0.18)`,
+          transition: dragging ? 'none' : 'left 0.08s ease, box-shadow 0.12s',
+          willChange: 'left',
+        }} />
+
+        {/* Tooltip */}
+        {showTip && (
+          <div style={{
+            position: 'absolute',
+            bottom: 'calc(100% + 4px)',
+            left: `calc(${pct}% - 14px)`,
+            background: '#1a1a1a',
+            color: '#fff',
+            fontSize: '0.58rem',
+            fontFamily: 'Space Mono, monospace',
+            letterSpacing: '0.04em',
+            padding: '2px 5px',
+            borderRadius: '4px',
+            whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+            opacity: showTip ? 1 : 0,
+            transition: 'opacity 0.12s',
+            zIndex: 20,
+          }}>
+            {Math.round(pct)}%
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function DrawLayerPanel({ isZh, activePageId }: DrawLayerPanelProps) {
   const [layers, setLayers]       = useState<Layer[]>([])
   const [activeId, setActiveId]   = useState<string | null>(null)
@@ -102,7 +277,7 @@ export default function DrawLayerPanel({ isZh, activePageId }: DrawLayerPanelPro
 
       {/* Layer list */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', maxHeight: '180px', overflowY: 'auto', scrollbarWidth: 'none' }}>
-        {displayed.map((layer, i) => {
+        {displayed.map((layer) => {
           const realIdx = layers.indexOf(layer)
           const isActive = layer.id === activeId
           const isTop    = realIdx === layers.length - 1
@@ -169,14 +344,11 @@ export default function DrawLayerPanel({ isZh, activePageId }: DrawLayerPanelPro
                 }
               </div>
 
-              {/* Opacity */}
-              <input
-                type="range" min={0} max={1} step={0.05}
+              {/* ── Opacity slider (replaced native range) ── */}
+              <OpacitySlider
                 value={layer.opacity ?? 1}
-                onClick={e => e.stopPropagation()}
-                onChange={e => handleOpacity(layer.id, Number(e.target.value))}
-                title={t('Opacity', '不透明度', isZh)}
-                style={{ width: '44px', accentColor: '#1a1a1a', cursor: 'pointer' }}
+                onChange={v => handleOpacity(layer.id, v)}
+                onClickCapture={e => e.stopPropagation()}
               />
 
               {/* Move up/down */}

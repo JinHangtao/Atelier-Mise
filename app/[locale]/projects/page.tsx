@@ -250,6 +250,24 @@ export default function ProjectsPage() {
           .img-del { position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.5); color:#fff; border:none; border-radius:50%; width:30px; height:30px; cursor:pointer; display:flex; align-items:center; justify-content:center; opacity:0; transition:opacity 0.2s; font-size:13px; }
           .img-card:hover .img-del { opacity:1; }
           .note-pill { transition: all 0.15s; cursor: pointer; border-radius: 20px; }
+          /* ── Mobile ── */
+          @media (max-width: 640px) {
+            .img-edit { opacity:1 !important; }
+            .img-del  { opacity:1 !important; }
+            .detail-nav { padding: 14px 16px !important; flex-wrap: wrap; gap: 10px; }
+            .detail-nav-actions { gap: 6px !important; }
+            .detail-nav-actions button { padding: 10px 12px !important; font-size: 0.78rem !important; }
+            .detail-content { padding: 28px 16px 72px !important; }
+            .detail-modal { padding: 28px 20px !important; border-radius: 20px !important; margin: 0 12px !important; }
+            .milestone-form { grid-template-columns: 1fr !important; }
+            .milestone-form-row2 { grid-template-columns: 1fr !important; }
+            .note-add-row { flex-direction: column !important; }
+            .note-add-row button { align-self: stretch !important; }
+            .proposal-add-row { flex-direction: column !important; }
+            .proposal-add-row button { align-self: stretch !important; }
+            .note-filter-row { flex-wrap: wrap !important; gap: 6px !important; }
+            .vis-row { flex-wrap: wrap !important; gap: 6px !important; }
+          }
           .note-pill:hover { opacity: 0.8; }
           .date-btn:hover { color: #4a8abf !important; }
         `}</style>
@@ -276,15 +294,15 @@ export default function ProjectsPage() {
         )}
 
         <main style={{ minHeight: '100vh', background: '#f7f7f5' }}>
-          <nav style={{ padding: '24px 56px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(26,26,26,0.08)', background: 'rgba(247,247,245,0.9)', backdropFilter: 'blur(20px)', position: 'sticky', top: 0, zIndex: 100 }}>
-            <button onClick={() => setDetailId(null)} style={{ fontFamily: 'Space Mono, monospace', fontSize: '1rem', letterSpacing: '0.1em', color: '#888884', background: 'none', border: 'none', cursor: 'pointer' }}
+          <nav className="detail-nav" style={{ padding: '24px 56px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(26,26,26,0.08)', background: 'rgba(247,247,245,0.9)', backdropFilter: 'blur(20px)', position: 'sticky', top: 0, zIndex: 100 }}>
+            <button onClick={() => setDetailId(null)} style={{ fontFamily: 'Space Mono, monospace', fontSize: '1rem', letterSpacing: '0.1em', color: '#888884', background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0 }}
               onMouseEnter={e => (e.currentTarget.style.color = '#1a1a1a')}
               onMouseLeave={e => (e.currentTarget.style.color = '#888884')}
             >{tx.backList}</button>
-            <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '1rem', letterSpacing: '0.1em', color: '#1a1a1a' }}>PORTFOLIO_SENSEI</span>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.9rem', letterSpacing: '0.1em', color: '#1a1a1a' }}>PORTFOLIO_SENSEI</span>
+            <div className="detail-nav-actions" style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               <button onClick={() => router.push(`${isZh ? '/zh' : '/en'}/projects/${detail.id}/export`)} style={{ background: 'transparent', color: '#888884', border: '1px solid rgba(26,26,26,0.12)', padding: '14px 22px', borderRadius: '12px', fontFamily: 'Space Mono, monospace', fontSize: '0.85rem', letterSpacing: '0.1em', cursor: 'pointer' }}>
-                {isZh ? '编辑导出' : 'Export Editor'}
+                {isZh ? '导出' : 'Export'}
               </button>
               <button onClick={() => exportPDF(detail, [], [], { theme: 'sensei', font: 'mixed', width: 800, radius: 16, gap: 20, imageStyle: 'cover' }, isZh)} style={{ background: 'transparent', color: '#888884', border: '1px solid rgba(26,26,26,0.12)', padding: '14px 22px', borderRadius: '12px', fontFamily: 'Space Mono, monospace', fontSize: '0.85rem', letterSpacing: '0.1em', cursor: 'pointer' }}>PDF</button>
               <button onClick={() => exportDOCX(detail, [], [], { theme: 'sensei', font: 'mixed', width: 800, radius: 16, gap: 20, imageStyle: 'cover' }, isZh)} style={{ background: 'transparent', color: '#888884', border: '1px solid rgba(26,26,26,0.12)', padding: '14px 22px', borderRadius: '12px', fontFamily: 'Space Mono, monospace', fontSize: '0.85rem', letterSpacing: '0.1em', cursor: 'pointer' }}>Word</button>
@@ -292,7 +310,7 @@ export default function ProjectsPage() {
             </div>
           </nav>
 
-          <div style={{ maxWidth: '900px', margin: '0 auto', padding: '64px 56px 96px', animation: 'fadeUp 0.5s both' }}>
+          <div className="detail-content" style={{ maxWidth: '900px', margin: '0 auto', padding: '64px 56px 96px', animation: 'fadeUp 0.5s both' }}>
 
             {/* 项目标题区 */}
             <div style={{ marginBottom: '56px' }}>
@@ -581,7 +599,7 @@ export default function ProjectsPage() {
 
               {/* 添加节点表单 */}
               <div style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid rgba(26,26,26,0.08)', borderRadius: '16px', padding: '22px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '12px', marginBottom: '12px' }}>
+                <div className="milestone-form" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '12px', marginBottom: '12px' }}>
                   <input
                     value={newMilestone.title}
                     onChange={e => setNewMilestone({ ...newMilestone, title: e.target.value })}
@@ -596,7 +614,7 @@ export default function ProjectsPage() {
                     style={{ padding: '13px 16px', borderRadius: '10px', border: '1px solid rgba(26,26,26,0.1)', background: '#f7f7f5', fontFamily: 'DM Sans, sans-serif', fontSize: '1.05rem', color: '#1a1a1a', outline: 'none' }}
                   />
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '12px' }}>
+                <div className="milestone-form-row2" style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '12px' }}>
                   <input
                     value={newMilestone.note}
                     onChange={e => setNewMilestone({ ...newMilestone, note: e.target.value })}
@@ -617,7 +635,7 @@ export default function ProjectsPage() {
             <section style={{ marginBottom: '64px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
                 <h2 style={{ fontFamily: 'Space Mono, monospace', fontSize: '1.05rem', fontWeight: 700, color: '#1a1a1a', letterSpacing: '0.08em', textTransform: 'uppercase' }}>{tx.notes}</h2>
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div className="note-filter-row" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   {(['all', 'private', 'group', 'professor'] as const).map(v => (
                     <button key={v} className="note-pill" onClick={() => setNoteFilter(v)} style={{
                       padding: '6px 14px', fontFamily: 'Space Mono, monospace', fontSize: '0.78rem', letterSpacing: '0.1em',
@@ -651,7 +669,7 @@ export default function ProjectsPage() {
                 ))}
               </div>
               <div style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid rgba(26,26,26,0.08)', borderRadius: '16px', padding: '22px' }}>
-                <div style={{ display: 'flex', gap: '10px', marginBottom: '14px' }}>
+                <div className="vis-row" style={{ display: 'flex', gap: '10px', marginBottom: '14px' }}>
                   <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.82rem', color: '#b8b8b4', letterSpacing: '0.14em', textTransform: 'uppercase', alignSelf: 'center', flexShrink: 0 }}>{tx.visibility}:</p>
                   {(['private', 'group', 'professor'] as const).map(v => (
                     <button key={v} onClick={() => setNewNoteVis(v)} style={{
@@ -663,7 +681,7 @@ export default function ProjectsPage() {
                     </button>
                   ))}
                 </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
+                <div className="note-add-row" style={{ display: 'flex', gap: '12px' }}>
                   <textarea value={newNote} onChange={e => setNewNote(e.target.value)} rows={3}
                     placeholder={tx.nPlaceholder}
                     style={{ flex: 1, padding: '14px 18px', borderRadius: '12px', border: '1px solid rgba(26,26,26,0.1)', background: '#f7f7f5', fontFamily: 'DM Sans, sans-serif', fontSize: '1.05rem', color: '#1a1a1a', outline: 'none', resize: 'none' }}
@@ -688,7 +706,7 @@ export default function ProjectsPage() {
                   </div>
                 ))}
               </div>
-              <div style={{ display: 'flex', gap: '12px' }}>
+              <div className="proposal-add-row" style={{ display: 'flex', gap: '12px' }}>
                 <textarea value={newProposal} onChange={e => setNewProposal(e.target.value)} rows={3}
                   placeholder={tx.pPlaceholder}
                   style={{ flex: 1, padding: '14px 18px', borderRadius: '12px', border: '1px solid rgba(26,26,26,0.1)', background: 'rgba(255,255,255,0.8)', fontFamily: 'DM Sans, sans-serif', fontSize: '1.05rem', color: '#1a1a1a', outline: 'none', resize: 'none' }}
@@ -710,7 +728,7 @@ export default function ProjectsPage() {
         {/* EDIT MODAL */}
         {showModal && (
           <div style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(247,247,245,0.7)', backdropFilter: 'blur(16px)' }}>
-            <div style={{ background: '#fff', border: '1px solid rgba(26,26,26,0.1)', borderRadius: '28px', padding: '48px', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto', animation: 'modalIn 0.25s both', boxShadow: '0 24px 80px rgba(0,0,0,0.1)', position: 'relative' }}>
+            <div className="detail-modal" style={{ background: '#fff', border: '1px solid rgba(26,26,26,0.1)', borderRadius: '28px', padding: '48px', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto', animation: 'modalIn 0.25s both', boxShadow: '0 24px 80px rgba(0,0,0,0.1)', position: 'relative' }}>
               <button onClick={() => setShowModal(false)} style={{ position: 'absolute', top: '20px', right: '20px', background: 'rgba(26,26,26,0.06)', border: 'none', borderRadius: '50%', width: '36px', height: '36px', cursor: 'pointer', fontSize: '1rem', color: '#888884', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
               <h2 style={{ fontFamily: 'Space Mono, monospace', fontSize: '1.2rem', fontWeight: 700, color: '#1a1a1a', marginBottom: '36px' }}>{tx.edit}</h2>
               {[
@@ -734,7 +752,7 @@ export default function ProjectsPage() {
                   style={{ width: '100%', padding: '14px 18px', borderRadius: '12px', border: '1px solid rgba(26,26,26,0.12)', background: '#f7f7f5', fontFamily: 'DM Sans, sans-serif', fontSize: '1.05rem', color: '#1a1a1a', outline: 'none', resize: 'vertical' }}
                 />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '32px' }}>
+              <div className="list-modal-grid" style={{ display: 'grid', gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "32px" }}>
                 <div>
                   <label style={{ display: 'block', fontFamily: 'Space Mono, monospace', fontSize: '0.8rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b8b8b4', marginBottom: '8px' }}>{tx.catLabel}</label>
                   <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value as ProjectCategory })}
@@ -778,6 +796,17 @@ export default function ProjectsPage() {
         .pill-active { background: #1a1a1a !important; color: #f7f7f5 !important; border-color: #1a1a1a !important; animation: pillPop 0.32s cubic-bezier(.34,1.56,.64,1) both; }
         .pill-inactive { background: transparent !important; color: #1a1a1a !important; border-color: rgba(26,26,26,0.18) !important; }
         .pill-inactive:hover { background: rgba(26,26,26,0.06) !important; }
+        /* ── Mobile ── */
+        @media (max-width: 640px) {
+          .list-nav { padding: 14px 16px !important; }
+          .list-nav button.new-btn { padding: 10px 16px !important; font-size: 0.82rem !important; }
+          .list-header { padding: 36px 16px 24px !important; }
+          .list-filters { padding: 0 16px 28px !important; gap: 8px !important; }
+          .list-filters .pill { padding: 8px 14px !important; font-size: 0.78rem !important; }
+          .list-grid { padding: 0 16px 80px !important; grid-template-columns: 1fr !important; }
+          .list-modal { padding: 28px 20px !important; border-radius: 20px !important; margin: 0 12px !important; width: calc(100% - 24px) !important; }
+          .list-modal-grid { grid-template-columns: 1fr !important; }
+        }
       `}</style>
 
       <main style={{ minHeight: '100vh', background: '#f7f7f5', position: 'relative', overflow: 'hidden' }}>
@@ -786,25 +815,25 @@ export default function ProjectsPage() {
           <div style={{ position: 'absolute', bottom: '-80px', left: '-80px', width: '400px', height: '400px', borderRadius: '50%', border: '1px solid rgba(26,26,26,0.06)' }}/>
         </div>
 
-        <nav style={{ padding: '24px 56px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(26,26,26,0.08)', background: 'rgba(247,247,245,0.85)', backdropFilter: 'blur(20px)', position: 'sticky', top: 0, zIndex: 100 }}>
+        <nav className="list-nav" style={{ padding: '24px 56px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(26,26,26,0.08)', background: 'rgba(247,247,245,0.85)', backdropFilter: 'blur(20px)', position: 'sticky', top: 0, zIndex: 100 }}>
           <button onClick={() => router.push(isZh ? '/zh' : '/en')} style={{ fontFamily: 'Space Mono, monospace', fontSize: '1rem', letterSpacing: '0.14em', color: '#888884', background: 'none', border: 'none', cursor: 'pointer' }}
             onMouseEnter={e => (e.currentTarget.style.color = '#1a1a1a')}
             onMouseLeave={e => (e.currentTarget.style.color = '#888884')}
           >{tx.back}</button>
           <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '1rem', letterSpacing: '0.1em', color: '#1a1a1a' }}>PORTFOLIO_SENSEI</span>
-          <button onClick={openNew} style={{ background: '#1a1a1a', color: '#f7f7f5', border: 'none', padding: '14px 28px', borderRadius: '12px', fontFamily: 'Space Mono, monospace', fontSize: '0.9rem', letterSpacing: '0.12em', cursor: 'pointer' }}
+          <button className="new-btn" onClick={openNew} style={{ background: '#1a1a1a', color: '#f7f7f5', border: 'none', padding: '14px 28px', borderRadius: '12px', fontFamily: 'Space Mono, monospace', fontSize: '0.9rem', letterSpacing: '0.12em', cursor: 'pointer' }}
             onMouseEnter={e => (e.currentTarget.style.opacity = '0.8')}
             onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
           >{tx.newProject}</button>
         </nav>
 
-        <div style={{ padding: '64px 56px 40px', position: 'relative', zIndex: 1, animation: 'fadeUp 0.6s both' }}>
+        <div className="list-header" style={{ padding: '64px 56px 40px', position: 'relative', zIndex: 1, animation: 'fadeUp 0.6s both' }}>
           <p style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.85rem', letterSpacing: '0.3em', color: '#b8b8b4', textTransform: 'uppercase', marginBottom: '14px' }}>02 / PROJECTS</p>
           <h1 style={{ fontFamily: 'Space Mono, monospace', fontSize: 'clamp(2rem, 3vw, 3rem)', fontWeight: 700, color: '#1a1a1a', letterSpacing: '-0.02em' }}>{tx.title}</h1>
           <p style={{ fontSize: '1.1rem', color: '#888884', marginTop: '12px' }}>{tx.subtitle}</p>
         </div>
 
-        <div style={{ padding: '0 56px 36px', display: 'flex', gap: '12px', flexWrap: 'wrap', position: 'relative', zIndex: 1 }}>
+        <div className="list-filters" style={{ padding: '0 56px 36px', display: 'flex', gap: '12px', flexWrap: 'wrap', position: 'relative', zIndex: 1 }}>
           {(['all', 'planning', 'in-progress', 'completed', 'on-hold'] as const).map(s => (
             <button key={s} className={`pill ${filterStatus === s ? 'pill-active' : 'pill-inactive'}`} onClick={() => setFilterStatus(s)} style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.85rem', letterSpacing: '0.14em', textTransform: 'uppercase', padding: '10px 20px', borderRadius: '24px', border: '1px solid rgba(26,26,26,0.12)', cursor: 'pointer' }}>
               {s === 'all' ? tx.all : STATUS_LABEL[s]}
@@ -818,7 +847,7 @@ export default function ProjectsPage() {
           ))}
         </div>
 
-        <div style={{ padding: '0 56px 96px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px', position: 'relative', zIndex: 1 }}>
+        <div className="list-grid" style={{ padding: '0 56px 96px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px', position: 'relative', zIndex: 1 }}>
           {filtered.length === 0 && (
             <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '100px 0', fontFamily: 'Space Mono, monospace', fontSize: '1rem', color: '#b8b8b4', letterSpacing: '0.1em' }}>{tx.empty}</div>
           )}
@@ -874,7 +903,7 @@ export default function ProjectsPage() {
         {/* NEW PROJECT MODAL */}
         {showModal && (
           <div style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(247,247,245,0.7)', backdropFilter: 'blur(16px)' }}>
-            <div style={{ background: '#fff', border: '1px solid rgba(26,26,26,0.1)', borderRadius: '28px', padding: '48px', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto', animation: 'modalIn 0.25s both', boxShadow: '0 24px 80px rgba(0,0,0,0.1)', position: 'relative' }}>
+            <div className="list-modal" style={{ background: '#fff', border: '1px solid rgba(26,26,26,0.1)', borderRadius: '28px', padding: '48px', width: '100%', maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto', animation: 'modalIn 0.25s both', boxShadow: '0 24px 80px rgba(0,0,0,0.1)', position: 'relative' }}>
               <button onClick={() => setShowModal(false)} style={{ position: 'absolute', top: '20px', right: '20px', background: 'rgba(26,26,26,0.06)', border: 'none', borderRadius: '50%', width: '36px', height: '36px', cursor: 'pointer', fontSize: '1rem', color: '#888884', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
               <h2 style={{ fontFamily: 'Space Mono, monospace', fontSize: '1.2rem', fontWeight: 700, color: '#1a1a1a', marginBottom: '36px' }}>{editId ? tx.edit : tx.newProject}</h2>
               {[
@@ -898,7 +927,7 @@ export default function ProjectsPage() {
                   style={{ width: '100%', padding: '14px 18px', borderRadius: '12px', border: '1px solid rgba(26,26,26,0.12)', background: '#f7f7f5', fontFamily: 'DM Sans, sans-serif', fontSize: '1.05rem', color: '#1a1a1a', outline: 'none', resize: 'vertical' }}
                 />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '32px' }}>
+              <div className="list-modal-grid" style={{ display: 'grid', gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "32px" }}>
                 <div>
                   <label style={{ display: 'block', fontFamily: 'Space Mono, monospace', fontSize: '0.8rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b8b8b4', marginBottom: '8px' }}>{tx.catLabel}</label>
                   <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value as ProjectCategory })}

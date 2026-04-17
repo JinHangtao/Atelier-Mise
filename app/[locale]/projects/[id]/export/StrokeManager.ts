@@ -262,6 +262,14 @@ export class StrokeManager {
   private _smearCanvas: HTMLCanvasElement | null = null
   private _penSnapData: ImageData | null = null
 
+  // ── Marker offscreen（防叠加圆形印迹）────────────────────────────────────
+  // marker 笔画期间，整条路径始终画在 _markerOffscreen（完全不透明）。
+  // 每次 _renderSegment 时先清空 offscreen、用全量 _points 重绘，
+  // 再把 _markerBaseSnap（笔画前底图）+ offscreen 以 state.alpha 合并写回 layer。
+  // 笔抬起时 commit，整条笔画只做一次 alpha composite，不会有逐段叠加印迹。
+  private _markerOffscreen: HTMLCanvasElement | null = null
+  private _markerBaseSnap: ImageData | null = null
+
   // ── Pen SVG overlay（矢量实时预览）────────────────────────────────────────
   // 绘制中：回调把 SVG path string + 样式传给外部（CanvasArea）渲染到 SVG overlay
   // 笔抬起：光栅化进 Canvas，回调 null 清空 overlay
@@ -283,7 +291,9 @@ export class StrokeManager {
     const dt = Math.max(1, raw.t - this._emaPrevT)
     const vel = Math.sqrt((raw.x - this._emaPrevX) ** 2 + (raw.y - this._emaPrevY) ** 2) / dt
     this._emaVel = this._emaVel * 0.6 + vel * 0.4
-    const alpha = 0.35 + (0.82 - 0.35) * Math.max(0, Math.min(1, this._emaVel / 2.5))
+    // 低速 alpha 从 0.35 → 0.55：Pencil 坐标精度高，低速不需要重平滑
+    // 手指触摸点少、无 coalesced events，此改动对手指无影响
+    const alpha = 0.55 + (0.88 - 0.55) * Math.max(0, Math.min(1, this._emaVel / 2.5))
     const sx = this._emaPrevX + (raw.x - this._emaPrevX) * alpha
     const sy = this._emaPrevY + (raw.y - this._emaPrevY) * alpha
     this._emaPrevX = sx; this._emaPrevY = sy; this._emaPrevT = raw.t
@@ -323,6 +333,24 @@ export class StrokeManager {
       sctx.drawImage(src, 0, 0)
     } else {
       this._smearCanvas = null
+    }
+
+    // marker：保存底图快照 + 初始化 offscreen
+    if (state.brushType === 'marker') {
+      const src = layer.canvas
+      const lctx = src.getContext('2d')!
+      this._markerBaseSnap = lctx.getImageData(0, 0, src.width, src.height)
+      if (!this._markerOffscreen ||
+          this._markerOffscreen.width  !== src.width ||
+          this._markerOffscreen.height !== src.height) {
+        this._markerOffscreen = document.createElement('canvas')
+        this._markerOffscreen.width  = src.width
+        this._markerOffscreen.height = src.height
+      }
+      this._markerOffscreen.getContext('2d')!.clearRect(0, 0, src.width, src.height)
+    } else {
+      this._markerOffscreen = null
+      this._markerBaseSnap  = null
     }
 
     this._emaReset()
@@ -366,6 +394,9 @@ export class StrokeManager {
     if (wasPen && this.onPenSvgUpdate) {
       this.onPenSvgUpdate(null, '', 1, 0)  // clear overlay
     }
+    // marker commit：直接把 layer 当前状态留住（已在 _renderSegment 里实时写入）
+    this._markerOffscreen = null
+    this._markerBaseSnap  = null
     this._smearCanvas = null
     this._penSnapData = null
     this._penLogicalPts = []
@@ -390,14 +421,36 @@ export class StrokeManager {
     const ctx = layer.canvas.getContext('2d')!
 
     // ── 坐标换算 ──
-    // 所有逻辑坐标在这里统一 × dpr，之后 universalRenderStroke 看到的全是物理像素
-    // brushSize 也必须 × dpr，否则坐标放大了但笔刷半径没跟上，画出细点
     const dpr = this.dpr
     const toPhys = (p: LogicalPoint) => ({ ...p, x: p.x * dpr, y: p.y * dpr })
     const physState: DrawState = { ...state, size: state.size * dpr }
 
     if (state.brushType === 'pen') {
-      // pen 走 SVG overlay，不在这里渲染
+      return
+    }
+
+    // ── MARKER：offscreen 全量重绘，一次 alpha composite 写回 layer ──────────
+    if (state.brushType === 'marker' && this._markerOffscreen && this._markerBaseSnap) {
+      const off    = this._markerOffscreen
+      const offCtx = off.getContext('2d')!
+
+      // 1. 清空 offscreen，用全量 _points 不透明地画完整路径
+      offCtx.clearRect(0, 0, off.width, off.height)
+      const allPhys = pts.map(toPhys)
+      universalRenderStroke(
+        offCtx, allPhys, { ...physState, alpha: 1 }, brush,
+        { current: 0 }, { current: 0 },
+      )
+
+      // 2. 把底图恢复到 layer
+      ctx.putImageData(this._markerBaseSnap, 0, 0)
+
+      // 3. 把 offscreen 以 state.alpha 一次性叠到 layer
+      ctx.save()
+      ctx.globalCompositeOperation = 'source-over'
+      ctx.globalAlpha = state.alpha
+      ctx.drawImage(off, 0, 0)
+      ctx.restore()
       return
     }
 

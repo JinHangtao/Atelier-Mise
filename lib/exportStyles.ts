@@ -28,6 +28,7 @@ export interface Block {
   imgFit?: 'cover' | 'contain'
   imgRadius?: number
   imgShadow?: number
+  imgInsetShadow?: number
   imgBlur?: number
   imgOffsetX?: number
   imgOffsetY?: number
@@ -364,8 +365,28 @@ export function renderBlockHTML(
   }
 
   if (b.type === 'image') {
-    return `<div class="block" style="padding:0;overflow:hidden;border-radius:inherit">
- <img src="${b.content}" class="${imgClass}" style="width:100%;display:block;" alt="${b.caption || ''}" />
+    const imgRadius = b.imgRadius ?? 0
+    const imgBlur   = b.imgBlur   ?? 0
+    const shadow    = b.imgShadow ?? 0
+    const offsetY   = Math.round(shadow * 0.35)
+    const blurR     = Math.round(shadow * 0.5)
+    const opacity   = Math.min(0.45, 0.08 + shadow * 0.012)
+    const wrapperStyle = [
+      'padding:0',
+      'overflow:visible',
+      imgRadius ? `border-radius:${imgRadius}px` : 'border-radius:inherit',
+    ].filter(Boolean).join(';')
+    const imgStyle = [
+      'width:100%',
+      'display:block',
+      imgRadius ? `border-radius:${imgRadius}px` : '',
+      // box-shadow 直接在 img 上：静态 HTML 浏览器最稳，不受父容器 overflow 影响
+      shadow > 0 ? `box-shadow:0 ${offsetY}px ${shadow}px rgba(0,0,0,${opacity.toFixed(2)})` : '',
+      // filter: blur 和 drop-shadow 互斥，有 blur 优先 blur，阴影靠 capturePages canvas 后处理
+      imgBlur > 0 ? `filter:blur(${imgBlur}px)` : (shadow > 0 ? `filter:drop-shadow(0 ${offsetY}px ${blurR}px rgba(0,0,0,${opacity.toFixed(2)}))` : ''),
+    ].filter(Boolean).join(';')
+    return `<div class="block block-img" style="${wrapperStyle}">
+ <img src="${b.content}" class="${imgClass}" style="${imgStyle}" alt="${b.caption || ''}" />
  ${b.caption ? `<p class="caption" style="padding:10px 16px 14px">${b.caption}</p>` : ''}
 </div>`
   }
@@ -373,10 +394,30 @@ export function renderBlockHTML(
   if (b.type === 'image-row') {
     const imgs = b.images || []
     const cols = Math.min(imgs.length, 4)
-    return `<div class="block" style="padding:0;overflow:hidden;border-radius:inherit">
+    const imgRadius = b.imgRadius ?? 7
+    const imgBlur   = b.imgBlur   ?? 0
+    const shadow    = b.imgShadow ?? 0
+    const offsetY   = Math.round(shadow * 0.35)
+    const blurR     = Math.round(shadow * 0.5)
+    const opacity   = Math.min(0.45, 0.08 + shadow * 0.012)
+    const imgStyle = [
+      'width:100%',
+      'display:block',
+      `border-radius:${imgRadius}px`,
+      // box-shadow 直接在 img 上：静态 HTML 浏览器最稳
+      shadow > 0 ? `box-shadow:0 ${offsetY}px ${shadow}px rgba(0,0,0,${opacity.toFixed(2)})` : '',
+      // filter: blur 和 drop-shadow 互斥
+      imgBlur > 0 ? `filter:blur(${imgBlur}px)` : (shadow > 0 ? `filter:drop-shadow(0 ${offsetY}px ${blurR}px rgba(0,0,0,${opacity.toFixed(2)}))` : ''),
+    ].filter(Boolean).join(';')
+    const imgWrapStyle = [
+      'position:relative',
+      `border-radius:${imgRadius}px`,
+      'overflow:visible',
+    ].filter(Boolean).join(';')
+    return `<div class="block block-img" style="padding:0;overflow:visible">
  <div class="img-grid" style="grid-template-columns:repeat(${cols},1fr)">
- ${imgs.map((url, idx) => `<div>
- <img src="${url}" class="img-square" style="width:100%;display:block;" alt="${(b.imageCaptions || [])[idx] || ''}" />
+ ${imgs.map((url, idx) => `<div style="${imgWrapStyle}">
+ <img src="${url}" class="img-square" style="${imgStyle}" alt="${(b.imageCaptions || [])[idx] || ''}" />
  ${(b.imageCaptions || [])[idx] ? `<p class="img-caption">${(b.imageCaptions || [])[idx]}</p>` : ''}
  </div>`).join('\n ')}
  </div>
@@ -603,13 +644,16 @@ export function buildExportHTMLMultiPage(
  html { -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
  body { background:${t.bg}; font-family:${f.bodyStack}; color:${t.text}; font-size:16px; line-height:1.75; }
  /* 页面容器：absolute 子块的坐标锚点，绝不能有 padding */
- .export-page { position:relative; overflow:hidden; flex-shrink:0; }
+ .export-page { position:relative; overflow:visible; flex-shrink:0; }
  /* block 在多页模式下完全由 pixelPos 决定位置和尺寸，
  不加 margin / padding / border-radius，避免撑出容器 */
  .block {
  position:absolute;
  overflow:hidden;
  box-sizing:border-box;
+ }
+ .block-img {
+ overflow:visible;
  }
  /* ── 内容元素样式（与 buildExportCSS 保持一致） ── */
  h1 {

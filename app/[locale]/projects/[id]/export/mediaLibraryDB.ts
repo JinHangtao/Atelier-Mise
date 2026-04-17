@@ -3,6 +3,11 @@
  * 把媒体库图片存进 IndexedDB，避免 base64 塞满 localStorage（5MB 上限）。
  * 每张图用 key = `${projectId}:${imageId}` 存储。
  * project 里只保留 id 列表（mediaIds），不再存 base64。
+ *
+ * ── 对外统一入口 ──────────────────────────────────────────────────────────────
+ * 所有写图片的地方（addImageBlock、patchBlock、removeBackground、ImageEditor 保存、
+ * onReplaceImage）都应该经过 saveImageIfNeeded / saveImagesIfNeeded，
+ * 不要直接把 dataUrl 写进 block.content，否则会把 base64 存进 localStorage 导致超限丢失。
  */
 
 const DB_NAME    = 'ps-media-library'
@@ -62,6 +67,20 @@ export async function loadMediaImages(projectId: string): Promise<Record<string,
   return result
 }
 
+/** 读取单张图片 */
+export async function loadMediaImage(projectId: string, imageId: string): Promise<string | null> {
+  const db  = await openDB()
+  const key = `${projectId}:${imageId}`
+  const result = await new Promise<string | null>((resolve, reject) => {
+    const tx  = db.transaction(STORE, 'readonly')
+    const req = tx.objectStore(STORE).get(key)
+    req.onsuccess = () => resolve((req.result as string) ?? null)
+    req.onerror   = () => reject(req.error)
+  })
+  db.close()
+  return result
+}
+
 /** 删除一张图 */
 export async function deleteMediaImage(projectId: string, imageId: string): Promise<void> {
   const db  = await openDB()
@@ -107,4 +126,37 @@ export async function deleteProjectMedia(projectId: string): Promise<void> {
   })
 
   db.close()
+}
+
+// ── 统一写入代理 ──────────────────────────────────────────────────────────────
+// 所有写图片的地方都应该调这两个函数，而不是直接把 dataUrl 存进 block。
+
+/**
+ * 如果传入的是 base64 dataUrl，存入 IndexedDB 并返回 "idb:imageId"。
+ * 如果已经是 "idb:xxx" 引用，直接返回原值（幂等）。
+ * IndexedDB 写入失败时降级返回原 dataUrl，不崩溃（但会触发 console.error 便于排查）。
+ */
+export async function saveImageIfNeeded(
+  projectId: string,
+  urlOrData: string,
+): Promise<string> {
+  if (!urlOrData || !urlOrData.startsWith('data:')) return urlOrData
+  try {
+    const imageId = await saveMediaImage(projectId, urlOrData)
+    return `idb:${imageId}`
+  } catch (err) {
+    console.error('[mediaLibraryDB] saveImageIfNeeded failed, falling back to dataUrl:', err)
+    return urlOrData
+  }
+}
+
+/**
+ * 处理 image-row 的 images[] 数组，批量存入 IndexedDB。
+ * 已经是 "idb:xxx" 的元素直接跳过（幂等）。
+ */
+export async function saveImagesIfNeeded(
+  projectId: string,
+  images: string[],
+): Promise<string[]> {
+  return Promise.all(images.map(u => saveImageIfNeeded(projectId, u)))
 }

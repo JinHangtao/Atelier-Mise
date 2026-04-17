@@ -10,55 +10,39 @@ export default function Home() {
   const pathname = usePathname()
   const [mounted, setMounted] = useState(false)
 
-  // 卡片引用数组（用于 tilt 效果）
   const cardRefs = useRef<(HTMLAnchorElement | null)[]>([])
 
   useEffect(() => { setMounted(true) }, [])
 
-  // Tilt 效果：为四个卡片绑定鼠标跟随旋转
   useEffect(() => {
     const cards = cardRefs.current.filter(Boolean) as HTMLAnchorElement[]
-
     const handleMouseMove = (e: MouseEvent, card: HTMLAnchorElement) => {
       const rect = card.getBoundingClientRect()
       const x = e.clientX - rect.left
       const y = e.clientY - rect.top
       const centerX = rect.width / 2
       const centerY = rect.height / 2
-      const rotateX = ((y - centerY) / centerY) * -4 // -4deg ~ 4deg
+      const rotateX = ((y - centerY) / centerY) * -4
       const rotateY = ((x - centerX) / centerX) * 4
       card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale(1.02) translateZ(10px)`
     }
-
-    const handleMouseLeave = (card: HTMLAnchorElement) => {
-      card.style.transform = ''
-    }
-
+    const handleMouseLeave = (card: HTMLAnchorElement) => { card.style.transform = '' }
     cards.forEach(card => {
       const onMove = (e: MouseEvent) => handleMouseMove(e, card)
       const onLeave = () => handleMouseLeave(card)
       card.addEventListener('mousemove', onMove as any)
       card.addEventListener('mouseleave', onLeave as any)
-      // 保存清理函数
       ;(card as any)._cleanup = () => {
         card.removeEventListener('mousemove', onMove as any)
         card.removeEventListener('mouseleave', onLeave as any)
       }
     })
-
-    return () => {
-      cards.forEach(card => {
-        if ((card as any)._cleanup) (card as any)._cleanup()
-      })
-    }
+    return () => { cards.forEach(card => { if ((card as any)._cleanup) (card as any)._cleanup() }) }
   }, [])
 
   const isZh = pathname.startsWith('/zh')
   const locale = isZh ? 'zh' : 'en'
-
-  const switchLang = () => {
-    router.push(isZh ? '/en' : '/zh')
-  }
+  const switchLang = () => { router.push(isZh ? '/en' : '/zh') }
 
   const navLinks: Record<string, string> = {
     schools: `/${locale}/schools`,
@@ -150,21 +134,26 @@ export default function Home() {
           will-change: transform;
         }
         .feature-card:hover {
-          /* transform 由 tilt 动态控制，此处仅保留阴影和边框变化 */
           box-shadow: 0 8px 32px rgba(0,0,0,0.07);
           border-left-color: rgba(26,26,26,0.55);
         }
+        .nav-pill {
+          background: rgba(255,255,255,0.82);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          border: 1px solid rgba(26,26,26,0.08);
+          border-radius: 999px;
+          display: flex;
+          align-items: center;
+        }
       `}</style>
 
-      <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden', background: '#f7f7f5' }}>
+      <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'auto', background: '#f7f7f5' }}>
 
-        {/* ── 光晕层 ── */}
         <div className="halo-cool" aria-hidden />
         <div className="halo-mid" aria-hidden />
-        {/* ── 噪点纹理层 ── */}
         <div className="noise-overlay" aria-hidden />
 
-        {/* ── 背景圆圈动画 ── */}
         <div aria-hidden style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0 }}>
           <div style={{ position: 'absolute', top: '-160px', right: '-120px', width: '600px', height: '600px', borderRadius: '50%', border: '1.5px solid rgba(26,26,26,0.25)', animation: 'floatA 18s ease-in-out infinite' }}/>
           <div style={{ position: 'absolute', top: '-80px', right: '-50px', width: '420px', height: '420px', borderRadius: '50%', border: '1px solid rgba(26,26,26,0.18)', filter: 'blur(1px)', animation: 'floatA 22s ease-in-out infinite reverse' }}/>
@@ -178,7 +167,6 @@ export default function Home() {
           <div style={{ position: 'absolute', top: '20%', right: '22%', width: '40px', height: '40px', borderRadius: '50%', border: '1.5px solid rgba(26,26,26,0.22)', animation: 'floatB 9s ease-in-out infinite reverse' }}/>
         </div>
 
-        {/* ── 坐标感装饰文字 ── */}
         <div aria-hidden style={{ position: 'fixed', bottom: '28px', left: '48px', fontFamily: 'Space Mono, monospace', fontSize: '0.5rem', letterSpacing: '0.22em', color: 'rgba(26,26,26,0.2)', zIndex: 1, pointerEvents: 'none', textTransform: 'uppercase' }}>
           EST. 2024 · OPEN SOURCE
         </div>
@@ -186,23 +174,27 @@ export default function Home() {
           ART · DESIGN · PORTFOLIO
         </div>
 
-        {/* ── NAV ── */}
-        <nav style={{ padding: '18px 48px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(26,26,26,0.08)', position: 'sticky', top: 0, zIndex: 100, background: 'rgba(247,247,245,0.82)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)' }}>
-          <Link href={`/${locale}`} className="font-mono" style={{ fontSize: '0.75rem', letterSpacing: '0.1em', color: '#1a1a1a', textDecoration: 'none' }}>
-            PORTFOLIO_SENSEI
+        {/* ── NAV 两个药丸 ── */}
+        <nav style={{ padding: '20px 48px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 100 }}>
+          {/* 左药丸：logo */}
+          <Link href={`/${locale}`} className="nav-pill font-mono" style={{ fontSize: '0.7rem', letterSpacing: '0.1em', color: '#1a1a1a', textDecoration: 'none', padding: '8px 18px' }}>
+            <img src="/icon.png" alt="" width={20} height={20} style={{ borderRadius: '6px' }} />
+            ATELIER MISE
           </Link>
-          <div style={{ display: 'flex', gap: '28px', alignItems: 'center' }}>
+
+          {/* 右药丸：导航链接 */}
+          <div className="nav-pill" style={{ padding: '6px 8px', gap: '2px' }}>
             {(['schools','projects','roadmap','aiTools','settings'] as const).map(key => (
-              <Link key={key} href={navLinks[key]} style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.56rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: '#888884', textDecoration: 'none', transition: 'color 0.15s' }}
-                onMouseEnter={e => (e.currentTarget.style.color = '#1a1a1a')}
-                onMouseLeave={e => (e.currentTarget.style.color = '#888884')}
+              <Link key={key} href={navLinks[key]} style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.52rem', letterSpacing: '0.14em', textTransform: 'uppercase', color: '#888884', textDecoration: 'none', padding: '5px 12px', borderRadius: '999px', transition: 'all 0.15s' }}
+                onMouseEnter={e => { e.currentTarget.style.color = '#1a1a1a'; e.currentTarget.style.background = 'rgba(26,26,26,0.05)' }}
+                onMouseLeave={e => { e.currentTarget.style.color = '#888884'; e.currentTarget.style.background = 'transparent' }}
               >
                 {t(`nav.${key}`)}
               </Link>
             ))}
-            <button onClick={switchLang} style={{ background: 'transparent', border: '1px solid rgba(26,26,26,0.2)', color: '#888884', padding: '4px 11px', borderRadius: '8px', fontFamily: 'Space Mono, monospace', fontSize: '0.56rem', letterSpacing: '0.1em', cursor: 'pointer', transition: 'all 0.15s' }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = '#1a1a1a'; e.currentTarget.style.color = '#1a1a1a' }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(26,26,26,0.2)'; e.currentTarget.style.color = '#888884' }}
+            <button onClick={switchLang} style={{ background: '#1a1a1a', color: '#f7f7f5', border: 'none', padding: '5px 12px', borderRadius: '999px', fontFamily: 'Space Mono, monospace', fontSize: '0.52rem', letterSpacing: '0.1em', cursor: 'pointer', marginLeft: '4px', transition: 'opacity 0.15s' }}
+              onMouseEnter={e => (e.currentTarget.style.opacity = '0.75')}
+              onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
             >
               {isZh ? 'EN' : '中文'}
             </button>
@@ -210,7 +202,7 @@ export default function Home() {
         </nav>
 
         {/* ── HERO ── */}
-        <section style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '120px 48px 60px', textAlign: 'center', gap: '28px', position: 'relative', zIndex: 3 }}>
+        <section style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 48px 60px', textAlign: 'center', gap: '28px', position: 'relative', zIndex: 3 }}>
           <div className="font-mono fade-up fade-up-1" style={{ fontSize: '0.5rem', letterSpacing: '0.36em', textTransform: 'uppercase', color: '#b8b8b4', border: '1px solid rgba(26,26,26,0.12)', padding: '5px 14px', borderRadius: '20px', background: 'rgba(255,255,255,0.6)', backdropFilter: 'blur(8px)' }}>
             {t('hero.badge')}
           </div>
@@ -232,47 +224,12 @@ export default function Home() {
             >
               {t('hero.cta')}
             </Link>
-            <a
-              href="https://github.com/JinHangtao/portfolio-sensei"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                background: 'rgba(255,255,255,0.7)',
-                color: '#1a1a1a',
-                border: '1px solid rgba(26,26,26,0.14)',
-                padding: '12px 28px',
-                borderRadius: '14px',
-                fontFamily: 'Space Mono, monospace',
-                fontSize: '0.58rem',
-                letterSpacing: '0.16em',
-                textTransform: 'uppercase',
-                fontWeight: 400,
-                cursor: 'pointer',
-                backdropFilter: 'blur(8px)',
-                textDecoration: 'none',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                transition: 'all 0.15s'
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.95)';
-                e.currentTarget.style.transform = 'translateY(-1px)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.7)';
-                e.currentTarget.style.transform = 'translateY(0)';
-              }}
+            <a href="https://github.com/JinHangtao/portfolio-sensei" target="_blank" rel="noopener noreferrer"
+              style={{ background: 'rgba(255,255,255,0.7)', color: '#1a1a1a', border: '1px solid rgba(26,26,26,0.14)', padding: '12px 28px', borderRadius: '14px', fontFamily: 'Space Mono, monospace', fontSize: '0.58rem', letterSpacing: '0.16em', textTransform: 'uppercase', fontWeight: 400, cursor: 'pointer', backdropFilter: 'blur(8px)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '8px', transition: 'all 0.15s' }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.95)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.7)'; e.currentTarget.style.transform = 'translateY(0)' }}
             >
-              {/* GitHub 图标 SVG */}
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                style={{ color: '#1a1a1a', flexShrink: 0 }}
-                xmlns="http://www.w3.org/2000/svg"
-              >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style={{ color: '#1a1a1a', flexShrink: 0 }}>
                 <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57C20.565 21.795 24 17.31 24 12c0-6.63-5.37-12-12-12z" />
               </svg>
               {t('hero.github')}
@@ -280,7 +237,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ── MARQUEE 滚动数据栏 ── */}
+        {/* ── MARQUEE ── */}
         <div style={{ borderTop: '1px solid rgba(26,26,26,0.08)', borderBottom: '1px solid rgba(26,26,26,0.08)', overflow: 'hidden', position: 'relative', zIndex: 3, background: 'rgba(255,255,255,0.3)', backdropFilter: 'blur(8px)', padding: '13px 0' }}>
           <div className="marquee-track">
             {[...Array(2)].map((_, rep) => (
@@ -303,16 +260,12 @@ export default function Home() {
             { key: 'ai' },
             { key: 'export' },
           ] as const).map(({ key }, i) => (
-            <Link
-              key={key}
-              href={`/${locale}/${key === 'ai' ? 'ai-tools' : key === 'export' ? 'projects' : key}`}
+            <Link key={key} href={`/${locale}/${key === 'ai' ? 'ai-tools' : key === 'export' ? 'projects' : key}`}
               className="feature-card"
               ref={(el) => { cardRefs.current[i] = el }}
               style={{ transition: 'transform 0.2s ease-out, box-shadow 0.2s, border-left-color 0.2s' }}
             >
-              <span className="font-mono" style={{ fontSize: '0.52rem', color: '#b8b8b4', letterSpacing: '0.2em' }}>
-                0{i + 1}
-              </span>
+              <span className="font-mono" style={{ fontSize: '0.52rem', color: '#b8b8b4', letterSpacing: '0.2em' }}>0{i + 1}</span>
               <h3 className="font-mono" style={{ fontSize: '0.72rem', color: '#1a1a1a', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                 {t(`features.${key}.title`)}
               </h3>

@@ -53,15 +53,59 @@ export function defaultPages(): Page[] {
   return [makeCoverPage()]
 }
 
+// ── IndexedDB helpers（与 useLocalStorage.ts 共用同一个 DB）────────────────
+const _DB_NAME    = 'ps-storage'
+const _DB_VERSION = 1
+const _STORE      = 'kv'
+
+function _openDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(_DB_NAME, _DB_VERSION)
+    req.onupgradeneeded = () => req.result.createObjectStore(_STORE)
+    req.onsuccess = () => resolve(req.result)
+    req.onerror   = () => reject(req.error)
+  })
+}
+
+export async function idbGetPages(key: string): Promise<unknown> {
+  const db = await _openDB()
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(_STORE, 'readonly')
+    const req = tx.objectStore(_STORE).get(key)
+    req.onsuccess = () => resolve(req.result)
+    req.onerror   = () => reject(req.error)
+  })
+}
+
+export async function idbSetPages(key: string, value: unknown): Promise<void> {
+  const db = await _openDB()
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(_STORE, 'readwrite')
+    const req = tx.objectStore(_STORE).put(value, key)
+    req.onsuccess = () => resolve()
+    req.onerror   = () => reject(req.error)
+  })
+}
+
 /**
- * One-time migration: if old flat Block[] exists in localStorage, wrap it into
- * a single default Page so no existing draft is lost.
+ * 从 IndexedDB 加载页面数据。
+ * 同时兼容旧 localStorage 数据（一次性迁移后删除）。
  */
-export function migrateOrLoad(projectId: string): Page[] {
+export async function migrateOrLoad(projectId: string): Promise<Page[]> {
   if (typeof window === 'undefined') return defaultPages()
   try {
+    // 优先从 IndexedDB 读
+    const fromIDB = await idbGetPages(pagesKey(projectId))
+    if (fromIDB) return fromIDB as Page[]
+
+    // 降级：尝试从旧 localStorage 迁移
     const raw = localStorage.getItem(pagesKey(projectId))
-    if (raw) return JSON.parse(raw) as Page[]
+    if (raw) {
+      const pages = JSON.parse(raw) as Page[]
+      await idbSetPages(pagesKey(projectId), pages)
+      localStorage.removeItem(pagesKey(projectId))
+      return pages
+    }
 
     const legacy = localStorage.getItem(draftKey(projectId))
     if (legacy) {
@@ -71,7 +115,8 @@ export function migrateOrLoad(projectId: string): Page[] {
           makeCoverPage(),
           { id: generateId(), label: 'Page 1', aspect: 'free', blocks },
         ]
-        localStorage.setItem(pagesKey(projectId), JSON.stringify(migrated))
+        await idbSetPages(pagesKey(projectId), migrated)
+        localStorage.removeItem(draftKey(projectId))
         return migrated
       }
     }

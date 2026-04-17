@@ -1171,8 +1171,9 @@ export function universalRenderStroke(
   }
 
   // ── MARKER (original path renderer) ───────────────────────────────────────
+  // globalAlpha 由调用方（StrokeManager offscreen 路径）控制，这里始终用传入的 state.alpha
   if (brush.type === 'marker') {
-    ctx.globalAlpha = brush.defaultAlpha
+    ctx.globalAlpha = state.alpha
     ctx.strokeStyle = state.color
   } else {
     ctx.globalAlpha = state.alpha

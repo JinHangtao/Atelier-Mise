@@ -9,9 +9,21 @@ import { ExportPageState, TEXT_BLOCK_TYPES, FONT_OPTIONS, COLOR_PRESETS } from '
 import { type TableData } from './TableBlock'
 import { Aspect } from './types'
 import DrawLayerPanel from './DrawLayerPanel'
+import { loadMediaImage } from './mediaLibraryDB'
 
 const TABS = ['pages', 'blocks', 'draw', 'style'] as const
 type RightTabKey = typeof TABS[number]
+
+function IdbImg({ idbKey, projectId, style }: { idbKey: string; projectId: string; style?: React.CSSProperties }) {
+  const [src, setSrc] = React.useState<string | null>(null)
+  React.useEffect(() => {
+    if (!idbKey) return
+    if (!idbKey.startsWith('idb:')) { setSrc(idbKey); return }
+    loadMediaImage(projectId, idbKey.slice(4)).then(url => setSrc(url))
+  }, [idbKey, projectId])
+  if (!src) return null
+  return <img src={src} alt="" style={style} />
+}
 
 const tabStyle = (active: boolean): React.CSSProperties => ({
   flex: 1, padding: '6px 0', fontSize: '0.62rem', letterSpacing: '0.14em',
@@ -102,7 +114,7 @@ export function RightPanel(s: ExportPageState) {
             />
             {TABS.map(tab => (
               <button key={tab} onClick={() => setRightTab(tab)} style={tabStyle(rightTab === tab)}>
-                {tab === 'pages' ? 'Pages' : tab === 'blocks' ? 'Blocks' : tab === 'draw' ? (isZh ? '画图' : 'Draw') : 'Style'}
+               {tab === 'pages' ? 'Pages' : tab === 'blocks' ? 'Blocks' : tab === 'draw' ? (isZh ? '画图' : 'Draw') : 'Tools'}
               </button>
             ))}
           </div>
@@ -580,9 +592,10 @@ export function RightPanel(s: ExportPageState) {
                     </button>
                   </div>
                   {[
-                    { label: isZh ? '圆角' : 'Radius', key: 'imgRadius' as const, min: 0, max: 50, unit: 'px' },
-                    { label: isZh ? '阴影' : 'Shadow', key: 'imgShadow' as const, min: 0, max: 40, unit: '' },
-                    { label: isZh ? '虚化' : 'Blur',   key: 'imgBlur'   as const, min: 0, max: 20, unit: 'px' },
+                    { label: isZh ? '圆角' : 'Radius',       key: 'imgRadius'      as const, min: 0, max: 50, unit: 'px' },
+                    { label: isZh ? '外阴影' : 'Shadow',     key: 'imgShadow'      as const, min: 0, max: 40, unit: '' },
+                    { label: isZh ? '内阴影' : 'Inset',      key: 'imgInsetShadow' as const, min: 0, max: 40, unit: '' },
+                    { label: isZh ? '虚化' : 'Blur',         key: 'imgBlur'        as const, min: 0, max: 20, unit: 'px' },
                   ].map(({ label, key, min, max, unit }) => (
                     <div key={key}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
@@ -668,7 +681,7 @@ export function RightPanel(s: ExportPageState) {
                             const reader = new FileReader()
                             reader.onload = ev => {
                               const dataUrl = ev.target?.result as string
-                              if (dataUrl) compressImage(dataUrl, 2400, 0.88).then(compressed => addBlock('image', compressed))
+                              if (dataUrl) compressImage(dataUrl, 2400, 0.88).then(compressed => addImageBlock(compressed))
                             }
                             reader.readAsDataURL(file)
                           })
@@ -686,7 +699,7 @@ export function RightPanel(s: ExportPageState) {
                           onMouseEnter={e => { if (selectedBlockId !== b.id) e.currentTarget.style.borderColor = 'rgba(26,26,26,0.3)' }}
                           onMouseLeave={e => { if (selectedBlockId !== b.id) e.currentTarget.style.borderColor = 'rgba(26,26,26,0.1)' }}
                         >
-                          <img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                          <IdbImg idbKey={src} projectId={project?.id ?? ''} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                           {b.type === 'image-row' && b.images && b.images.length > 1 && (
                             <div style={{ position: 'absolute', bottom: 3, right: 4, fontSize: '0.5rem', color: '#fff', background: 'rgba(0,0,0,0.45)', borderRadius: '3px', padding: '1px 4px', fontFamily: 'Space Mono, monospace', lineHeight: 1.4 }}>
                               ×{b.images.length}
@@ -1103,39 +1116,342 @@ export function RightPanel(s: ExportPageState) {
         />
       </div>
 
-      {/* ── STYLE tab ── */}
+      {/* ── AI tab (formerly style) ── */}
       {rightTab === 'style' && (
-        <div className="_rp-tab-panel" style={{ padding: '24px 20px', flex: 1 }}>
-          <ThemePickerPanel opts={exportOpts} setOpts={setExportOpts} isZh={isZh} />
+        <AIWriterPanel isZh={isZh} addBlock={addBlock} />
+      )}
+    </div>
+  )
+}
+// ─────────────────────────────────────────────
+// AI 写作助手面板
+// ─────────────────────────────────────────────
 
-          <div style={{ marginTop: '4px', marginBottom: '4px' }}>
-            <button onClick={() => setPagedExport(p => !p)}
-              style={{ width: '100%', padding: '11px 14px', borderRadius: '9px', cursor: 'pointer', border: `1px solid ${pagedExport ? 'rgba(26,26,26,0.3)' : 'rgba(26,26,26,0.1)'}`, background: pagedExport ? 'rgba(26,26,26,0.06)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontFamily: 'Inter, DM Sans, sans-serif', transition: 'all 0.12s' }}>
-              <span style={{ fontSize: '0.8rem', color: '#3a3a3a', letterSpacing: '0.02em' }}>{isZh ? '翻页模式' : 'Paged mode'}</span>
-              <span style={{ fontSize: '0.7rem', color: pagedExport ? '#1a1a1a' : '#bbb', letterSpacing: '0.06em' }}>{pagedExport ? (isZh ? '开 ●' : 'ON ●') : (isZh ? '关 ○' : 'OFF ○')}</span>
+const AI_SCENES = [
+  {
+    key: 'artist',
+    labelZh: '艺术家介绍',
+    labelEn: 'Artist Bio',
+    icon: '🎨',
+    systemPrompt: "You are a professional art writer. Write a polished, engaging artist biography based on the user's input. Output ONLY the biography text, no titles, no extra commentary. Use flowing prose. 200-300 words unless specified.",
+    placeholderZh: '姓名、专业方向、学习经历、创作理念、代表作品等…',
+    placeholderEn: 'Name, medium, education, artistic vision, notable works…',
+  },
+  {
+    key: 'personal',
+    labelZh: '个人介绍',
+    labelEn: 'Personal Bio',
+    icon: '👤',
+    systemPrompt: "You are a professional bio writer. Write a concise, warm and compelling personal introduction based on the user's input. Output ONLY the bio text, no titles, no extra commentary. 150-250 words unless specified.",
+    placeholderZh: '姓名、背景、技能、兴趣、目标等…',
+    placeholderEn: 'Name, background, skills, interests, goals…',
+  },
+  {
+    key: 'resume',
+    labelZh: '工作简历',
+    labelEn: 'Resume Entry',
+    icon: '💼',
+    systemPrompt: "You are a professional resume writer. Based on the user's raw input, write polished resume bullet points or a professional summary. Output ONLY the resume content, no extra commentary. Use strong action verbs. Be concise and impactful.",
+    placeholderZh: '职位、公司、时间段、主要职责和成就…',
+    placeholderEn: 'Job title, company, dates, responsibilities, achievements…',
+  },
+  {
+    key: 'extract',
+    labelZh: '提取关键信息',
+    labelEn: 'Extract Info',
+    icon: '🔍',
+    systemPrompt: "You are a professional editor. Extract and organize the key information from the user's raw text. Structure it clearly with labels. Output ONLY the extracted content in a clean, readable format. No extra commentary.",
+    placeholderZh: '粘贴任意文字，提取姓名、日期、联系方式、技能、经历等…',
+    placeholderEn: 'Paste any text — extract names, dates, contacts, skills, experience…',
+  },
+  {
+    key: 'statement',
+    labelZh: '创作自述',
+    labelEn: 'Artist Statement',
+    icon: '✍️',
+    systemPrompt: "You are an expert in writing artist statements for art school applications and exhibitions. Write a thoughtful, authentic artist statement based on the user's input. Output ONLY the statement text, no titles or extra commentary. 200-350 words unless specified. Use first person.",
+    placeholderZh: '创作主题、材料媒介、灵感来源、想表达的观念…',
+    placeholderEn: 'Themes, materials, inspirations, concepts you want to express…',
+  },
+  {
+    key: 'custom',
+    labelZh: '自定义',
+    labelEn: 'Custom',
+    icon: '⚙️',
+    systemPrompt: "You are a helpful writing assistant. Follow the user's instructions precisely. Output ONLY the requested content, no extra commentary.",
+    placeholderZh: '告诉 AI 你想要什么…',
+    placeholderEn: 'Tell the AI what you need…',
+  },
+]
+
+function AIWriterPanel({
+  isZh,
+  addBlock,
+}: {
+  isZh: boolean
+  addBlock: (type: string, content: string) => void
+}) {
+  const [scene, setScene] = React.useState(AI_SCENES[0].key)
+  const [input, setInput] = React.useState('')
+  const [result, setResult] = React.useState('')
+  const [loading, setLoading] = React.useState(false)
+  const [error, setError] = React.useState('')
+  const [langOverride, setLangOverride] = React.useState<'zh' | 'en' | 'auto'>('auto')
+  const [inserted, setInserted] = React.useState(false)
+
+  const currentScene = AI_SCENES.find(s => s.key === scene)!
+
+  const langInstruction =
+    langOverride === 'zh' ? ' Always respond in Simplified Chinese.' :
+    langOverride === 'en' ? ' Always respond in English.' : ''
+
+  async function handleGenerate() {
+    if (!input.trim()) return
+    setLoading(true)
+    setError('')
+    setResult('')
+    setInserted(false)
+    try {
+      const res = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemPrompt: currentScene.systemPrompt + langInstruction,
+          messages: [{ role: 'user', content: input.trim() }],
+        }),
+      })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      setResult(data.result || '')
+    } catch (e: any) {
+      setError(e.message || 'Error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function handleInsert() {
+    if (!result.trim()) return
+    const paragraphs = result.split(/\n{2,}/).map((p: string) => p.trim()).filter(Boolean)
+    if (paragraphs.length > 1) {
+      paragraphs.forEach((p: string) => addBlock('note', p))
+    } else {
+      addBlock('note', result.trim())
+    }
+    setInserted(true)
+  }
+
+  const lb: React.CSSProperties = {
+    fontSize: '0.58rem', letterSpacing: '0.16em', textTransform: 'uppercase',
+    color: '#b0b0ac', fontFamily: 'Inter, DM Sans, sans-serif', fontWeight: 600,
+    display: 'block', marginBottom: '8px',
+  }
+
+  return (
+    <div className="_rp-tab-panel" style={{ padding: '20px 16px', flex: 1, display: 'flex', flexDirection: 'column', gap: '18px' }}>
+      <style>{`
+        @keyframes _ai-spin { to { transform: rotate(360deg); } }
+        ._ai-spinner { animation: _ai-spin 0.75s linear infinite; display: inline-block; }
+        ._ai-scene-btn:hover { background: rgba(26,26,26,0.04) !important; }
+        ._ai-gen-btn:not(:disabled):hover { background: #2a2a2a !important; }
+        ._ai-gen-btn:not(:disabled):active { transform: scale(0.985) !important; }
+        ._ai-insert-btn:not([data-inserted]):hover { background: #2a2a2a !important; }
+        ._ai-regen-btn:hover { background: rgba(26,26,26,0.05) !important; border-color: rgba(26,26,26,0.2) !important; }
+      `}</style>
+
+      {/* Scene picker */}
+      <div>
+        <span style={lb}>{isZh ? '场景' : 'Scene'}</span>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+          {AI_SCENES.map(sc => {
+            const active = scene === sc.key
+            return (
+              <button
+                key={sc.key}
+                className="_ai-scene-btn"
+                onClick={() => { setScene(sc.key); setResult(''); setError(''); setInserted(false) }}
+                style={{
+                  padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', textAlign: 'left',
+                  border: `1px solid ${active ? 'rgba(26,26,26,0.22)' : 'rgba(26,26,26,0.07)'}`,
+                  background: active ? 'rgba(26,26,26,0.055)' : 'transparent',
+                  fontFamily: 'Inter, DM Sans, sans-serif', transition: 'border-color 0.12s, background 0.12s',
+                  display: 'flex', alignItems: 'center', gap: '7px', boxSizing: 'border-box',
+                  boxShadow: active ? 'inset 0 0 0 0.5px rgba(26,26,26,0.08)' : 'none',
+                }}
+              >
+                <span style={{
+                  width: 22, height: 22, borderRadius: '5px', flexShrink: 0,
+                  background: active ? 'rgba(26,26,26,0.08)' : 'rgba(26,26,26,0.04)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '0.78rem', transition: 'background 0.12s',
+                }}>
+                  {sc.icon}
+                </span>
+                <span style={{
+                  fontSize: '0.71rem', lineHeight: 1.2,
+                  color: active ? '#1a1a1a' : '#777',
+                  fontWeight: active ? 600 : 400,
+                  transition: 'color 0.12s, font-weight 0.12s',
+                }}>
+                  {isZh ? sc.labelZh : sc.labelEn}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Language toggle — pill style */}
+      <div>
+        <span style={lb}>{isZh ? '输出语言' : 'Language'}</span>
+        <div style={{ display: 'flex', padding: '3px', background: 'rgba(26,26,26,0.04)', borderRadius: '8px', position: 'relative' }}>
+          {/* sliding pill */}
+          <div aria-hidden style={{
+            position: 'absolute', top: 3, bottom: 3,
+            left: `calc(3px + ${(['auto','zh','en'] as const).indexOf(langOverride)} * 33.333%)`,
+            width: 'calc(33.333% - 0px)',
+            background: '#fff',
+            borderRadius: '5px',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(26,26,26,0.06)',
+            transition: 'left 0.22s cubic-bezier(0.34,1.2,0.64,1)',
+            pointerEvents: 'none',
+          }} />
+          {(['auto', 'zh', 'en'] as const).map(l => (
+            <button key={l} onClick={() => setLangOverride(l)}
+              style={{
+                flex: 1, padding: '5px 0', borderRadius: '5px', cursor: 'pointer',
+                border: 'none', background: 'transparent',
+                fontSize: '0.69rem', fontFamily: 'Inter, DM Sans, sans-serif',
+                color: langOverride === l ? '#1a1a1a' : '#999',
+                fontWeight: langOverride === l ? 600 : 400,
+                position: 'relative', zIndex: 1,
+                transition: 'color 0.18s',
+                letterSpacing: '0.02em',
+              }}>
+              {l === 'auto' ? (isZh ? '自动' : 'Auto') : l === 'zh' ? '中文' : 'EN'}
             </button>
-            {pagedExport && (
-              <p style={{ fontSize: '0.68rem', color: '#aaa', fontFamily: 'Inter, DM Sans, sans-serif', marginTop: '6px', lineHeight: 1.5, padding: '0 2px' }}>
-                {isZh ? '每个 block 单独一页，← → 键翻页' : 'Each block is a page · ← → to navigate'}
-              </p>
-            )}
+          ))}
+        </div>
+      </div>
+
+      {/* Input */}
+      <div>
+        <span style={lb}>{isZh ? '你的信息' : 'Your input'}</span>
+        <textarea
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleGenerate() } }}
+          placeholder={isZh ? currentScene.placeholderZh : currentScene.placeholderEn}
+          style={{
+            width: '100%', minHeight: '88px', resize: 'vertical', padding: '10px 12px',
+            borderRadius: '9px', border: '1px solid rgba(26,26,26,0.1)',
+            background: 'rgba(26,26,26,0.02)', fontFamily: 'Inter, DM Sans, sans-serif',
+            fontSize: '0.8rem', color: '#1a1a1a', lineHeight: 1.65, outline: 'none',
+            boxSizing: 'border-box', transition: 'border-color 0.15s',
+          }}
+          onFocus={e => (e.currentTarget.style.borderColor = 'rgba(26,26,26,0.28)')}
+          onBlur={e => (e.currentTarget.style.borderColor = 'rgba(26,26,26,0.1)')}
+        />
+        <p style={{ fontSize: '0.6rem', color: '#d0d0cc', fontFamily: 'Inter, DM Sans, sans-serif', marginTop: '5px', letterSpacing: '0.04em' }}>
+          {isZh ? '⌘↵ 生成' : '⌘↵ to generate'}
+        </p>
+      </div>
+
+      {/* Generate button */}
+      <button
+        className="_ai-gen-btn"
+        onClick={handleGenerate}
+        disabled={loading || !input.trim()}
+        style={{
+          width: '100%', padding: '10px 16px', borderRadius: '9px', border: 'none',
+          cursor: loading || !input.trim() ? 'default' : 'pointer',
+          background: loading || !input.trim() ? 'rgba(26,26,26,0.055)' : '#1a1a1a',
+          color: loading || !input.trim() ? '#b8b8b8' : '#f5f5f3',
+          fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.8rem', letterSpacing: '0.05em',
+          transition: 'background 0.15s, transform 0.1s',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '7px',
+        }}
+      >
+        {loading ? (
+          <>
+            <span className="_ai-spinner" style={{ width: 12, height: 12, border: '1.5px solid rgba(180,180,180,0.3)', borderTopColor: '#aaa', borderRadius: '50%', display: 'inline-block' }} />
+            <span>{isZh ? '生成中' : 'Generating'}</span>
+          </>
+        ) : (
+          <>
+            <span style={{ fontSize: '0.7rem', opacity: 0.7 }}>✦</span>
+            <span>{isZh ? 'AI 生成' : 'Generate'}</span>
+          </>
+        )}
+      </button>
+
+      {/* Error */}
+      {error && (
+        <div style={{ fontSize: '0.73rem', color: '#c94c4c', fontFamily: 'Inter, DM Sans, sans-serif', padding: '9px 12px', background: 'rgba(201,76,76,0.06)', borderRadius: '8px', lineHeight: 1.55, borderLeft: '2px solid rgba(201,76,76,0.3)' }}>
+          {error}
+        </div>
+      )}
+
+      {/* Result */}
+      {result && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={lb}>{isZh ? '生成结果' : 'Result'}</span>
+            <span style={{ fontSize: '0.58rem', color: '#c8c8c4', fontFamily: 'Space Mono, monospace' }}>
+              {result.length} {isZh ? '字' : 'chars'}
+            </span>
           </div>
-
-
-
-          <div style={{ marginTop: '16px', padding: '14px 16px', background: 'rgba(26,26,26,0.04)', borderRadius: '10px' }}>
-            <p style={{ fontSize: '0.65rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#b0b0ac', fontFamily: 'Inter, DM Sans, sans-serif', marginBottom: '8px' }}>{isZh ? '当前配置' : 'Current config'}</p>
-            <p style={{ fontSize: '0.75rem', color: '#777', fontFamily: 'Inter, DM Sans, sans-serif', lineHeight: 1.6 }}>
-              {THEMES[exportOpts.theme]?.label} · {FONTS[exportOpts.font]?.label} · {exportOpts.width}px · R{exportOpts.radius} · {pages.length}p {pagedExport ? '· paged' : ''}
-            </p>
-            <button onClick={() => doExportHTML()}
-              className="_rp-export-btn"
-              style={{ width: '100%', marginTop: '12px', padding: '11px', background: '#1a1a1a', color: '#f7f7f5', border: 'none', borderRadius: '9px', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.82rem', letterSpacing: '0.08em', cursor: 'pointer' }}>
-              {isZh ? '导出 HTML' : 'Export HTML'}
+          <textarea
+            value={result}
+            onChange={e => setResult(e.target.value)}
+            style={{
+              width: '100%', minHeight: '120px', resize: 'vertical', padding: '10px 12px',
+              borderRadius: '9px', border: '1px solid rgba(26,26,26,0.08)',
+              background: '#fafaf8', fontFamily: 'Inter, DM Sans, sans-serif',
+              fontSize: '0.79rem', color: '#1a1a1a', lineHeight: 1.75, outline: 'none',
+              boxSizing: 'border-box',
+            }}
+          />
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button
+              className="_ai-insert-btn"
+              onClick={handleInsert}
+              data-inserted={inserted || undefined}
+              style={{
+                flex: 1, padding: '9px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                background: inserted ? 'rgba(74,171,111,0.1)' : '#1a1a1a',
+                color: inserted ? '#3d9e60' : '#f5f5f3',
+                fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.78rem', letterSpacing: '0.03em',
+                transition: 'background 0.2s, color 0.2s',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
+              }}
+            >
+              {inserted
+                ? <><span style={{ fontSize: '0.8rem' }}>✓</span><span>{isZh ? '已插入' : 'Inserted'}</span></>
+                : <span>{isZh ? '插入页面' : 'Insert to page'}</span>
+              }
+            </button>
+            <button
+              className="_ai-regen-btn"
+              onClick={handleGenerate}
+              title={isZh ? '重新生成' : 'Regenerate'}
+              style={{
+                padding: '9px 13px', borderRadius: '8px',
+                border: '1px solid rgba(26,26,26,0.09)',
+                background: 'transparent', cursor: 'pointer',
+                color: '#888', transition: 'background 0.12s, border-color 0.12s',
+                display: 'flex', alignItems: 'center', gap: '4px',
+                fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.69rem',
+                letterSpacing: '0.03em', whiteSpace: 'nowrap',
+              }}
+            >
+              <span style={{ fontSize: '0.8rem', display: 'inline-block', lineHeight: 1 }}>↺</span>
+              <span>{isZh ? '重试' : 'Retry'}</span>
             </button>
           </div>
         </div>
       )}
+
     </div>
   )
 }

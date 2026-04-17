@@ -26,6 +26,9 @@ export function useImageEditor({ src, isZh, onSave, onClose }: UseImageEditorPro
   const dragStart = React.useRef<{ mx: number; my: number; lx: number; ly: number } | null>(null)
   const cropDrag = React.useRef<{ startX: number; startY: number } | null>(null)
 
+  // ── 用 ref 持有最新的 drawCanvas，解决异步回调里拿到旧闭包的问题 ──────────
+  const drawCanvasRef = React.useRef<() => void>(() => {})
+
   const [customFonts, setCustomFonts] = React.useState<{ label: string; family: string }[]>([])
   const [brightness, setBrightness] = React.useState(100)
   const [contrast, setContrast] = React.useState(100)
@@ -106,6 +109,7 @@ export function useImageEditor({ src, isZh, onSave, onClose }: UseImageEditorPro
   const setBaseImage = React.useCallback((img: HTMLImageElement) => {
     baseImageRef.current = img
     setHasCutout(true)
+    // setHasCutout 触发 re-render → drawCanvas useEffect 会重跑，不需要手动调
   }, [])
 
   // ── Canvas draw ──────────────────────────────────────────────────────────────
@@ -120,7 +124,6 @@ export function useImageEditor({ src, isZh, onSave, onClose }: UseImageEditorPro
     canvas.width = baseImg.naturalWidth
     canvas.height = baseImg.naturalHeight
 
-    // 有抠图结果时必须先清透明，否则 canvas 默认黑底会污染 alpha
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
     ctx.save()
@@ -137,18 +140,20 @@ export function useImageEditor({ src, isZh, onSave, onClose }: UseImageEditorPro
         const il = layer as ImageLayer
         const w = il.el.naturalWidth * (il.scale / 100)
         const h = il.el.naturalHeight * (il.scale / 100)
+        ctx.save()
+        ctx.globalAlpha = (il as any).opacity != null ? (il as any).opacity / 100 : 1
         if (il.followColor) {
-          ctx.save()
           ctx.globalCompositeOperation = 'multiply'
           ctx.fillStyle = accentColor
           ctx.fillRect(il.pos.x, il.pos.y, w, h)
-          ctx.restore()
         } else {
           ctx.drawImage(il.el, il.pos.x, il.pos.y, w, h)
         }
+        ctx.restore()
       } else {
         const tl = layer as TextLayer
         ctx.save()
+        ctx.globalAlpha = (tl as any).opacity != null ? (tl as any).opacity / 100 : 1
         ctx.font = `${tl.fontSize}px ${tl.fontFamily}`
         ctx.fillStyle = tl.color
         const lines = tl.text.split('\n')
@@ -170,9 +175,13 @@ export function useImageEditor({ src, isZh, onSave, onClose }: UseImageEditorPro
     }
   }, [brightness, contrast, saturate, rotation, flipH, layers, accentColor, cropMode, cropRect, hasCutout])
 
+  // ── 每次 drawCanvas 更新时同步到 ref，确保异步回调里始终拿到最新版本 ──────
+  React.useEffect(() => {
+    drawCanvasRef.current = drawCanvas
+  }, [drawCanvas])
+
   // ── Canvas mouse events ──────────────────────────────────────────────────────
 
-  // 接受原生 MouseEvent，方便同时挂在 canvas 和 window 上
   const getCanvasPosFromEvent = (e: MouseEvent | React.MouseEvent) => {
     const canvas = canvasRef.current!
     const rect = canvas.getBoundingClientRect()
@@ -182,7 +191,7 @@ export function useImageEditor({ src, isZh, onSave, onClose }: UseImageEditorPro
   }
 
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    e.preventDefault() // 阻止浏览器把 canvas 内容当成原生可拖拽元素
+    e.preventDefault()
     const pos = getCanvasPosFromEvent(e)
     if (cropMode) {
       cropDrag.current = { startX: pos.x, startY: pos.y }
@@ -208,7 +217,6 @@ export function useImageEditor({ src, isZh, onSave, onClose }: UseImageEditorPro
     setActiveLayerId(null)
   }
 
-  // 只处理 crop 框选（图层拖拽移到 window 监听）
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!cropMode || !cropDrag.current) return
     const pos = getCanvasPosFromEvent(e)
@@ -225,7 +233,6 @@ export function useImageEditor({ src, isZh, onSave, onClose }: UseImageEditorPro
     cropDrag.current = null
   }
 
-  // 图层拖拽挂在 window 上——鼠标移出 canvas 也能继续拖，横纵都不锁死
   React.useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!dragStart.current || !dragLayerId) return
@@ -257,7 +264,13 @@ export function useImageEditor({ src, isZh, onSave, onClose }: UseImageEditorPro
     const ctx = tempCanvas.getContext('2d')!
     ctx.drawImage(canvas, cropRect.x, cropRect.y, cropRect.w, cropRect.h, 0, 0, cropRect.w, cropRect.h)
     const img = new Image()
-    img.onload = () => { baseImageRef.current = img; setCropMode(false); setCropRect(null); drawCanvas() }
+    img.onload = () => {
+      baseImageRef.current = img
+      setCropMode(false)
+      setCropRect(null)
+      // 用 ref 调最新的 drawCanvas，避免闭包陷阱
+      drawCanvasRef.current()
+    }
     img.src = tempCanvas.toDataURL()
   }
 
@@ -266,7 +279,6 @@ export function useImageEditor({ src, isZh, onSave, onClose }: UseImageEditorPro
   const handleSave = () => {
     const canvas = canvasRef.current
     if (!canvas) return
-    // 有抠图（含透明通道）必须用 PNG；普通编辑用 JPEG 节省体积
     onSave(hasCutout
       ? canvas.toDataURL('image/png')
       : canvas.toDataURL('image/jpeg', 0.92)
@@ -275,13 +287,22 @@ export function useImageEditor({ src, isZh, onSave, onClose }: UseImageEditorPro
 
   // ── Effects ──────────────────────────────────────────────────────────────────
 
+  // 加载主图：用 drawCanvasRef.current() 确保 onload 回调里拿到最新的 drawCanvas
   React.useEffect(() => {
     const img = new Image()
-    img.onload = () => { baseImageRef.current = img; drawCanvas() }
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      baseImageRef.current = img
+      // 通过 ref 调用，永远是最新版本的 drawCanvas
+      drawCanvasRef.current()
+    }
     img.src = src
-  }, [src]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [src])
 
-  React.useEffect(() => { drawCanvas() }, [drawCanvas])
+  // state/props 变化时重绘（brightness、layers 等调整）
+  React.useEffect(() => {
+    drawCanvas()
+  }, [drawCanvas])
 
   return {
     // refs

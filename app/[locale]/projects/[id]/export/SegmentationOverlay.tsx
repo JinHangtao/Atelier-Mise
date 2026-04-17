@@ -6,6 +6,7 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react'
 import type { ImageLayer } from './imageEditorTypes'
 import { useSegmentation } from './useSegmentation'
+import { usePenTool } from './usePenTool'
 import type { BrushMode } from './segmentationTypes'
 
 interface SegmentationOverlayProps {
@@ -51,20 +52,21 @@ function ToolBtn({
       title={title}
       onClick={onClick}
       style={{
-        padding: '6px 11px',
-        borderRadius: '7px',
-        border: `1px solid ${active ? 'rgba(255,255,255,0.45)' : 'rgba(255,255,255,0.12)'}`,
-        background: active ? 'rgba(255,255,255,0.12)' : 'transparent',
-        color: active ? '#f0f0f0' : '#666',
+        padding: '5px 10px',
+        borderRadius: '4px',
+        border: `1px solid ${active ? '#3a3a3a' : '#1e1e1e'}`,
+        background: active ? '#1c1c1c' : 'transparent',
+        color: active ? '#ccc' : '#555',
         cursor: 'pointer',
-        fontFamily: 'Space Mono, monospace',
-        fontSize: '0.68rem',
-        letterSpacing: '0.04em',
+        fontFamily: '"DM Mono", monospace',
+        fontSize: '9px',
+        letterSpacing: '0.07em',
         transition: 'all 0.1s',
         lineHeight: 1,
         display: 'flex',
         alignItems: 'center',
         gap: '5px',
+        whiteSpace: 'nowrap',
       }}
     >
       {children}
@@ -117,6 +119,8 @@ export function SegmentationOverlay({
   const interactRef   = useRef<HTMLCanvasElement>(null)
   // 新增：动画专用层（最顶层，pointer-events: none）
   const animCanvasRef = useRef<HTMLCanvasElement>(null)
+  // 钢笔工具专用绘制层
+  const penCanvasRef  = useRef<HTMLCanvasElement>(null)
 
   const isDrawingRef  = useRef(false)
   const strokeBufRef  = useRef<{ x: number; y: number }[]>([])
@@ -126,6 +130,13 @@ export function SegmentationOverlay({
   const qsSubtractRef = useRef(false)
 
   const [showCheckerboard, setShowCheckerboard] = useState(false)
+
+  // ── 钢笔工具 ──────────────────────────────────────────────────────────────
+  const penTool = usePenTool(
+    layer.el,
+    penCanvasRef,
+    (data, w, h) => seg.mergePenMask(data, w, h),
+  )
 
   // ── 动画状态 refs（不触发 re-render）────────────────────────────────────────
   const antOffsetRef  = useRef(0)
@@ -141,7 +152,7 @@ export function SegmentationOverlay({
 
     const resize = () => {
       const { width: w, height: h } = container.getBoundingClientRect()
-      for (const ref of [imgCanvasRef, maskCanvasRef, interactRef, animCanvasRef]) {
+      for (const ref of [imgCanvasRef, maskCanvasRef, interactRef, animCanvasRef, penCanvasRef]) {
         if (ref.current) {
           ref.current.width  = w
           ref.current.height = h
@@ -274,7 +285,7 @@ export function SegmentationOverlay({
         ctx.lineWidth = 1.5
         ctx.stroke()
         ctx.fillStyle = '#fff'
-        ctx.font = 'bold 9px Space Mono, monospace'
+        ctx.font = 'bold 9px DM Mono, monospace'
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
         ctx.fillText(isPos ? '+' : '−', px, py)
@@ -418,6 +429,11 @@ export function SegmentationOverlay({
       const isBrush = seg.brushMode === 'brush_add' || seg.brushMode === 'brush_erase'
       const isQS    = seg.brushMode === 'quick_select'
 
+      if (seg.brushMode === 'pen') {
+        penTool.onPointerDown(e)
+        return
+      }
+
       if (isBrush) {
         isDrawingRef.current = true
         strokeBufRef.current = [{ x, y }]
@@ -434,13 +450,19 @@ export function SegmentationOverlay({
         seg.onCanvasClick(x, y, isNeg)
       }
     },
-    [seg],
+    [seg, penTool],
   )
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
       const { x, y } = getCanvasXY(e)
       const isBrush = seg.brushMode === 'brush_add' || seg.brushMode === 'brush_erase'
+
+      if (seg.brushMode === 'pen') {
+        penTool.onPointerMove(e, e.altKey)
+        return
+      }
+
       drawInteract(x, y)
 
       if (isBrush && isDrawingRef.current) {
@@ -461,11 +483,15 @@ export function SegmentationOverlay({
         }
       }
     },
-    [seg, drawInteract],
+    [seg, drawInteract, penTool],
   )
 
   const handlePointerUp = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (seg.brushMode === 'pen') {
+        penTool.onPointerUp(e)
+        return
+      }
       if (isDrawingRef.current) {
         if (strokeBufRef.current.length > 0) seg.onBrushStroke(strokeBufRef.current)
         strokeBufRef.current = []
@@ -475,11 +501,33 @@ export function SegmentationOverlay({
       isQSDrawRef.current  = false
       lastQSPosRef.current = null
     },
-    [seg],
+    [seg, penTool],
   )
 
   const handlePointerLeave = useCallback(() => { drawInteract() }, [drawInteract])
   const handleContextMenu = useCallback((e: React.MouseEvent) => { e.preventDefault() }, [])
+
+  // ── 钢笔工具渲染 loop ─────────────────────────────────────────────────────
+  useEffect(() => {
+    const canvas = penCanvasRef.current
+    if (!canvas) return
+    if (seg.brushMode !== 'pen') {
+      // 退出钢笔模式时清空画布
+      const ctx = canvas.getContext('2d')
+      ctx?.clearRect(0, 0, canvas.width, canvas.height)
+      return
+    }
+    let running = true
+    const loop = () => {
+      if (!running) return
+      const ctx = canvas.getContext('2d')!
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      penTool.draw(ctx)
+      requestAnimationFrame(loop)
+    }
+    requestAnimationFrame(loop)
+    return () => { running = false }
+  }, [seg.brushMode, penTool])
 
   // ── 应用 ──────────────────────────────────────────────────────────────────
   const handleApply = useCallback(() => {
@@ -490,10 +538,11 @@ export function SegmentationOverlay({
   // ── 派生状态 ───────────────────────────────────────────────────────────────
   const isBrushMode = seg.brushMode === 'brush_add' || seg.brushMode === 'brush_erase'
   const isQSMode    = seg.brushMode === 'quick_select'
+  const isPenMode   = seg.brushMode === 'pen'
 
-  const cursorStyle = isBrushMode || isQSMode ? 'none' : (
-    seg.brushMode === 'point_negative' ? 'crosshair' : 'cell'
-  )
+  const cursorStyle = isBrushMode || isQSMode ? 'none'
+    : isPenMode ? 'crosshair'
+    : seg.brushMode === 'point_negative' ? 'crosshair' : 'cell'
 
   const statusText = isZh
     ? (STATUS_LABEL[seg.status] ?? seg.status)
@@ -501,9 +550,13 @@ export function SegmentationOverlay({
 
   const canApply = !!seg.mask && seg.status === 'ready'
 
-  const tips = isQSMode
-    ? (isZh ? QS_TIPS_ZH : QS_TIPS_EN)
-    : (isZh ? DEFAULT_TIPS_ZH : DEFAULT_TIPS_EN)
+  const tips = isPenMode
+    ? (isZh
+        ? ['单击放锚点', '拖拽拉手柄调曲率', 'Alt拖拽断开对称手柄', '点回起点 / Enter 闭合']
+        : ['Click to place anchor', 'Drag to pull handles', 'Alt+drag to break symmetry', 'Click start / Enter to close'])
+    : isQSMode
+      ? (isZh ? QS_TIPS_ZH : QS_TIPS_EN)
+      : (isZh ? DEFAULT_TIPS_ZH : DEFAULT_TIPS_EN)
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
@@ -516,21 +569,21 @@ export function SegmentationOverlay({
 
       {/* ── 顶部工具栏 ── */}
       <div style={{
-        height: '52px', flexShrink: 0,
-        borderBottom: '1px solid rgba(255,255,255,0.07)',
-        background: '#0e0e0e',
+        height: '48px', flexShrink: 0,
+        borderBottom: '1px solid #141414',
+        background: '#0d0d0d',
         display: 'flex', alignItems: 'center',
-        padding: '0 16px', gap: '8px',
+        padding: '0 18px', gap: '6px',
       }}>
         <span style={{
-          fontFamily: 'Space Mono, monospace', fontSize: '0.62rem',
-          color: '#444', letterSpacing: '0.2em', textTransform: 'uppercase',
-          marginRight: '8px',
+          fontFamily: '"DM Mono", monospace', fontSize: '8px',
+          color: '#555', letterSpacing: '0.28em', textTransform: 'uppercase',
+          marginRight: '8px', flexShrink: 0,
         }}>
           {isZh ? '抠图' : 'Cutout'}
         </span>
 
-        <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.07)' }} />
+        <div style={{ width: '1px', height: '20px', background: '#1e1e1e' }} />
 
         {/* 快速选择 */}
         <ToolBtn
@@ -538,7 +591,7 @@ export function SegmentationOverlay({
           onClick={() => seg.setBrushMode('quick_select')}
           title={isZh ? '快速选择：拖动扩张相似区域' : 'Quick select: drag to expand similar pixels'}
         >
-          <span style={{ fontSize: '0.8rem' }}>⊕</span>
+          <span style={{ fontSize: '11px' }}>⊕</span>
           {isZh ? '快选' : 'Quick'}
         </ToolBtn>
 
@@ -546,29 +599,29 @@ export function SegmentationOverlay({
         {isQSMode && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.6rem', color: '#555', whiteSpace: 'nowrap' }}>
+              <span style={{ fontFamily: '"DM Mono", monospace', fontSize: '9px', color: '#555', whiteSpace: 'nowrap' }}>
                 {isZh ? `容差 ${seg.tolerance}` : `tol ${seg.tolerance}`}
               </span>
               <input
                 type="range" min={4} max={80} step={1} value={seg.tolerance}
                 onChange={e => seg.setTolerance(Number(e.target.value))}
-                style={{ width: '68px', accentColor: '#c8a020' }}
+                className="seg-range" style={{ width: '68px' }}
               />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.6rem', color: '#555', whiteSpace: 'nowrap' }}>
+              <span style={{ fontFamily: '"DM Mono", monospace', fontSize: '9px', color: '#555', whiteSpace: 'nowrap' }}>
                 {isZh ? `采样 ${seg.sampleRadius}` : `smpl ${seg.sampleRadius}`}
               </span>
               <input
                 type="range" min={1} max={12} step={1} value={seg.sampleRadius}
                 onChange={e => seg.setSampleRadius(Number(e.target.value))}
-                style={{ width: '56px', accentColor: '#a06820' }}
+                className="seg-range" style={{ width: '56px' }}
               />
             </div>
           </div>
         )}
 
-        <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.07)' }} />
+        <div style={{ width: '1px', height: '20px', background: '#1e1e1e' }} />
 
         {/* SAM 点选 */}
         <ToolBtn
@@ -576,7 +629,7 @@ export function SegmentationOverlay({
           onClick={() => seg.setBrushMode('point_positive')}
           title={isZh ? '左键点击：AI 选区' : 'Click: AI select'}
         >
-          <span style={{ fontSize: '0.75rem' }}>✦</span>
+          <span style={{ fontSize: '11px' }}>✦</span>
           {isZh ? 'AI选' : 'AI'}
         </ToolBtn>
         <ToolBtn
@@ -584,11 +637,11 @@ export function SegmentationOverlay({
           onClick={() => seg.setBrushMode('point_negative')}
           title={isZh ? '点击：排除区域' : 'Click: exclude'}
         >
-          <span style={{ fontSize: '0.75rem' }}>✕</span>
+          <span style={{ fontSize: '11px' }}>✕</span>
           {isZh ? '排除' : 'Excl'}
         </ToolBtn>
 
-        <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.07)' }} />
+        <div style={{ width: '1px', height: '20px', background: '#1e1e1e' }} />
 
         {/* 画笔 */}
         <ToolBtn
@@ -596,7 +649,7 @@ export function SegmentationOverlay({
           onClick={() => seg.setBrushMode('brush_add')}
           title={isZh ? '画笔：手动涂抹加入' : 'Brush: paint to add'}
         >
-          <span style={{ fontSize: '0.8rem' }}>◎</span>
+          <span style={{ fontSize: '11px' }}>◎</span>
           {isZh ? '画笔' : 'Brush'}
         </ToolBtn>
         <ToolBtn
@@ -604,24 +657,50 @@ export function SegmentationOverlay({
           onClick={() => seg.setBrushMode('brush_erase')}
           title={isZh ? '橡皮：涂抹删除' : 'Eraser'}
         >
-          <span style={{ fontSize: '0.8rem' }}>◌</span>
+          <span style={{ fontSize: '11px' }}>◌</span>
           {isZh ? '橡皮' : 'Erase'}
         </ToolBtn>
 
         {isBrushMode && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: '4px' }}>
-            <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.6rem', color: '#555' }}>
+            <span style={{ fontFamily: '"DM Mono", monospace', fontSize: '9px', color: '#555' }}>
               {seg.brushRadius}px
             </span>
             <input
               type="range" min={4} max={80} value={seg.brushRadius}
               onChange={e => seg.setBrushRadius(Number(e.target.value))}
-              style={{ width: '72px', accentColor: '#4aab6f' }}
+              className="seg-range" style={{ width: '72px' }}
             />
           </div>
         )}
 
-        <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.07)' }} />
+        <div style={{ width: '1px', height: '20px', background: '#1e1e1e' }} />
+
+        {/* 钢笔 */}
+        <ToolBtn
+          active={isPenMode}
+          onClick={() => { seg.setBrushMode('pen'); penTool.reset() }}
+          title={isZh ? '钢笔：点击放锚点，拖拽拉手柄，点回起点闭合 / Enter闭合 / ESC清空' : 'Pen: click anchors, drag for handles, click start to close / Enter to close / ESC to reset'}
+        >
+          <span style={{ fontSize: '11px' }}>✒</span>
+          {isZh ? '钢笔' : 'Pen'}
+        </ToolBtn>
+
+        {isPenMode && penTool.active && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <span style={{ fontFamily: '"DM Mono", monospace', fontSize: '9px', color: '#555' }}>
+              {penTool.anchors.length}{isZh ? '个锚点' : ' pts'}
+            </span>
+            <button
+              onClick={penTool.reset}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#444', fontFamily: '"DM Mono", monospace', fontSize: '9px', padding: '0 4px', transition: 'color 0.12s' }}
+              onMouseEnter={e => (e.currentTarget.style.color = '#888')}
+              onMouseLeave={e => (e.currentTarget.style.color = '#444')}
+            >
+              {isZh ? '清空' : 'clear'}
+            </button>
+          </div>
+        )}
 
         {/* 撤销 / 重置 */}
         <ToolBtn onClick={seg.undoLastPoint} title={isZh ? '撤销上一个点' : 'Undo last point'}>↩</ToolBtn>
@@ -629,7 +708,7 @@ export function SegmentationOverlay({
           {isZh ? '清空' : 'Reset'}
         </ToolBtn>
 
-        <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.07)' }} />
+        <div style={{ width: '1px', height: '20px', background: '#1e1e1e' }} />
 
         {/* 透明预览 */}
         <ToolBtn
@@ -637,15 +716,15 @@ export function SegmentationOverlay({
           onClick={() => setShowCheckerboard(v => !v)}
           title={isZh ? '透明预览' : 'Preview transparency'}
         >
-          <span style={{ fontSize: '0.75rem' }}>⬜</span>
+          <span style={{ fontSize: '11px' }}>⬜</span>
           {isZh ? '预览' : 'Preview'}
         </ToolBtn>
 
         {/* 状态 */}
         <span style={{
           marginLeft: 'auto',
-          fontFamily: 'Space Mono, monospace', fontSize: '0.6rem',
-          color: seg.status === 'error' ? '#bf4a4a' : '#3a5a46',
+          fontFamily: '"DM Mono", monospace', fontSize: '9px',
+          color: seg.status === 'error' ? '#884444' : '#555',
           letterSpacing: '0.08em',
           display: 'flex', alignItems: 'center', gap: '6px',
         }}>
@@ -653,7 +732,7 @@ export function SegmentationOverlay({
             <span style={{ display: 'inline-block', animation: 'seg-spin 1s linear infinite' }}>◌</span>
           )}
           {seg.mask && seg.status === 'ready' && (
-            <span style={{ color: isQSMode ? '#c8a020' : '#4aab6f' }}>
+            <span style={{ color: '#888' }}>
               {isQSMode
                 ? (isZh ? '选区就绪' : 'Selection ready')
                 : (isZh ? `置信度 ${Math.round(seg.mask.score * 100)}%` : `IoU ${Math.round(seg.mask.score * 100)}%`)
@@ -663,17 +742,17 @@ export function SegmentationOverlay({
           {statusText}
         </span>
 
-        <div style={{ width: '1px', height: '20px', background: 'rgba(255,255,255,0.07)', marginLeft: '12px' }} />
+        <div style={{ width: '1px', height: '20px', background: '#1e1e1e', marginLeft: '12px' }} />
 
         {/* 羽化滑块：全局参数，apply 时生效 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-          <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.6rem', color: '#555', whiteSpace: 'nowrap' }}>
+          <span style={{ fontFamily: '"DM Mono", monospace', fontSize: '9px', color: '#555', whiteSpace: 'nowrap' }}>
             {isZh ? `羽化 ${seg.featherRadius}` : `fth ${seg.featherRadius}`}
           </span>
           <input
             type="range" min={0} max={6} step={1} value={seg.featherRadius}
             onChange={e => seg.setFeatherRadius(Number(e.target.value))}
-            style={{ width: '56px', accentColor: '#7a6aaa' }}
+            className="seg-range" style={{ width: '56px' }}
           />
         </div>
 
@@ -681,14 +760,15 @@ export function SegmentationOverlay({
         <button
           onClick={onClose}
           style={{
-            padding: '6px 14px', borderRadius: '7px',
-            border: '1px solid rgba(255,255,255,0.1)',
-            background: 'transparent', color: '#666',
-            cursor: 'pointer', fontFamily: 'Space Mono, monospace', fontSize: '0.68rem',
+            padding: '5px 12px', borderRadius: '4px',
+            border: '1px solid #252525',
+            background: 'transparent', color: '#555',
+            cursor: 'pointer', fontFamily: '"DM Mono", monospace', fontSize: '9px',
+            letterSpacing: '0.08em',
             transition: 'all 0.1s',
           }}
-          onMouseEnter={e => { e.currentTarget.style.color = '#ccc'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.3)' }}
-          onMouseLeave={e => { e.currentTarget.style.color = '#666'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)' }}
+          onMouseEnter={e => { e.currentTarget.style.color = '#bbb'; e.currentTarget.style.borderColor = '#444' }}
+          onMouseLeave={e => { e.currentTarget.style.color = '#555'; e.currentTarget.style.borderColor = '#252525' }}
         >
           {isZh ? '取消' : 'Cancel'}
         </button>
@@ -698,12 +778,13 @@ export function SegmentationOverlay({
           onClick={handleApply}
           disabled={!canApply}
           style={{
-            padding: '6px 18px', borderRadius: '7px',
+            padding: '5px 16px', borderRadius: '4px',
             border: 'none',
-            background: canApply ? '#4aab6f' : 'rgba(74,171,111,0.15)',
-            color: canApply ? '#fff' : '#2a5a3a',
+            background: canApply ? '#e8e8e6' : '#1a1a1a',
+            color: canApply ? '#0d0d0d' : '#333',
             cursor: canApply ? 'pointer' : 'not-allowed',
-            fontFamily: 'Space Mono, monospace', fontSize: '0.68rem',
+            fontFamily: '"DM Mono", monospace', fontSize: '9px',
+            letterSpacing: '0.08em', fontWeight: 500,
             transition: 'all 0.1s',
           }}
         >
@@ -716,14 +797,14 @@ export function SegmentationOverlay({
         height: '28px', flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         gap: '20px',
-        background: isQSMode ? 'rgba(30,24,0,0.6)' : 'rgba(0,0,0,0.4)',
-        borderBottom: '1px solid rgba(255,255,255,0.04)',
+        background: '#080808',
+        borderBottom: '1px solid #141414',
         transition: 'background 0.2s',
       }}>
         {tips.map(tip => (
           <span key={tip} style={{
-            fontFamily: 'Space Mono, monospace', fontSize: '0.58rem',
-            color: isQSMode ? '#554a00' : '#333',
+            fontFamily: '"DM Mono", monospace', fontSize: '8px',
+            color: '#3a3a3a',
             letterSpacing: '0.06em',
           }}>
             {tip}
@@ -753,6 +834,11 @@ export function SegmentationOverlay({
           ref={animCanvasRef}
           style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
         />
+        {/* 钢笔工具绘制层：最顶层，不捕获事件 */}
+        <canvas
+          ref={penCanvasRef}
+          style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+        />
 
         {/* 加载遮罩 */}
         {(seg.status === 'loading' || seg.status === 'encoding') && (
@@ -765,14 +851,14 @@ export function SegmentationOverlay({
             <div style={{ textAlign: 'center' }}>
               <div style={{
                 width: '32px', height: '32px', margin: '0 auto 12px',
-                border: '2px solid rgba(74,171,111,0.2)',
-                borderTop: '2px solid #4aab6f',
+                border: '2px solid #1e1e1e',
+                borderTop: '2px solid #555',
                 borderRadius: '50%',
                 animation: 'seg-spin 0.8s linear infinite',
               }} />
               <p style={{
-                fontFamily: 'Space Mono, monospace', fontSize: '0.62rem',
-                color: '#4aab6f', letterSpacing: '0.1em',
+                fontFamily: '"DM Mono", monospace', fontSize: '8px',
+                color: '#666', letterSpacing: '0.1em',
               }}>
                 {statusText}
               </p>
@@ -785,6 +871,56 @@ export function SegmentationOverlay({
         @keyframes seg-spin {
           from { transform: rotate(0deg); }
           to   { transform: rotate(360deg); }
+        }
+        .seg-range {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 100%;
+          height: 2px;
+          background: transparent;
+          cursor: pointer;
+          outline: none;
+        }
+        .seg-range::-webkit-slider-runnable-track {
+          height: 2px;
+          background: #2a2a2a;
+          border-radius: 2px;
+        }
+        .seg-range::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 12px;
+          height: 12px;
+          border-radius: 50%;
+          background: #e8e8e6;
+          border: 2px solid #1a1a1a;
+          box-shadow: 0 0 0 1px #444;
+          cursor: pointer;
+          transition: transform 0.15s, box-shadow 0.15s;
+          margin-top: -5px;
+        }
+        .seg-range::-webkit-slider-thumb:hover {
+          transform: scale(1.3);
+          box-shadow: 0 0 0 2px #666;
+        }
+        .seg-range::-moz-range-track {
+          height: 2px;
+          background: #2a2a2a;
+          border-radius: 2px;
+        }
+        .seg-range::-moz-range-thumb {
+          width: 12px;
+          height: 12px;
+          border-radius: 50%;
+          background: #e8e8e6;
+          border: 2px solid #1a1a1a;
+          box-shadow: 0 0 0 1px #444;
+          cursor: pointer;
+        }
+        .seg-range::-moz-range-progress {
+          height: 2px;
+          background: #2a2a2a;
+          border-radius: 2px;
         }
       `}</style>
     </div>

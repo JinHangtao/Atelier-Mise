@@ -14,6 +14,7 @@ export type BrushMode =
   | 'brush_add'
   | 'brush_erase'
   | 'quick_select'
+  | 'pen'
 
 export type ModelStatus =
   | 'idle'
@@ -117,4 +118,5 @@ export type SegmentationControls = {
   canUndo: boolean
   reset: () => void
   applyMaskToImage: (img: HTMLImageElement) => string | null
+  mergePenMask: (data: Uint8ClampedArray, w: number, h: number) => void
 }

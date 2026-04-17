@@ -8,6 +8,7 @@ export default function TitleBar() {
   useEffect(() => {
     if (typeof window !== 'undefined' && (window as any).__TAURI__) {
       setIsTauri(true)
+      document.body.style.paddingTop = '34px'
       import('@tauri-apps/api/window').then(({ getCurrentWindow }) => {
         setWin(getCurrentWindow())
       })
@@ -19,6 +20,10 @@ export default function TitleBar() {
   return (
     <div
       style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
         height: '34px',
         background: '#f7f7f5',
         borderBottom: '1px solid rgba(26,26,26,0.06)',
@@ -28,25 +33,13 @@ export default function TitleBar() {
         paddingLeft: '12px',
         paddingRight: '4px',
         userSelect: 'none',
-        flexShrink: 0,
+        zIndex: 9999,
         WebkitAppRegion: 'drag',
       } as React.CSSProperties}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-        <img
-          src="/icon.png"
-          alt=""
-          width={16}
-          height={16}
-          style={{ borderRadius: '3px', opacity: 0.8 }}
-        />
-        <span style={{
-          fontFamily: 'Georgia, serif',
-          fontSize: '9px',
-          letterSpacing: '0.22em',
-          color: '#c0c0bc',
-          textTransform: 'uppercase',
-        }}>
+        <img src="/icon.png" alt="" width={16} height={16} style={{ borderRadius: '3px', opacity: 0.8 }} />
+        <span style={{ fontFamily: 'Georgia, serif', fontSize: '9px', letterSpacing: '0.22em', color: '#c0c0bc', textTransform: 'uppercase' }}>
           Atelier Mise
         </span>
       </div>

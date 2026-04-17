@@ -430,10 +430,17 @@ Requirements: The statement should be sincere and specific, highlighting alignme
           .action-btn { transition: all 0.15s; }
           .action-btn:hover { opacity: 0.75; }
           textarea:focus, input:focus { outline: none; border-color: #1a1a1a !important; box-shadow: 0 0 0 3px rgba(26,26,26,0.06); }
+          @media (max-width: 640px) {
+            .detail-nav { padding: 14px 16px !important; }
+            .detail-content { padding: 28px 16px 80px !important; }
+            .statement-actions { flex-wrap: wrap !important; gap: 8px !important; }
+            .statement-actions button { font-size: 0.7rem !important; padding: 8px 12px !important; }
+            .detail-modal { padding: 28px 20px !important; border-radius: 20px !important; margin: 0 12px !important; width: calc(100% - 24px) !important; }
+          }
         `}</style>
 
         <main style={{ minHeight: '100vh', background: '#f7f7f5', fontFamily: 'Space Mono, monospace' }}>
-          <nav style={{ padding: '20px 48px', borderBottom: '1px solid rgba(26,26,26,0.08)', background: 'rgba(247,247,245,0.92)', backdropFilter: 'blur(20px)', position: 'sticky', top: 0, zIndex: 100, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <nav className="detail-nav" style={{ padding: '20px 48px', borderBottom: '1px solid rgba(26,26,26,0.08)', background: 'rgba(247,247,245,0.92)', backdropFilter: 'blur(20px)', position: 'sticky', top: 0, zIndex: 100, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <button onClick={() => { setDetailId(null); setLocalStatement('') }}
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888884', fontSize: '0.9rem', letterSpacing: '0.1em' }}
               onMouseEnter={e => (e.currentTarget.style.color = '#1a1a1a')}
@@ -446,7 +453,7 @@ Requirements: The statement should be sincere and specific, highlighting alignme
             </button>
           </nav>
 
-          <div style={{ maxWidth: '860px', margin: '0 auto', padding: '56px 48px 96px', animation: 'fadeUp 0.5s both' }}>
+          <div className="detail-content" style={{ maxWidth: '860px', margin: '0 auto', padding: '56px 48px 96px', animation: 'fadeUp 0.5s both' }}>
 
             {/* 院校标题区 */}
             <div style={{ marginBottom: '48px' }}>
@@ -512,7 +519,7 @@ Requirements: The statement should be sincere and specific, highlighting alignme
             <section style={{ marginBottom: '48px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
                 <h2 style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.9rem', fontWeight: 700, color: '#1a1a1a', letterSpacing: '0.12em', textTransform: 'uppercase' }}>{t.statementTitle}</h2>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <div className="statement-actions" style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                   {displayStatement && (
                     <button onClick={() => handleCopy(displayStatement)} className="action-btn"
                       style={{ background: 'none', border: '1px solid rgba(26,26,26,0.12)', padding: '8px 16px', borderRadius: '8px', fontFamily: 'Space Mono, monospace', fontSize: '0.72rem', letterSpacing: '0.1em', cursor: 'pointer', color: '#888884' }}>
@@ -593,7 +600,7 @@ Requirements: The statement should be sincere and specific, highlighting alignme
   function renderModal() {
     return (
       <div style={{ position: 'fixed', inset: 0, zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(247,247,245,0.75)', backdropFilter: 'blur(16px)' }}>
-        <div style={{ background: '#fff', border: '1px solid rgba(26,26,26,0.1)', borderRadius: '28px', padding: '44px', width: '100%', maxWidth: '580px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 80px rgba(0,0,0,0.12)', position: 'relative' }}>
+        <div className="list-modal" style={{ background: '#fff', border: '1px solid rgba(26,26,26,0.1)', borderRadius: '28px', padding: '44px', width: '100%', maxWidth: '580px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 80px rgba(0,0,0,0.12)', position: 'relative' }}>
           <button onClick={() => setShowModal(false)} style={{ position: 'absolute', top: '18px', right: '18px', background: 'rgba(26,26,26,0.06)', border: 'none', borderRadius: '50%', width: '34px', height: '34px', cursor: 'pointer', color: '#888884', fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
           <h2 style={{ fontFamily: 'Space Mono, monospace', fontSize: '1.1rem', fontWeight: 700, color: '#1a1a1a', marginBottom: '32px' }}>
             {editId ? t.edit : t.addSchool}
@@ -647,6 +654,20 @@ Requirements: The statement should be sincere and specific, highlighting alignme
         .sort-btn:hover { background: rgba(26,26,26,0.06) !important; }
         input[type=search]:focus { outline: none; border-color: #1a1a1a !important; }
         input[type=search]::-webkit-search-cancel-button { cursor: pointer; }
+        @media (max-width: 640px) {
+          .list-nav { padding: 14px 16px !important; }
+          .list-header { padding: 32px 16px 24px !important; }
+          .list-cards { padding: 0 16px 80px !important; }
+          .timeline-date { width: 72px !important; padding-right: 14px !important; font-size: 0.62rem !important; }
+          .timeline-date .year { display: none; }
+          .timeline-line { left: 71px !important; }
+          .timeline-dot { left: -5px !important; }
+          .school-card { margin-left: 16px !important; padding: 14px 16px !important; }
+          .search-row { flex-direction: column !important; align-items: stretch !important; }
+          .search-row input { width: 100% !important; }
+          .sort-row { flex-wrap: wrap !important; gap: 6px !important; }
+          .list-modal { padding: 28px 20px !important; border-radius: 20px !important; margin: 0 12px !important; width: calc(100% - 24px) !important; }
+        }
       `}</style>
 
       <main style={{ minHeight: '100vh', background: '#f7f7f5', fontFamily: 'Space Mono, monospace', position: 'relative', overflow: 'hidden' }}>
@@ -657,7 +678,7 @@ Requirements: The statement should be sincere and specific, highlighting alignme
         </div>
 
         {/* NAV */}
-        <nav style={{ padding: '20px 48px', borderBottom: '1px solid rgba(26,26,26,0.08)', background: 'rgba(247,247,245,0.88)', backdropFilter: 'blur(20px)', position: 'sticky', top: 0, zIndex: 100, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <nav className="list-nav" style={{ padding: '20px 48px', borderBottom: '1px solid rgba(26,26,26,0.08)', background: 'rgba(247,247,245,0.88)', backdropFilter: 'blur(20px)', position: 'sticky', top: 0, zIndex: 100, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <button onClick={() => router.push(isZh ? '/zh' : '/en')}
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888884', fontSize: '0.9rem', letterSpacing: '0.1em' }}
             onMouseEnter={e => (e.currentTarget.style.color = '#1a1a1a')}
@@ -670,7 +691,7 @@ Requirements: The statement should be sincere and specific, highlighting alignme
         </nav>
 
         {/* HEADER */}
-        <div style={{ padding: '56px 48px 32px', position: 'relative', zIndex: 1, animation: 'fadeUp 0.5s both' }}>
+        <div className="list-header" style={{ padding: '56px 48px 32px', position: 'relative', zIndex: 1, animation: 'fadeUp 0.5s both' }}>
           <p style={{ fontSize: '0.78rem', letterSpacing: '0.3em', color: '#b8b8b4', textTransform: 'uppercase', marginBottom: '12px' }}>{t.section}</p>
           <h1 style={{ fontSize: 'clamp(2rem, 3vw, 3rem)', fontWeight: 700, color: '#1a1a1a', letterSpacing: '-0.02em', marginBottom: '10px' }}>{t.title}</h1>
           <p style={{ fontSize: '1rem', color: '#888884', marginBottom: '32px' }}>{t.subtitle}</p>
@@ -683,7 +704,7 @@ Requirements: The statement should be sincere and specific, highlighting alignme
             isZh={isZh}
           />
           {/* 搜索 + 排序 */}
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="search-row" style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
             <input
               type="search"
               value={search}
@@ -691,7 +712,7 @@ Requirements: The statement should be sincere and specific, highlighting alignme
               placeholder={t.searchPlaceholder}
               style={{ padding: '10px 16px', borderRadius: '10px', border: '1px solid rgba(26,26,26,0.12)', background: 'rgba(255,255,255,0.7)', fontFamily: 'Space Mono, monospace', fontSize: '0.82rem', color: '#1a1a1a', width: '260px', transition: 'border-color 0.15s' }}
             />
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="sort-row" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '0.75rem', letterSpacing: '0.12em', color: '#b8b8b4', textTransform: 'uppercase' }}>{t.sortBy}</span>
               {(['deadline', 'name', 'country'] as const).map(s => (
                 <button key={s} className="sort-btn" onClick={() => setSort(s)}
@@ -704,7 +725,7 @@ Requirements: The statement should be sincere and specific, highlighting alignme
         </div>
 
         {/* TIMELINE + MAP BACKGROUND */}
-        <div style={{ padding: '0 48px 96px', position: 'relative', zIndex: 1 }}>
+        <div className="list-cards" style={{ padding: '0 48px 96px', position: 'relative', zIndex: 1 }}>
 
 
           {filtered.length === 0 && (
@@ -717,7 +738,7 @@ Requirements: The statement should be sincere and specific, highlighting alignme
           <div style={{ position: 'relative', zIndex: 1 }}>
             {/* 竖线 */}
             {filtered.length > 0 && (
-              <div style={{ position: 'absolute', left: '119px', top: 0, bottom: 0, width: '1px', background: 'rgba(26,26,26,0.08)' }}/>
+              <div className="timeline-line" style={{ position: 'absolute', left: '119px', top: 0, bottom: 0, width: '1px', background: 'rgba(26,26,26,0.08)' }}/>
             )}
 
             {filtered.map((s, i) => {
@@ -728,13 +749,13 @@ Requirements: The statement should be sincere and specific, highlighting alignme
                   style={{ display: 'flex', gap: '0', marginBottom: '12px', animation: `fadeUp 0.4s ${i * 0.04}s both`, cursor: 'pointer' }}
                 >
                   {/* 左侧日期 */}
-                  <div style={{ width: '120px', flexShrink: 0, paddingTop: '22px', textAlign: 'right', paddingRight: '24px' }}>
+                  <div className="timeline-date" style={{ width: '120px', flexShrink: 0, paddingTop: '22px', textAlign: 'right', paddingRight: '24px' }}>
                     {s.deadline ? (
                       <>
                         <div style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.7rem', color: dl.color, fontWeight: dl.urgent ? 700 : 400, letterSpacing: '0.05em' }}>
                           {new Date(s.deadline).toLocaleDateString(isZh ? 'zh-CN' : 'en-US', { month: 'short', day: 'numeric' })}
                         </div>
-                        <div style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.62rem', color: '#c8c8c4', letterSpacing: '0.05em' }}>
+                        <div className="year" style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.62rem', color: '#c8c8c4', letterSpacing: '0.05em' }}>
                           {new Date(s.deadline).getFullYear()}
                         </div>
                       </>
@@ -745,7 +766,7 @@ Requirements: The statement should be sincere and specific, highlighting alignme
 
                   {/* 节点圆点 */}
                   <div style={{ width: '0', position: 'relative', flexShrink: 0 }}>
-                    <div style={{
+                    <div className="timeline-dot" style={{
                       position: 'absolute', left: '-5px', top: '28px',
                       width: '10px', height: '10px', borderRadius: '50%',
                       background: dl.urgent ? dl.color : '#c8c8c4',

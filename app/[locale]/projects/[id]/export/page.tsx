@@ -395,7 +395,7 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
 
       {/* Image Editor overlay */}
       {imageEditorUrl !== null && imageEditorIdx !== null && (
-        <ImageEditor src={imageEditorUrl} isZh={isZh} onSave={dataUrl => {
+        <ImageEditor src={imageEditorUrl} isZh={isZh} onSave={async dataUrl => {
           const blockId = (window as any).__editingBlockId
           const imgIdx  = (window as any).__editingImageIdx
           if (typeof imgIdx === 'number' && imgIdx >= 0) {
@@ -1345,7 +1345,7 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
                 s.compressImage(reader.result as string).then(compressed => {
                   const block = s.activePage?.blocks.find(b => b.id === id)
                   const imgEl = new window.Image()
-                  imgEl.onload = () => {
+                  imgEl.onload = async () => {
                     const ratio = imgEl.naturalHeight / imgEl.naturalWidth
                     const curW = block?.pixelPos?.w ?? s.contentWidth
                     s.patchBlock(id, { content: compressed, pixelPos: block?.pixelPos ? { ...block.pixelPos, h: Math.round(curW * ratio) } : block?.pixelPos })
