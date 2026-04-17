@@ -134,7 +134,7 @@ export function SegmentationOverlay({
   // ── 钢笔工具 ──────────────────────────────────────────────────────────────
   const penTool = usePenTool(
     layer.el,
-    penCanvasRef,
+    penCanvasRef as React.RefObject<HTMLCanvasElement>,
     (data, w, h) => seg.mergePenMask(data, w, h),
   )
 
