@@ -41,7 +41,7 @@ export async function exportCanvasFile(
 
   // 3. 写 manifest.json
   const manifest = {
-    format: 'canvas',
+    format: 'mise',
     version: '1',
     title: project.title,
     pageCount: pages.length,
@@ -52,7 +52,7 @@ export async function exportCanvasFile(
 
   // 4. 打包下载
   const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' })
-  saveAs(blob, `${filename ?? project.title}.canvas`)
+  saveAs(blob, `${filename ?? project.title}.mise`)
 }
 
 // ── 导入：读取 .canvas 文件，懒加载资源 ──────────────────────────────────────
@@ -65,7 +65,7 @@ export async function importCanvasFile(file: File): Promise<{
 
   // 1. 读 manifest
   const manifest = JSON.parse(await zip.file('manifest.json')!.async('string'))
-  if (manifest.format !== 'canvas') throw new Error('不是有效的 .canvas 文件')
+  if (manifest.format !== 'mise') throw new Error('不是有效的 .mise 文件')
 
   // 2. 读 project
   const project: Project = JSON.parse(await zip.file('project.json')!.async('string'))

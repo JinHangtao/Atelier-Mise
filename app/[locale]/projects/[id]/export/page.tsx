@@ -623,7 +623,7 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
             onMouseLeave={e => { e.currentTarget.style.background = 'rgba(74,171,111,0.06)'; e.currentTarget.style.borderColor = 'rgba(74,171,111,0.25)' }}
           >
             {isMobile ? (isZh ? '保存' : 'Save') : (isZh ? '保存项目' : 'Save')}
-            {!isMobile && <span style={{ fontSize: '0.58rem', background: 'rgba(74,171,111,0.15)', padding: '2px 6px', borderRadius: 4 }}>.sensei</span>}
+            {!isMobile && <span style={{ fontSize: '0.58rem', background: 'rgba(74,171,111,0.15)', padding: '2px 6px', borderRadius: 4 }}>.mise</span>}
           </button>
 
           {!isMobile && <div style={{ width: '1px', height: '18px', background: 'rgba(26,26,26,0.08)' }} />}
@@ -676,7 +676,7 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
         </div>
       </nav>
 
-      {/* .sensei 导出弹窗 */}
+      {/* .mise 导出弹窗 */}
       {canvasExportOpen && (
         <div
           onClick={e => { if (e.target === e.currentTarget) setCanvasExportOpen(false) }}
@@ -685,7 +685,7 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
           <div style={{ background: '#fff', borderRadius: 18, padding: '28px 32px', width: 360, boxShadow: '0 16px 48px rgba(0,0,0,0.16)', display: 'flex', flexDirection: 'column', gap: 20, fontFamily: 'Inter, DM Sans, sans-serif' }}>
             <div>
               <p style={{ fontSize: '0.6rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: '#bbb', fontWeight: 600, margin: '0 0 6px' }}>{isZh ? '保存为项目文件' : 'Save project file'}</p>
-              <p style={{ fontSize: '1rem', fontWeight: 700, color: '#1a1a1a', margin: 0 }}>{isZh ? '导出 .sensei' : 'Export .sensei'}</p>
+              <p style={{ fontSize: '1rem', fontWeight: 700, color: '#1a1a1a', margin: 0 }}>{isZh ? '导出 .mise' : 'Export .mise'}</p>
             </div>
             <div>
               <p style={{ fontSize: '0.72rem', color: '#888', marginBottom: 8 }}>{isZh ? '文件名' : 'Filename'}</p>
@@ -697,7 +697,7 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
                   style={{ flex: 1, border: 'none', outline: 'none', padding: '10px 14px', fontSize: '0.85rem', color: '#1a1a1a', fontFamily: 'inherit', background: 'transparent' }}
                   placeholder="untitled"
                 />
-                <span style={{ padding: '10px 14px', fontSize: '0.75rem', color: '#aaa', borderLeft: '1px solid rgba(26,26,26,0.08)', background: '#fafafa' }}>.sensei</span>
+                <span style={{ padding: '10px 14px', fontSize: '0.75rem', color: '#aaa', borderLeft: '1px solid rgba(26,26,26,0.08)', background: '#fafafa' }}>.mise</span>
               </div>
             </div>
             <div style={{ background: '#f7f7f5', borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -729,7 +729,7 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
                   await exportCanvasFile(project, pagesWithDimensions, canvasFilename || project.title)
                 }}
                 style={{ flex: 2, padding: '11px 0', borderRadius: 10, border: 'none', background: '#1a1a1a', fontSize: '0.82rem', color: '#fff', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}>
-                {isZh ? '下载 .sensei ↓' : 'Download .sensei ↓'}
+                {isZh ? '下载 .mise ↓' : 'Download .mise ↓'}
               </button>
             </div>
           </div>
