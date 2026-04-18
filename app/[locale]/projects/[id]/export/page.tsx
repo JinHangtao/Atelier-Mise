@@ -24,7 +24,7 @@ export default function ExportPage() {
   // ── Mobile detection + bottom sheet state ─────────────────────────────────
   const [isMobile, setIsMobile] = React.useState(false)
   React.useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth <= 768)
+    const check = () => setIsMobile(window.innerWidth <= 1024)
     check()
     window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
