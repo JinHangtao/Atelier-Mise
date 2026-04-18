@@ -2083,6 +2083,9 @@ export function CanvasArea(s: ExportPageState) {
           if (_shapeDragActive) return
           // If the touch started on a NonDrawShape element, block canvas pan too
           if (target?.closest('[data-draw-shape-id]')) return
+          // toolbar 本体及其内部弹窗（data-no-canvas-pan）触摸不触发画布 pan
+          if (target?.closest('[data-toolbar]')) return
+          if (target?.closest('[data-no-canvas-pan]')) return
         }
         _stopMomentum()
         _touchVelBuf.current = []
@@ -2599,7 +2602,7 @@ export function CanvasArea(s: ExportPageState) {
             onMouseLeave={e => { if (!smartGuidesOn) (e.currentTarget as HTMLElement).style.background = 'none' }}
           >⊹</button>
           {guidesMenuOpen && (
-            <div data-no-canvas-pan onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 999, background: 'rgba(20,20,20,0.95)', backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)', borderRadius: '12px', padding: '12px 14px', boxShadow: '0 12px 40px rgba(0,0,0,0.32)', minWidth: '210px', fontFamily: 'Inter, DM Sans, sans-serif', border: '1px solid rgba(255,255,255,0.07)' }}>
+            <div data-no-canvas-pan onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} onPointerDown={e => e.stopPropagation()} style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 999, background: 'rgba(20,20,20,0.95)', backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)', borderRadius: '12px', padding: '12px 14px', boxShadow: '0 12px 40px rgba(0,0,0,0.32)', minWidth: '210px', fontFamily: 'Inter, DM Sans, sans-serif', border: '1px solid rgba(255,255,255,0.07)' }}>
               <div style={{ fontSize: '0.52rem', letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.28)', marginBottom: '10px', fontWeight: 600 }}>{isZh ? '辅助线' : 'Guides'}</div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '14px' }}>
                 <div>
