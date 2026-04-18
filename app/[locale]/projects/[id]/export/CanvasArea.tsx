@@ -4117,7 +4117,7 @@ export function CanvasArea(s: ExportPageState) {
                       pageId={page.id}
                       canvasZoom={canvasZoom}
                       pageW={contentWidth}
-                      pageH={pageHeight(page.aspect, contentWidth)}
+                      pageH={pageHeight(page.aspect, contentWidth) ?? 0}
                       selectedId={(s as any).selectedLineArrowId ?? null}
                       onSelect={(id: string | null) => {
                         ;(s as any).setSelectedLineArrowId(id)
