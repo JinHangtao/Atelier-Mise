@@ -1,6 +1,6 @@
 <div align="center">
 
-# Portfolio Sensei
+# Atelier Mise
 
 **AI-powered portfolio advisor for art & design school applicants.**
 
