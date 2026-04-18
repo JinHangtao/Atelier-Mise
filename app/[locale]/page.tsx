@@ -75,7 +75,7 @@ export default function Home() {
           </div>
         </div>
         <div className="sk" style={{ height: '42px', borderRadius: '0', marginBottom: '52px', opacity: 0.4, animation: 'none' }} />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', maxWidth: '1080px', margin: '0 auto', width: '100%' }}>
+        <div className="sk-grid">
           {[0,1,2,3].map(i => <div key={i} className="sk sk-card" style={{ animationDelay: `${i * 0.1}s` }} />)}
         </div>
       </div>
@@ -108,6 +108,7 @@ export default function Home() {
         .sk-desc  { height: 13px; border-radius: 6px; }
         .sk-btn   { height: 42px; border-radius: 14px; }
         .sk-card  { border-radius: 20px; min-height: 170px; }
+        .sk-grid  { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; max-width: 1080px; margin: 0 auto; width: 100%; }
         @keyframes floatA {
           0%   { transform: translate(0px, 0px) scale(1); }
           33%  { transform: translate(18px, -22px) scale(1.03); }
@@ -199,6 +200,50 @@ export default function Home() {
           display: flex;
           align-items: center;
         }
+
+        /* ── MOBILE ── */
+        @media (max-width: 640px) {
+          .skeleton-screen {
+            padding: 16px 20px;
+          }
+          .sk-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+          .nav-wrap {
+            padding: 12px 16px !important;
+          }
+          .nav-links {
+            display: none !important;
+          }
+          .hero-section {
+            padding: 48px 20px 36px !important;
+          }
+          .hero-buttons {
+            flex-direction: column !important;
+            width: 100%;
+          }
+          .hero-buttons a, .hero-buttons > a {
+            width: 100%;
+            justify-content: center;
+            box-sizing: border-box;
+          }
+          .features-section {
+            padding: 32px 16px 56px !important;
+            grid-template-columns: 1fr 1fr !important;
+          }
+          .footer-wrap {
+            padding: 18px 20px !important;
+          }
+          .deco-side {
+            display: none !important;
+          }
+        }
+
+        @media (max-width: 400px) {
+          .features-section {
+            grid-template-columns: 1fr !important;
+          }
+        }
       `}</style>
 
       <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'auto', background: '#f7f7f5' }}>
@@ -220,15 +265,15 @@ export default function Home() {
           <div style={{ position: 'absolute', top: '20%', right: '22%', width: '40px', height: '40px', borderRadius: '50%', border: '1.5px solid rgba(26,26,26,0.22)', animation: 'floatB 9s ease-in-out infinite reverse' }}/>
         </div>
 
-        <div aria-hidden style={{ position: 'fixed', bottom: '28px', left: '48px', fontFamily: 'Space Mono, monospace', fontSize: '0.5rem', letterSpacing: '0.22em', color: 'rgba(26,26,26,0.2)', zIndex: 1, pointerEvents: 'none', textTransform: 'uppercase' }}>
+        <div aria-hidden className="deco-side" style={{ position: 'fixed', bottom: '28px', left: '48px', fontFamily: 'Space Mono, monospace', fontSize: '0.5rem', letterSpacing: '0.22em', color: 'rgba(26,26,26,0.2)', zIndex: 1, pointerEvents: 'none', textTransform: 'uppercase' }}>
           EST. 2024 · OPEN SOURCE
         </div>
-        <div aria-hidden style={{ position: 'fixed', top: '50%', right: '28px', fontFamily: 'Space Mono, monospace', fontSize: '0.48rem', letterSpacing: '0.18em', color: 'rgba(26,26,26,0.15)', zIndex: 1, pointerEvents: 'none', writingMode: 'vertical-rl', textTransform: 'uppercase', transform: 'translateY(-50%)' }}>
+        <div aria-hidden className="deco-side" style={{ position: 'fixed', top: '50%', right: '28px', fontFamily: 'Space Mono, monospace', fontSize: '0.48rem', letterSpacing: '0.18em', color: 'rgba(26,26,26,0.15)', zIndex: 1, pointerEvents: 'none', writingMode: 'vertical-rl', textTransform: 'uppercase', transform: 'translateY(-50%)' }}>
           ART · DESIGN · PORTFOLIO
         </div>
 
         {/* ── NAV 两个药丸 ── */}
-        <nav style={{ padding: '20px 48px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 100 }}>
+        <nav className="nav-wrap" style={{ padding: '20px 48px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 100 }}>
           {/* 左药丸：logo */}
           <Link href={`/${locale}`} className="nav-pill font-mono" style={{ fontSize: '0.7rem', letterSpacing: '0.1em', color: '#1a1a1a', textDecoration: 'none', padding: '8px 18px' }}>
             <img src="/icon.png" alt="" width={20} height={20} style={{ borderRadius: '6px' }} />
@@ -237,14 +282,16 @@ export default function Home() {
 
           {/* 右药丸：导航链接 */}
           <div className="nav-pill" style={{ padding: '6px 8px', gap: '2px' }}>
-            {(['schools','projects','roadmap','aiTools','settings'] as const).map(key => (
-              <Link key={key} href={navLinks[key]} style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.5rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: '#8a8a86', textDecoration: 'none', padding: '5px 13px', borderRadius: '999px', transition: 'all 0.15s' }}
-                onMouseEnter={e => { e.currentTarget.style.color = '#1a1a1a'; e.currentTarget.style.background = 'rgba(26,26,26,0.05)' }}
-                onMouseLeave={e => { e.currentTarget.style.color = '#888884'; e.currentTarget.style.background = 'transparent' }}
-              >
-                {t(`nav.${key}`)}
-              </Link>
-            ))}
+            <div className="nav-links" style={{ display: 'flex', gap: '2px' }}>
+              {(['schools','projects','roadmap','aiTools','settings'] as const).map(key => (
+                <Link key={key} href={navLinks[key]} style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.5rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: '#8a8a86', textDecoration: 'none', padding: '5px 13px', borderRadius: '999px', transition: 'all 0.15s' }}
+                  onMouseEnter={e => { e.currentTarget.style.color = '#1a1a1a'; e.currentTarget.style.background = 'rgba(26,26,26,0.05)' }}
+                  onMouseLeave={e => { e.currentTarget.style.color = '#888884'; e.currentTarget.style.background = 'transparent' }}
+                >
+                  {t(`nav.${key}`)}
+                </Link>
+              ))}
+            </div>
             <button onClick={switchLang} style={{ background: '#1a1a1a', color: '#f7f7f5', border: 'none', padding: '5px 12px', borderRadius: '999px', fontFamily: 'Space Mono, monospace', fontSize: '0.52rem', letterSpacing: '0.1em', cursor: 'pointer', marginLeft: '4px', transition: 'opacity 0.15s' }}
               onMouseEnter={e => (e.currentTarget.style.opacity = '0.75')}
               onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
@@ -255,12 +302,12 @@ export default function Home() {
         </nav>
 
         {/* ── HERO ── */}
-        <section style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 48px 60px', textAlign: 'center', gap: '28px', position: 'relative', zIndex: 3 }}>
+        <section className="hero-section" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 48px 60px', textAlign: 'center', gap: '28px', position: 'relative', zIndex: 3 }}>
           <div className="font-mono fade-up fade-up-1" style={{ fontSize: '0.5rem', letterSpacing: '0.36em', textTransform: 'uppercase', color: '#b8b8b4', border: '1px solid rgba(26,26,26,0.12)', padding: '5px 14px', borderRadius: '20px', background: 'rgba(255,255,255,0.6)', backdropFilter: 'blur(8px)' }}>
             {t('hero.badge')}
           </div>
 
-          <h1 className="font-mono fade-up fade-up-2" style={{ fontSize: 'clamp(2.8rem, 7vw, 6.2rem)', fontWeight: 700, color: '#1a1a1a', lineHeight: 1.04, maxWidth: '900px', letterSpacing: '-0.035em' }}>
+          <h1 className="font-mono fade-up fade-up-2" style={{ fontSize: 'clamp(2.2rem, 7vw, 6.2rem)', fontWeight: 700, color: '#1a1a1a', lineHeight: 1.04, maxWidth: '900px', letterSpacing: '-0.035em' }}>
             <span className="stroke-title">{t('hero.title1')}</span><br />
             <span style={{ color: '#aaaaaa', fontStyle: 'italic', fontFamily: 'Georgia, "DM Serif Display", serif', fontWeight: 400, letterSpacing: '-0.01em' }}>{t('hero.title2')}</span>{' '}
             {t('hero.title3')}
@@ -270,7 +317,7 @@ export default function Home() {
             {t('hero.desc')}
           </p>
 
-          <div className="fade-up fade-up-4" style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
+          <div className="fade-up fade-up-4 hero-buttons" style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
             <Link href={`/${locale}/projects`} style={{ background: '#1a1a1a', color: '#f7f7f5', border: 'none', padding: '12px 28px', borderRadius: '14px', fontFamily: 'Space Mono, monospace', fontSize: '0.58rem', letterSpacing: '0.16em', textTransform: 'uppercase', fontWeight: 700, cursor: 'pointer', textDecoration: 'none', display: 'inline-block', transition: 'opacity 0.15s, transform 0.15s' }}
               onMouseEnter={e => { e.currentTarget.style.opacity = '0.85'; e.currentTarget.style.transform = 'translateY(-1px)' }}
               onMouseLeave={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(0)' }}
@@ -306,7 +353,7 @@ export default function Home() {
         </div>
 
         {/* ── FEATURES ── */}
-        <section style={{ padding: '48px 48px 80px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', maxWidth: '1080px', margin: '0 auto', width: '100%', position: 'relative', zIndex: 3 }}>
+        <section className="features-section" style={{ padding: '48px 48px 80px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', maxWidth: '1080px', margin: '0 auto', width: '100%', position: 'relative', zIndex: 3, boxSizing: 'border-box' }}>
           {([
             { key: 'schools' },
             { key: 'projects' },
@@ -330,7 +377,7 @@ export default function Home() {
         </section>
 
         {/* ── FOOTER ── */}
-        <footer style={{ padding: '22px 48px', borderTop: '1px solid rgba(26,26,26,0.07)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 3 }}>
+        <footer className="footer-wrap" style={{ padding: '22px 48px', borderTop: '1px solid rgba(26,26,26,0.07)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 3 }}>
           <span className="font-mono" style={{ fontSize: '0.52rem', color: '#c0c0bc', letterSpacing: '0.14em' }}>
             {t('footer.label')}
           </span>

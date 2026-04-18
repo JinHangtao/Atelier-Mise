@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/remote-schema.json",
+  "identifier": "remote-vercel",
+  "description": "Allow Tauri API access from the Vercel deployment",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["https://atelier-mise.vercel.app", "https://atelier-mise.vercel.app/*"]
+  },
+  "permissions": [
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close"
+  ]
+}
