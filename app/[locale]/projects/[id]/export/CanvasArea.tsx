@@ -2084,8 +2084,10 @@ export function CanvasArea(s: ExportPageState) {
           // If the touch started on a NonDrawShape element, block canvas pan too
           if (target?.closest('[data-draw-shape-id]')) return
           // toolbar 本体及其内部弹窗（data-no-canvas-pan）触摸不触发画布 pan
+          // 用 contains() 双重兜底：弹窗子元素 overflow visible 时 closest 可能失效
           if (target?.closest('[data-toolbar]')) return
           if (target?.closest('[data-no-canvas-pan]')) return
+          if (toolbarRef.current?.contains(target as Node)) return
         }
         _stopMomentum()
         _touchVelBuf.current = []
@@ -2511,12 +2513,16 @@ export function CanvasArea(s: ExportPageState) {
           ...posStyle,
         }}
         onPointerDown={e => {
-          // button/zoom/select 클릭은 toolbar drag 아님 — 전파도 막지 않음
-          if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('span[data-zoom]') || (e.target as HTMLElement).closest('select') || (e.target as HTMLElement).closest('[data-no-canvas-pan]')) return
+          // button/zoom/select/弹窗子元素 点击时，touch端 Hammer 会收到冒泡事件触发画布平移
+          // 必须先 stopPropagation，再 return，否则 Hammer native listener 不受 React 冒泡阻止
+          if ((e.target as HTMLElement).closest('button') || (e.target as HTMLElement).closest('span[data-zoom]') || (e.target as HTMLElement).closest('select') || (e.target as HTMLElement).closest('[data-no-canvas-pan]')) {
+            e.stopPropagation()
+            return
+          }
           // 只响应主按键/主触点，忽略多指
           if (e.pointerType === 'mouse' && e.button !== 0) return
           if (e.pointerType === 'touch' && !e.isPrimary) return
-          // 여기서만 stopPropagation — toolbar body를 잡았을 때만 canvas pan 차단
+          // toolbar body 拖拽：阻止冒泡到 canvas Hammer
           e.stopPropagation()
           e.preventDefault()
           // setPointerCapture 保证 touch/pen 在 toolbar 外移动时事件不丢
