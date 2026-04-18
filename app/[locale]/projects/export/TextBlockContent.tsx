@@ -6,7 +6,7 @@
 
 'use client'
 import React, { useRef, useEffect, useState } from 'react'
-import { Block } from '../../../../../lib/exportStyles'
+import { Block } from '../../../../lib/exportStyles'
 
 // ── Config ───────────────────────────────────────────────────────────────────
 const FONT_OPTIONS = [

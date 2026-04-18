@@ -5,6 +5,12 @@ import StorageMigration from './StorageMigration'
 
 const messages = { en, zh } as const
 
+export const dynamic = 'force-static'
+
+export function generateStaticParams() {
+  return [{ locale: 'en' }, { locale: 'zh' }]
+}
+
 export default async function LocaleLayout({ children, params }: {
   children: React.ReactNode
   params: Promise<{ locale: string }>

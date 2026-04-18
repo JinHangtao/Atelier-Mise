@@ -9,8 +9,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useRef } from 'react'
-import { Block, ExportOptions, THEMES, FONTS } from '../../../../../lib/exportStyles'
-import { Project } from '../../../../../types'
+import { Block, ExportOptions, THEMES, FONTS } from '../../../../lib/exportStyles'
+import { Project } from '../../../../types'
 import { Aspect, Page } from './types'
 import { aspectLabel, generateId, pageHeight } from './pageHelpers'
 

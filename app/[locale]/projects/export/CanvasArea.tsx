@@ -3,7 +3,7 @@ import React from 'react'
 import { GridLayerOverlay, CellEditTarget } from './GridOverlay'
 import ReactDOM from 'react-dom'
 import { Rnd } from 'react-rnd'
-import { Block, School } from '../../../../../lib/exportStyles'
+import { Block, School } from '../../../../lib/exportStyles'
 import { aspectLabel, pageHeight, generateId } from './pageHelpers'
 import { DraftBanner } from './PanelComponents'
 import { TextBlockContent } from './TextBlockContent'
@@ -51,10 +51,10 @@ function useIdbUrls(raws: string[], projectId: string): string[] {
 
 // ── ImageBlockRenderer：单张图片 block，自动 resolve idb: url ──
 function ImageBlockRenderer({ block, projectId, isImgPanning, patchBlock, contentWidth, cursorGrab, cursorGrabbing }: {
-  block: import('../../../../../lib/exportStyles').Block
+  block: import('../../../../lib/exportStyles').Block
   projectId: string
   isImgPanning: boolean
-  patchBlock: (id: string, patch: Partial<import('../../../../../lib/exportStyles').Block>) => void
+  patchBlock: (id: string, patch: Partial<import('../../../../lib/exportStyles').Block>) => void
   contentWidth: number
   cursorGrab?: string
   cursorGrabbing?: string
@@ -118,9 +118,9 @@ function ImageBlockRenderer({ block, projectId, isImgPanning, patchBlock, conten
 
 // ── ImageRowBlockRenderer：多图排列 block，自动 resolve idb: urls ──
 function ImageRowBlockRenderer({ block, projectId, patchBlock, imageDragIndex }: {
-  block: import('../../../../../lib/exportStyles').Block
+  block: import('../../../../lib/exportStyles').Block
   projectId: string
-  patchBlock: (id: string, patch: Partial<import('../../../../../lib/exportStyles').Block>) => void
+  patchBlock: (id: string, patch: Partial<import('../../../../lib/exportStyles').Block>) => void
   imageDragIndex: React.MutableRefObject<number | null>
 }) {
   const resolvedUrls = useIdbUrls(block.images ?? [], projectId)

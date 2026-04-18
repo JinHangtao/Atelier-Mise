@@ -1,6 +1,6 @@
 'use client'
 import React from 'react'
-import { buildExportHTML, THEMES, FONTS } from '../../../../../lib/exportStyles'
+import { buildExportHTML, THEMES, FONTS } from '../../../../lib/exportStyles'
 import { aspectLabel, pageHeight } from './pageHelpers'
 
 import { PagesPanel, CoverEditor, ThemePickerPanel } from './PanelComponents'

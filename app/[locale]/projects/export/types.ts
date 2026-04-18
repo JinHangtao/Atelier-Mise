@@ -4,7 +4,7 @@
 //   app/[locale]/projects/[id]/export/types.ts
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { Block } from '../../../../../lib/exportStyles'
+import { Block } from '../../../../lib/exportStyles'
 
 export type BlockType =
   | 'title'

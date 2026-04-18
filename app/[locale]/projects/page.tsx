@@ -301,7 +301,7 @@ export default function ProjectsPage() {
             >{tx.backList}</button>
             <span style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.9rem', letterSpacing: '0.1em', color: '#1a1a1a' }}>PORTFOLIO_SENSEI</span>
             <div className="detail-nav-actions" style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-              <button onClick={() => router.push(`${isZh ? '/zh' : '/en'}/projects/${detail.id}/export`)} style={{ background: 'transparent', color: '#888884', border: '1px solid rgba(26,26,26,0.12)', padding: '14px 22px', borderRadius: '12px', fontFamily: 'Space Mono, monospace', fontSize: '0.85rem', letterSpacing: '0.1em', cursor: 'pointer' }}>
+              <button onClick={() => router.push(`${isZh ? '/zh' : '/en'}/projects/export?id=${detail.id}`)} style={{ background: 'transparent', color: '#888884', border: '1px solid rgba(26,26,26,0.12)', padding: '14px 22px', borderRadius: '12px', fontFamily: 'Space Mono, monospace', fontSize: '0.85rem', letterSpacing: '0.1em', cursor: 'pointer' }}>
                 {isZh ? '导出' : 'Export'}
               </button>
               <button onClick={() => exportPDF(detail, [], [], { theme: 'sensei', font: 'mixed', width: 800, radius: 16, gap: 20, imageStyle: 'cover' }, isZh)} style={{ background: 'transparent', color: '#888884', border: '1px solid rgba(26,26,26,0.12)', padding: '14px 22px', borderRadius: '12px', fontFamily: 'Space Mono, monospace', fontSize: '0.85rem', letterSpacing: '0.1em', cursor: 'pointer' }}>PDF</button>

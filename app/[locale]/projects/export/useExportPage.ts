@@ -1,13 +1,13 @@
 'use client'
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { useLocalStorage } from '../../../../../hooks/useLocalStorage'
-import { useParams, usePathname, useRouter } from 'next/navigation'
-import { Project } from '../../../../../types'
-import { exportPDF, exportDOCX } from '../../../../../lib/exportProject'
+import { useLocalStorage } from '../../../../hooks/useLocalStorage'
+import { useSearchParams, usePathname, useRouter } from 'next/navigation'
+import { Project } from '../../../../types'
+import { exportPDF, exportDOCX } from '../../../../lib/exportProject'
 import {
   Block, School, ExportOptions, DEFAULT_EXPORT_OPTIONS,
   THEMES, FONTS, buildExportHTML, buildExportHTMLMultiPage,
-} from '../../../../../lib/exportStyles'
+} from '../../../../lib/exportStyles'
 import { Page, Aspect, BlockType, SaveStatus } from './types'
 import {
   generateId, aspectLabel, pageHeight, migrateOrLoad,
@@ -46,11 +46,11 @@ export const FONT_OPTIONS = [
 export const COLOR_PRESETS = ['#1a1a1a', '#444444', '#888888', '#c4a044', '#4aab6f', '#4a8abf', '#dc783c', '#e05c5c', '#ffffff']
 
 export function useExportPage() {
-  const params   = useParams()
+  const searchParams = useSearchParams()
   const pathname = usePathname()
   const router   = useRouter()
   const isZh = pathname.startsWith('/zh')
-  const id   = params.id as string
+  const id = searchParams.get('id') as string
 
   const [projects, setProjects] = useLocalStorage<Project[]>('ps-projects', [])
   const [schools]               = useLocalStorage<School[]>('ps-schools', [])

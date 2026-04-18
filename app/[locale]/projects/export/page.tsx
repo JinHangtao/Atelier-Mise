@@ -1,8 +1,8 @@
-'use client'
+﻿'use client'
 import React from 'react'
 import ReactDOM from 'react-dom'
 import { Rnd } from 'react-rnd'
-import { buildExportHTML, THEMES } from '../../../../../lib/exportStyles'
+import { buildExportHTML, THEMES } from '../../../../lib/exportStyles'
 import { ImageEditor } from './ImageEditor'
 import { useExportPage } from './useExportPage'
 import { ExportHtmlDialog, HtmlExportConfig, DEFAULT_HTML_EXPORT_CONFIG } from './ExportHtmlDialog'
@@ -1366,7 +1366,7 @@ const handleOpen = () => { setCanvasFilename(s.project?.title ?? 'untitled'); se
             (window as any).__editingImageIdx = null
           }}
           onStartEdit={block => {
-            s.startEdit(block as import('../../../../../lib/exportStyles').Block)
+            s.startEdit(block as import('../../../../lib/exportStyles').Block)
           }}
           onRemoveBg={(id, content) => {
             s.removeBackground(id, content)

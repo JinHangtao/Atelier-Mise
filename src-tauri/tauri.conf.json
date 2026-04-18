@@ -1,20 +1,19 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Atelier Mise",
-  "version": "0.1.0",
+  "productName": "Atelier Mise Offline",
+  "version": "0.2.0",
   "identifier": "com.jinhangtao.ateliermise",
   "build": {
     "frontendDist": "../out",
     "devUrl": "http://localhost:3000",
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": ""
+    "beforeBuildCommand": "npm run build"
   },
   "app": {
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Atelier Mise",
-        "url": "https://atelier-mise.vercel.app",
+        "title": "Atelier Mise Offline",
         "width": 1400,
         "height": 900,
         "resizable": true,
