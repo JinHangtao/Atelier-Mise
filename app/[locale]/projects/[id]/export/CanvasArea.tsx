@@ -11,9 +11,10 @@ import { TableBlock, DEFAULT_TABLE_DATA } from './TableBlock'
 import { ExportPageState, TEXT_BLOCK_TYPES, FONT_OPTIONS, COLOR_PRESETS } from './useExportPage'
 import { Aspect, EmojiBlock as EmojiBlockType, ArrowDirection } from './types'
 import EmojiBlockComponent from './EmojiBlock'
-import { sharedDrawState, BRUSHES, universalRenderStroke, catmullRomToSVGPath } from './DrawPanel'
+import { sharedDrawState, BRUSHES, universalRenderStroke, catmullRomToSVGPath, LineCap } from './DrawPanel'
 import { getDrawLayerManager, destroyDrawLayerManager, DrawnShape } from './DrawLayerManager'
 import { loadMediaImages } from './mediaLibraryDB'
+import { LineArrowLayer, LineArrowBlock } from './LineArrowLayer'
 
 // ── useIdbImage：把 idb:id 格式的 block.content 解析成真实 dataUrl ──
 // 支持 image / image-row 两种 block 类型
@@ -49,12 +50,14 @@ function useIdbUrls(raws: string[], projectId: string): string[] {
 
 
 // ── ImageBlockRenderer：单张图片 block，自动 resolve idb: url ──
-function ImageBlockRenderer({ block, projectId, isImgPanning, patchBlock, contentWidth }: {
+function ImageBlockRenderer({ block, projectId, isImgPanning, patchBlock, contentWidth, cursorGrab, cursorGrabbing }: {
   block: import('../../../../../lib/exportStyles').Block
   projectId: string
   isImgPanning: boolean
   patchBlock: (id: string, patch: Partial<import('../../../../../lib/exportStyles').Block>) => void
   contentWidth: number
+  cursorGrab?: string
+  cursorGrabbing?: string
 }) {
   const resolvedSrc = useIdbUrl(block.content, projectId)
   const tx = block.imgOffsetX ?? 0
@@ -69,7 +72,7 @@ function ImageBlockRenderer({ block, projectId, isImgPanning, patchBlock, conten
   })()
   return (
     <div data-blockid={block.id}
-      style={{ width: '100%', position: 'relative', borderRadius: `${block.imgRadius ?? 0}px`, boxShadow: block.imgShadow ? `0 ${Math.round(block.imgShadow / 2)}px ${block.imgShadow}px rgba(0,0,0,0.22)` : 'none', overflow: 'visible', cursor: isImgPanning ? 'grab' : 'default' }}
+      style={{ width: '100%', position: 'relative', borderRadius: `${block.imgRadius ?? 0}px`, boxShadow: block.imgShadow ? `0 ${Math.round(block.imgShadow / 2)}px ${block.imgShadow}px rgba(0,0,0,0.22)` : 'none', overflow: 'visible', cursor: isImgPanning ? (cursorGrabbing ?? 'grabbing') : (cursorGrab ?? 'grab') }}
       onMouseDown={!isImgPanning ? undefined : e => {
         e.stopPropagation()
         const startX = e.clientX - tx; const startY = e.clientY - ty
@@ -301,8 +304,35 @@ function buildShapeElement(shape: DrawnShape, x0: number, y0: number, x1: number
       return <rect x={Math.min(x0,x1)} y={Math.min(y0,y1)} width={Math.abs(x1-x0)} height={Math.abs(y1-y0)} {...commonProps} />
     case 'ellipse':
       return <ellipse cx={cx} cy={cy} rx={rx} ry={ry} {...commonProps} />
-    case 'line':
-      return <line x1={x0} y1={y0} x2={x1} y2={y1} {...commonProps} fill="none" />
+    case 'line': {
+      const ang = Math.atan2(y1-y0, x1-x0)
+      const hs = Math.max(sw * 3, 8)
+      const dotR = Math.max(sw * 1.8, 3.5)
+      const barHalf = Math.max(sw * 2.5, 6)
+      const startCap = ((shape as any).lineStartCap ?? 'none') as LineCap
+      const endCap   = ((shape as any).lineEndCap ?? 'none') as LineCap
+      const capEl = (px: number, py: number, capAng: number, cap: LineCap, key: string) => {
+        if (cap === 'arrow') {
+          const ha = Math.PI / 6
+          return <polyline key={key}
+            points={`${px-Math.cos(capAng-ha)*hs},${py-Math.sin(capAng-ha)*hs} ${px},${py} ${px-Math.cos(capAng+ha)*hs},${py-Math.sin(capAng+ha)*hs}`}
+            stroke={stroke} strokeWidth={sw} fill="none" strokeLinecap="round" strokeLinejoin="round" opacity={alpha} />
+        }
+        if (cap === 'dot') return <circle key={key} cx={px} cy={py} r={dotR} fill={stroke} opacity={alpha} />
+        if (cap === 'bar') return <line key={key}
+          x1={px+Math.sin(capAng)*barHalf} y1={py-Math.cos(capAng)*barHalf}
+          x2={px-Math.sin(capAng)*barHalf} y2={py+Math.cos(capAng)*barHalf}
+          stroke={stroke} strokeWidth={sw} strokeLinecap="round" opacity={alpha} />
+        return null
+      }
+      return (
+        <g opacity={alpha}>
+          <line x1={x0} y1={y0} x2={x1} y2={y1} stroke={stroke} strokeWidth={sw} strokeLinecap="round" />
+          {capEl(x0, y0, ang + Math.PI, startCap, 'sc')}
+          {capEl(x1, y1, ang, endCap, 'ec')}
+        </g>
+      )
+    }
     case 'arrow': {
       const angle = Math.atan2(y1 - y0, x1 - x0)
       const hs = Math.max(sw * 3, 8)
@@ -310,10 +340,29 @@ function buildShapeElement(shape: DrawnShape, x0: number, y0: number, x1: number
       const ay1 = y1 - Math.sin(angle - Math.PI / 6) * hs
       const ax2 = x1 - Math.cos(angle + Math.PI / 6) * hs
       const ay2 = y1 - Math.sin(angle + Math.PI / 6) * hs
+      const startCap = ((shape as any).arrowStartCap ?? 'none') as LineCap
+      const dotR = Math.max(sw * 1.8, 3.5)
+      const barHalf = Math.max(sw * 2.5, 6)
+      const hl = Math.max(hs, 14)
+      const startCapEl = (() => {
+        if (startCap === 'arrow') {
+          const ha = Math.PI / 6, rev = angle + Math.PI
+          return <polyline
+            points={`${x0-Math.cos(rev-ha)*hl},${y0-Math.sin(rev-ha)*hl} ${x0},${y0} ${x0-Math.cos(rev+ha)*hl},${y0-Math.sin(rev+ha)*hl}`}
+            stroke={stroke} strokeWidth={sw} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        }
+        if (startCap === 'dot') return <circle cx={x0} cy={y0} r={dotR} fill={stroke} />
+        if (startCap === 'bar') return <line
+          x1={x0+Math.sin(angle)*barHalf} y1={y0-Math.cos(angle)*barHalf}
+          x2={x0-Math.sin(angle)*barHalf} y2={y0+Math.cos(angle)*barHalf}
+          stroke={stroke} strokeWidth={sw} strokeLinecap="round" />
+        return null
+      })()
       return (
         <g opacity={alpha}>
           <line x1={x0} y1={y0} x2={x1} y2={y1} stroke={stroke} strokeWidth={sw} strokeLinecap="round" />
           <polyline points={`${ax1},${ay1} ${x1},${y1} ${ax2},${ay2}`} stroke={stroke} strokeWidth={sw} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          {startCapEl}
         </g>
       )
     }
@@ -450,12 +499,38 @@ function buildShapeSVGString(shape: DrawnShape, x0: number, y0: number, x1: numb
   switch (shape.shapeType) {
     case 'rect':    return `<rect x="${Math.min(x0,x1)}" y="${Math.min(y0,y1)}" width="${Math.abs(x1-x0)}" height="${Math.abs(y1-y0)}" ${base}/>`
     case 'ellipse': return `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" ${base}/>`
-    case 'line':    return `<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" ${base} fill="none"/>`
+    case 'line': {
+      const ang = Math.atan2(y1-y0, x1-x0)
+      const hs = Math.max(sw*3, 8), dotR = Math.max(sw*1.8, 3.5), barHalf = Math.max(sw*2.5, 6)
+      const startCap = ((shape as any).lineStartCap ?? 'none') as LineCap
+      const endCap   = ((shape as any).lineEndCap ?? 'none') as LineCap
+      const capSVG = (px: number, py: number, capAng: number, cap: LineCap) => {
+        if (cap === 'arrow') {
+          const ha = Math.PI/6
+          return `<polyline points="${px-Math.cos(capAng-ha)*hs},${py-Math.sin(capAng-ha)*hs} ${px},${py} ${px-Math.cos(capAng+ha)*hs},${py-Math.sin(capAng+ha)*hs}" stroke="${stroke}" stroke-width="${sw}" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="${alpha}"/>`
+        }
+        if (cap === 'dot') return `<circle cx="${px}" cy="${py}" r="${dotR}" fill="${stroke}" opacity="${alpha}"/>`
+        if (cap === 'bar') return `<line x1="${px+Math.sin(capAng)*barHalf}" y1="${py-Math.cos(capAng)*barHalf}" x2="${px-Math.sin(capAng)*barHalf}" y2="${py+Math.cos(capAng)*barHalf}" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" opacity="${alpha}"/>`
+        return ''
+      }
+      return `<g opacity="${alpha}"><line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/>${capSVG(x0, y0, ang+Math.PI, startCap)}${capSVG(x1, y1, ang, endCap)}</g>`
+    }
     case 'arrow': {
       const angle=Math.atan2(y1-y0,x1-x0), hs=Math.max(sw*3,8)
       const ax1=x1-Math.cos(angle-Math.PI/6)*hs, ay1=y1-Math.sin(angle-Math.PI/6)*hs
       const ax2=x1-Math.cos(angle+Math.PI/6)*hs, ay2=y1-Math.sin(angle+Math.PI/6)*hs
-      return `<g opacity="${alpha}"><line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/><polyline points="${ax1},${ay1} ${x1},${y1} ${ax2},${ay2}" stroke="${stroke}" stroke-width="${sw}" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>`
+      const startCap = ((shape as any).arrowStartCap ?? 'none') as LineCap
+      const hl = Math.max(hs, 14), dotR = Math.max(sw*1.8, 3.5), barHalf = Math.max(sw*2.5, 6)
+      let startSVG = ''
+      if (startCap === 'arrow') {
+        const ha = Math.PI/6, rev = angle+Math.PI
+        startSVG = `<polyline points="${x0-Math.cos(rev-ha)*hl},${y0-Math.sin(rev-ha)*hl} ${x0},${y0} ${x0-Math.cos(rev+ha)*hl},${y0-Math.sin(rev+ha)*hl}" stroke="${stroke}" stroke-width="${sw}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`
+      } else if (startCap === 'dot') {
+        startSVG = `<circle cx="${x0}" cy="${y0}" r="${dotR}" fill="${stroke}"/>`
+      } else if (startCap === 'bar') {
+        startSVG = `<line x1="${x0+Math.sin(angle)*barHalf}" y1="${y0-Math.cos(angle)*barHalf}" x2="${x0-Math.sin(angle)*barHalf}" y2="${y0+Math.cos(angle)*barHalf}" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/>`
+      }
+      return `<g opacity="${alpha}"><line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round"/><polyline points="${ax1},${ay1} ${x1},${y1} ${ax2},${ay2}" stroke="${stroke}" stroke-width="${sw}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>${startSVG}</g>`
     }
     case 'triangle': return `<polygon points="${cx},${Math.min(y0,y1)} ${Math.min(x0,x1)},${Math.max(y0,y1)} ${Math.max(x0,x1)},${Math.max(y0,y1)}" ${base}/>`
     case 'polygon': {
@@ -651,7 +726,7 @@ function DrawModeShapeWrapper({ shape, isSel, pageId, onDelete, canvasZoom }: {
                     <circle key={`an-${i}`}
                       cx={p.x} cy={p.y} r={AR}
                       fill="#fff" stroke="#6366f1" strokeWidth={sw15}
-                      style={{ cursor: 'move', filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.18))' }}
+                      style={{ cursor: CURSOR_MOVE, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.18))' }}
                       onPointerDown={e => dragAnchor(e, i)} />
                   ))}
                 </g>
@@ -2406,7 +2481,7 @@ export function CanvasArea(s: ExportPageState) {
       <style>{`
         .block-card { cursor: ${CURSOR_GRAB} }
         .block-card:active, .rnd-block.dragging { cursor: ${CURSOR_GRABBING} !important }
-        .rnd-block img { cursor: ${CURSOR_GRAB} }
+        .rnd-block img { cursor: ${CURSOR_GRAB} !important }
         .rnd-block img:active { cursor: ${CURSOR_GRABBING} !important }
         .rnd-block textarea, .rnd-block input, .rnd-block [contenteditable] { cursor: text }
         .rnd-block button, .rnd-block select { cursor: ${CURSOR_DEFAULT} !important }
@@ -2866,6 +2941,7 @@ export function CanvasArea(s: ExportPageState) {
                     if ((e.nativeEvent as any).__shapeSelected) { delete (e.nativeEvent as any).__shapeSelected; return }
                     setActivePageId(page.id); setEditingBlockId(null); setSelectedBlockId(null); setFontPickerOpen(false); setColorPickerOpen(false)
                     ;(s as any).setSelectedEmojiId?.(null)
+                    ;(s as any).setSelectedLineArrowId?.(null)
                     setSelectedNonDrawShapeId(null)
                   }}
                   onDragOver={e => {
@@ -3151,8 +3227,10 @@ export function CanvasArea(s: ExportPageState) {
                           }
                           setDrawPreview(null, page.id)
                           if (Math.abs(x1-x0) > 4 || Math.abs(y1-y0) > 4) {
-                            const { color, alpha, shapeFill, shapeStroke, shapeSides, shapeType } = sharedDrawState
-                            mgr.addShape({ id: crypto.randomUUID(), shapeType: shapeType!, x0, y0, x1, y1, color, alpha, shapeFill, shapeStroke, shapeSides })
+                            const { color, alpha, shapeFill, shapeStroke, shapeSides, shapeType,
+                                  lineStartCap, lineEndCap, arrowStartCap } = sharedDrawState
+                            mgr.addShape({ id: crypto.randomUUID(), shapeType: shapeType!, x0, y0, x1, y1, color, alpha, shapeFill, shapeStroke, shapeSides,
+                              lineStartCap, lineEndCap, arrowStartCap } as any)
                           }
                         }
                       }}
@@ -3175,13 +3253,15 @@ export function CanvasArea(s: ExportPageState) {
                         // 더블클릭시 마지막으로 추가된 중복 앵커 제거 (down이 2번 발생)
                         if (g.bezierPts.length > 2) g.bezierPts.pop()
                         if (g.bezierPts.length >= 2) {
-                          const { color, alpha, shapeFill, shapeStroke, shapeSides } = sharedDrawState
+                          const { color, alpha, shapeFill, shapeStroke, shapeSides,
+                                  lineStartCap, lineEndCap, arrowStartCap } = sharedDrawState
                           const xs = g.bezierPts.map(p => p.x)
                           const ys = g.bezierPts.map(p => p.y)
                           const bx0 = Math.min(...xs), by0 = Math.min(...ys)
                           const bx1 = Math.max(...xs), by1 = Math.max(...ys)
                           const newId = crypto.randomUUID()
-                          mgr2.addShape({ id: newId, shapeType: 'bezier', x0: bx0, y0: by0, x1: bx1, y1: by1, bezierPts: [...g.bezierPts] as any, color, alpha, shapeFill, shapeStroke, shapeSides })
+                          mgr2.addShape({ id: newId, shapeType: 'bezier', x0: bx0, y0: by0, x1: bx1, y1: by1, bezierPts: [...g.bezierPts] as any, color, alpha, shapeFill, shapeStroke, shapeSides,
+                            lineStartCap, lineEndCap, arrowStartCap } as any)
                           mgr2.selectShape(newId)
                         }
                         g.bezierPts = []; g.mode = 'none'; g.origin = null
@@ -3866,6 +3946,8 @@ export function CanvasArea(s: ExportPageState) {
                                           isImgPanning={isImgPanning}
                                           patchBlock={patchBlock}
                                           contentWidth={contentWidth}
+                                          cursorGrab={CURSOR_GRAB}
+                                          cursorGrabbing={CURSOR_GRABBING}
                                         />
                                         {isImgPanning && (
                                           <div style={{ position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.55)', color: '#fff', fontSize: '0.6rem', padding: '3px 8px', borderRadius: '4px', pointerEvents: 'none', fontFamily: 'Space Mono, monospace', whiteSpace: 'nowrap' }}>
@@ -4028,6 +4110,35 @@ export function CanvasArea(s: ExportPageState) {
                         />
                       ))
                     }
+
+                    {/* ── Line / Arrow Blocks Layer ── */}
+                    <LineArrowLayer
+                      blocks={(s as any).lineArrowBlocks as LineArrowBlock[] ?? []}
+                      pageId={page.id}
+                      canvasZoom={canvasZoom}
+                      pageW={contentWidth}
+                      pageH={pageHeight(page.aspect, contentWidth)}
+                      selectedId={(s as any).selectedLineArrowId ?? null}
+                      onSelect={(id: string | null) => {
+                        ;(s as any).setSelectedLineArrowId(id)
+                        if (id) {
+                          setSelectedBlockId(null)
+                          setEditingBlockId(null)
+                          ;(s as any).setSelectedEmojiId?.(null)
+                        }
+                      }}
+                      onPatch={(id: string, patch: Partial<LineArrowBlock>) =>
+                        (s as any).setLineArrowBlocks((prev: LineArrowBlock[]) =>
+                          prev.map((b: LineArrowBlock) => b.id === id ? { ...b, ...patch } : b)
+                        )
+                      }
+                      onDelete={(id: string) =>
+                        (s as any).setLineArrowBlocks((prev: LineArrowBlock[]) =>
+                          prev.filter((b: LineArrowBlock) => b.id !== id)
+                        )
+                      }
+                      onSwitchTab={() => setRightTab('blocks')}
+                    />
 
                   </div>{/* end rnd-canvas */}
                 </div>

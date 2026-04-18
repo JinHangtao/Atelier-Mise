@@ -70,25 +70,30 @@ export function RightPanel(s: ExportPageState) {
       onDragOver={e => e.stopPropagation()} onDrop={e => e.stopPropagation()}
     >
       <style>{`
-      @keyframes _rp-block-in {
-  from { opacity: 0; transform: translateY(10px) scale(0.98); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
-}
-        @keyframes _rp-tab-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes _rp-press  { 0%,100% { transform: scale(1); } 45% { transform: scale(0.96); } }
+        @keyframes _rp-block-in {
+          from { opacity: 0; transform: translateY(8px) scale(0.985); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes _rp-tab-in {
+          from { opacity: 0; transform: translateY(6px) scale(0.99); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes _rp-press  { 0%,100% { transform: scale(1); } 45% { transform: scale(0.95); } }
         @keyframes _rp-flash  { 0% { background: rgba(26,26,26,0.07); } 100% { background: transparent; } }
-        ._rp-tab-panel { animation: _rp-tab-in 0.16s cubic-bezier(0.22,1,0.36,1) both; }
-        ._rp-addblock:active { animation: _rp-press 0.18s ease; }
-        ._rp-export-btn { transition: background 0.15s, transform 0.12s !important; }
-        ._rp-export-btn:hover { background: #333 !important; }
-        ._rp-export-btn:active { transform: scale(0.98) !important; }
-        ._rp-quick-ta { resize: none; outline: none; border: none; background: transparent; width: 100%; font-family: Inter, DM Sans, sans-serif; font-size: 0.82rem; color: #1a1a1a; line-height: 1.6; padding: 0; box-sizing: border-box; }
+        ._rp-tab-panel { animation: _rp-tab-in 0.22s cubic-bezier(0.22,1,0.36,1) both; }
+        ._rp-addblock { transition: background 0.15s cubic-bezier(0.22,1,0.36,1), transform 0.12s cubic-bezier(0.22,1,0.36,1), box-shadow 0.15s !important; }
+        ._rp-addblock:hover { transform: translateY(-1px) !important; box-shadow: 0 2px 8px rgba(0,0,0,0.07) !important; }
+        ._rp-addblock:active { animation: _rp-press 0.2s cubic-bezier(0.22,1,0.36,1); }
+        ._rp-export-btn { transition: background 0.15s, transform 0.14s cubic-bezier(0.22,1,0.36,1), box-shadow 0.15s !important; }
+        ._rp-export-btn:hover { background: #333 !important; transform: translateY(-1px) !important; box-shadow: 0 3px 10px rgba(0,0,0,0.12) !important; }
+        ._rp-export-btn:active { transform: scale(0.975) translateY(0) !important; box-shadow: none !important; }
+        ._rp-quick-ta { resize: none; outline: none; border: none; background: transparent; width: 100%; font-family: Inter, DM Sans, sans-serif; font-size: 0.82rem; color: #1a1a1a; line-height: 1.6; padding: 0; box-sizing: border-box; transition: color 0.12s; }
         ._rp-quick-ta::placeholder { color: #ccc; }
         ._rp-quick-ta:focus { outline: none; }
-        ._rp-drag-handle { height: 12px; cursor: ns-resize; display: flex; align-items: center; justify-content: center; margin: 0 -14px -14px; border-radius: 0 0 10px 10px; transition: background 0.12s; }
-        ._rp-drag-handle:hover { background: rgba(26,26,26,0.04); }
-        ._rp-drag-handle-bar { width: 28px; height: 3px; border-radius: 2px; background: rgba(26,26,26,0.12); transition: background 0.12s; }
-        ._rp-drag-handle:hover ._rp-drag-handle-bar { background: rgba(26,26,26,0.28); }
+        ._rp-drag-handle { height: 12px; cursor: ns-resize; display: flex; align-items: center; justify-content: center; margin: 0 -14px -14px; border-radius: 0 0 10px 10px; transition: background 0.18s cubic-bezier(0.22,1,0.36,1); }
+        ._rp-drag-handle:hover { background: rgba(26,26,26,0.05); }
+        ._rp-drag-handle-bar { width: 28px; height: 3px; border-radius: 2px; background: rgba(26,26,26,0.1); transition: background 0.18s cubic-bezier(0.22,1,0.36,1), width 0.18s cubic-bezier(0.22,1,0.36,1); }
+        ._rp-drag-handle:hover ._rp-drag-handle-bar { background: rgba(26,26,26,0.25); width: 36px; }
         div:hover > ._media-del { opacity: 1 !important; }
         [data-rp-scroll]::-webkit-scrollbar { display: none; }
         [data-rp-scroll] { scrollbar-width: none; }
@@ -107,8 +112,8 @@ export function RightPanel(s: ExportPageState) {
                 width: '25%',
                 background: '#fff',
                 borderRadius: '7px',
-                boxShadow: '0 1px 4px rgba(0,0,0,0.07), 0 0 0 0.5px rgba(26,26,26,0.055)',
-                transition: 'left 0.3s cubic-bezier(0.34,1.2,0.64,1)',
+                boxShadow: '0 1px 5px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(26,26,26,0.06)',
+                transition: 'left 0.32s cubic-bezier(0.34,1.56,0.64,1)',
                 pointerEvents: 'none',
               }}
             />
@@ -241,6 +246,130 @@ export function RightPanel(s: ExportPageState) {
               <div className="_rp-drag-handle-bar" />
             </div>
           </div>
+
+{/* ── Line / Arrow style controls ── */}
+{(() => {
+  const selId = (s as any).selectedLineArrowId as string | null
+  const lineBlocks = (s as any).lineArrowBlocks as any[] ?? []
+  const lb = lineBlocks.find((b: any) => b.id === selId)
+  if (!lb) return null
+  const p = (patch: any) => (s as any).setLineArrowBlocks((prev: any[]) => prev.map((b: any) => b.id === selId ? { ...b, ...patch } : b))
+  const sw = lb.strokeWidth ?? 2
+
+  const LINE_COLORS = ['#1a1a1a','#e03131','#f76707','#f59f00','#2f9e44','#1971c2','#7048e8','#c2255c','#ffffff']
+  const ff = 'Inter, DM Sans, sans-serif'
+  const lb2: React.CSSProperties = { fontSize: '0.58rem', color: '#b0b0ac', fontFamily: 'Inter, sans-serif', letterSpacing: '0.12em', textTransform: 'uppercase', fontWeight: 600, display: 'block', marginBottom: '6px' }
+  const sep = <div style={{ height: 1, background: 'rgba(26,26,26,0.07)', margin: '10px 0' }} />
+
+  const caps = ['none','arrow','dot','bar'] as const
+  const CapIcon = ({ cap, flip }: { cap: string; flip?: boolean }) => {
+    const t = flip ? 'scaleX(-1)' : undefined
+    if (cap === 'none')  return <svg width={18} height={12} viewBox="0 0 18 12" style={{ transform: t }}><line x1="2" y1="6" x2="16" y2="6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
+    if (cap === 'arrow') return <svg width={18} height={12} viewBox="0 0 18 12" style={{ transform: t }}><line x1="2" y1="6" x2="12" y2="6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/><polyline points="9,2.5 15,6 9,9.5" stroke="currentColor" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
+    if (cap === 'dot')   return <svg width={18} height={12} viewBox="0 0 18 12" style={{ transform: t }}><line x1="2" y1="6" x2="13" y2="6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/><circle cx="15.5" cy="6" r="2" fill="currentColor"/></svg>
+    if (cap === 'bar')   return <svg width={18} height={12} viewBox="0 0 18 12" style={{ transform: t }}><line x1="2" y1="6" x2="13" y2="6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/><line x1="15" y1="2.5" x2="15" y2="9.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
+    return null
+  }
+  const pillBtn = (active: boolean, onClick: () => void, children: React.ReactNode, title?: string, key?: string) => (
+    <button key={key} title={title} onClick={onClick} style={{
+      flex: 1, height: 28, borderRadius: 6, border: `1px solid ${active ? 'rgba(26,26,26,0.35)' : 'rgba(26,26,26,0.08)'}`,
+      background: active ? 'rgba(26,26,26,0.07)' : 'transparent',
+      color: active ? '#1a1a1a' : '#999', cursor: 'pointer',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      transition: 'all 0.1s', padding: 0,
+    }}>{children}</button>
+  )
+
+  return (
+    <div style={{ marginBottom: 20, padding: 14, background: 'rgba(26,26,26,0.03)', borderRadius: 10, border: '1px solid rgba(26,26,26,0.07)' }}>
+      <p style={{ fontSize: '0.58rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#b0b0ac', fontFamily: ff, fontWeight: 600, marginBottom: 12 }}>
+        {isZh ? (lb.type === 'arrow-block' ? '箭头样式' : '直线样式') : (lb.type === 'arrow-block' ? 'Arrow Style' : 'Line Style')}
+      </p>
+
+      {/* Color */}
+      <span style={lb2}>{isZh ? '颜色' : 'Color'}</span>
+      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 10 }}>
+        {LINE_COLORS.map(hex => {
+          const active = lb.strokeColor === hex
+          const isWhite = hex === '#ffffff'
+          return (
+            <button key={hex} onClick={() => p({ strokeColor: hex })} style={{
+              width: 20, height: 20, borderRadius: '50%', background: hex, padding: 0, cursor: 'pointer',
+              border: isWhite ? '1.5px solid #d4d4d8' : '2px solid transparent',
+              outline: active ? `2.5px solid ${isWhite ? '#a1a1aa' : hex}` : 'none',
+              outlineOffset: 1.5, transform: active ? 'scale(1.15)' : 'scale(1)', transition: 'transform 0.1s',
+            }} />
+          )
+        })}
+        <label style={{ width: 20, height: 20, borderRadius: '50%', cursor: 'pointer', background: 'conic-gradient(red,yellow,lime,cyan,blue,magenta,red)', border: '1.5px solid rgba(26,26,26,0.12)', position: 'relative', display: 'block', outline: !LINE_COLORS.includes(lb.strokeColor) ? '2.5px solid #6366f1' : 'none', outlineOffset: 1.5 }}>
+          <input type="color" value={lb.strokeColor} onChange={e => p({ strokeColor: e.target.value })} style={{ opacity: 0, position: 'absolute', inset: 0, width: '100%', height: '100%', cursor: 'pointer' }} />
+        </label>
+      </div>
+
+      {sep}
+
+      {/* Width */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span style={lb2}>{isZh ? '线宽' : 'Width'}</span>
+        <span style={{ fontSize: '0.58rem', color: '#888', fontFamily: 'Space Mono, monospace' }}>{sw}px</span>
+      </div>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+        {[1, 2, 3, 5, 8].map(v => (
+          <button key={v} onClick={() => p({ strokeWidth: v })} style={{
+            flex: 1, height: 24, borderRadius: 6, border: `1px solid ${sw === v ? 'rgba(26,26,26,0.35)' : 'rgba(26,26,26,0.08)'}`,
+            background: sw === v ? 'rgba(26,26,26,0.07)' : 'transparent', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <div style={{ width: 16, height: v, borderRadius: v, background: sw === v ? '#1a1a1a' : 'rgba(0,0,0,0.3)' }} />
+          </button>
+        ))}
+      </div>
+      <input type="range" min={1} max={16} step={0.5} value={sw} onChange={e => p({ strokeWidth: Number(e.target.value) })} style={{ width: '100%', accentColor: '#1a1a1a', cursor: 'pointer' }} />
+
+      {sep}
+
+      {/* Line type */}
+      <span style={{ ...lb2, marginBottom: 6 }}>{isZh ? '线型' : 'Line type'}</span>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 10 }}>
+        {pillBtn(lb.curve === 'straight', () => p({ curve: 'straight' }), <svg width={36} height={14} viewBox="0 0 36 14"><line x1="4" y1="7" x2="32" y2="7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>, 'Straight')}
+        {pillBtn(lb.curve === 'curve',    () => p({ curve: 'curve' }),    <svg width={36} height={14} viewBox="0 0 36 14"><path d="M4,12 C10,2 26,2 32,12" stroke="currentColor" strokeWidth="1.8" fill="none" strokeLinecap="round"/></svg>, 'Curve')}
+      </div>
+
+      {/* Stroke style */}
+      <span style={{ ...lb2, marginBottom: 6 }}>{isZh ? '描边' : 'Stroke'}</span>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 10 }}>
+        {pillBtn(lb.strokeStyle === 'solid',  () => p({ strokeStyle: 'solid' }),  <svg width={36} height={12} viewBox="0 0 36 12"><line x1="4" y1="6" x2="32" y2="6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>)}
+        {pillBtn(lb.strokeStyle === 'dashed', () => p({ strokeStyle: 'dashed' }), <svg width={36} height={12} viewBox="0 0 36 12"><line x1="4" y1="6" x2="32" y2="6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeDasharray="6,4"/></svg>)}
+        {pillBtn(lb.strokeStyle === 'dotted', () => p({ strokeStyle: 'dotted' }), <svg width={36} height={12} viewBox="0 0 36 12"><line x1="4" y1="6" x2="32" y2="6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeDasharray="2,4"/></svg>)}
+      </div>
+
+      {sep}
+
+      {/* Start cap */}
+      <span style={{ ...lb2, marginBottom: 6 }}>{isZh ? '起点' : 'Start'}</span>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 10 }}>
+        {caps.map(cap => pillBtn(lb.startCap === cap, () => p({ startCap: cap }), <CapIcon cap={cap} flip />, cap, cap))}
+      </div>
+
+      {/* End cap */}
+      <span style={{ ...lb2, marginBottom: 6 }}>{isZh ? '终点' : 'End'}</span>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+        {caps.map(cap => pillBtn(lb.endCap === cap, () => p({ endCap: cap }), <CapIcon cap={cap} />, cap, cap))}
+      </div>
+
+      {sep}
+
+      {/* Delete */}
+      <button onClick={() => { (s as any).setLineArrowBlocks((prev: any[]) => prev.filter((b: any) => b.id !== selId)); (s as any).setSelectedLineArrowId(null) }}
+        style={{ width: '100%', padding: '7px 0', borderRadius: 7, border: '1px solid rgba(224,92,92,0.25)', background: 'rgba(224,92,92,0.05)', color: 'rgba(224,92,92,0.9)', cursor: 'pointer', fontFamily: ff, fontSize: '0.72rem', transition: 'all 0.12s' }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(224,92,92,0.10)'; e.currentTarget.style.borderColor = 'rgba(224,92,92,0.4)' }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(224,92,92,0.05)'; e.currentTarget.style.borderColor = 'rgba(224,92,92,0.25)' }}
+      >
+        {isZh ? '删除' : 'Delete'}
+      </button>
+    </div>
+  )
+})()}
 
 {/* Table style controls */}
 {(() => {
@@ -1016,32 +1145,69 @@ export function RightPanel(s: ExportPageState) {
           <div style={{ height: '1px', background: 'rgba(26,26,26,0.06)', marginBottom: '16px' }} />
           <div style={{ marginBottom: '20px' }}>
             <p style={{ fontSize: '0.65rem', letterSpacing: '0.18em', textTransform: 'uppercase', color: '#b0b0ac', marginBottom: '10px', fontFamily: 'Inter, DM Sans, sans-serif' }}>{isZh ? '添加块' : 'Add Block'}</p>
-            {/* Sticky note */}
-            <div
-              className="_rp-addblock"
-              onClick={() => addBlock('sticky' as any, '', { pixelPos: { x: 60, y: 60, w: 200, h: 200 }, stickyColor: '#fef08a' } as any)}
-              style={{ padding: '9px 13px', border: '1px solid rgba(26,26,26,0.08)', borderRadius: '8px', marginBottom: '6px', cursor: 'pointer', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.82rem', color: '#666', lineHeight: 1.55, transition: 'background 0.12s', display: 'flex', alignItems: 'center', gap: '8px' }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.03)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-            >
-              <span style={{ fontSize: '1rem', lineHeight: 1 }}>🗒️</span>
-              {isZh ? '便利贴' : 'Sticky Note'}
+            {/* Line + Arrow row */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '6px' }}>
+              <div
+                className="_rp-addblock"
+                onClick={() => {
+                  const fn = (s as any).addLineArrowBlock
+                  if (typeof fn === 'function') fn('line-block')
+                }}
+                style={{ padding: '9px 10px', border: '1px solid rgba(26,26,26,0.08)', borderRadius: '8px', cursor: 'pointer', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.78rem', color: '#666', lineHeight: 1.55, transition: 'background 0.12s', display: 'flex', alignItems: 'center', gap: '7px' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.03)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <svg width="18" height="14" viewBox="0 0 18 14" fill="none">
+                  <line x1="2" y1="7" x2="16" y2="7" stroke="#888" strokeWidth="1.8" strokeLinecap="round"/>
+                  <circle cx="2"  cy="7" r="2" fill="#888"/>
+                  <circle cx="16" cy="7" r="2" fill="#888"/>
+                </svg>
+                {isZh ? '直线' : 'Line'}
+              </div>
+              <div
+                className="_rp-addblock"
+                onClick={() => {
+                  const fn = (s as any).addLineArrowBlock
+                  if (typeof fn === 'function') fn('arrow-block')
+                }}
+                style={{ padding: '9px 10px', border: '1px solid rgba(26,26,26,0.08)', borderRadius: '8px', cursor: 'pointer', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.78rem', color: '#666', lineHeight: 1.55, transition: 'background 0.12s', display: 'flex', alignItems: 'center', gap: '7px' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.03)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <svg width="18" height="14" viewBox="0 0 18 14" fill="none">
+                  <line x1="2" y1="7" x2="13" y2="7" stroke="#888" strokeWidth="1.8" strokeLinecap="round"/>
+                  <polyline points="10,3.5 16,7 10,10.5" stroke="#888" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                {isZh ? '箭头' : 'Arrow'}
+              </div>
             </div>
-            {/* Emoji block button */}
-            <div
-              className="_rp-addblock"
-              onClick={e => {
-                const openFn = (s as any).openEmojiFromToolbar
-                if (typeof openFn === 'function') {
-                  openFn((e.currentTarget as HTMLElement).getBoundingClientRect())
-                }
-              }}
-              style={{ padding: '9px 13px', border: '1px solid rgba(26,26,26,0.08)', borderRadius: '8px', marginBottom: '6px', cursor: 'pointer', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.82rem', color: '#666', lineHeight: 1.55, transition: 'background 0.12s', display: 'flex', alignItems: 'center', gap: '8px' }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.03)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-            >
-              <span style={{ fontSize: '1rem', lineHeight: 1 }}>🙂</span>
-              {isZh ? 'Emoji' : 'Emoji'}
+            {/* Sticky + Emoji row */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginBottom: '6px' }}>
+              <div
+                className="_rp-addblock"
+                onClick={() => addBlock('sticky' as any, '', { pixelPos: { x: 60, y: 60, w: 200, h: 200 }, stickyColor: '#fef08a' } as any)}
+                style={{ padding: '9px 10px', border: '1px solid rgba(26,26,26,0.08)', borderRadius: '8px', cursor: 'pointer', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.78rem', color: '#666', lineHeight: 1.55, transition: 'background 0.12s', display: 'flex', alignItems: 'center', gap: '7px' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.03)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <span style={{ fontSize: '1rem', lineHeight: 1 }}>🗒️</span>
+                {isZh ? '便利贴' : 'Sticky'}
+              </div>
+              <div
+                className="_rp-addblock"
+                onClick={e => {
+                  const openFn = (s as any).openEmojiFromToolbar
+                  if (typeof openFn === 'function') {
+                    openFn((e.currentTarget as HTMLElement).getBoundingClientRect())
+                  }
+                }}
+                style={{ padding: '9px 10px', border: '1px solid rgba(26,26,26,0.08)', borderRadius: '8px', cursor: 'pointer', fontFamily: 'Inter, DM Sans, sans-serif', fontSize: '0.78rem', color: '#666', lineHeight: 1.55, transition: 'background 0.12s', display: 'flex', alignItems: 'center', gap: '7px' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,26,26,0.03)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <span style={{ fontSize: '1rem', lineHeight: 1 }}>🙂</span>
+                {isZh ? 'Emoji' : 'Emoji'}
+              </div>
             </div>
           </div>
 
@@ -1191,19 +1357,47 @@ function AIWriterPanel({
   isZh: boolean
   addBlock: ExportPageState['addBlock']
 }) {
-  const [scene, setScene] = React.useState(AI_SCENES[0].key)
+  // ── localStorage helpers ──
+  function lsGet<T>(key: string, fallback: T): T {
+    try { const v = localStorage.getItem(key); return v !== null ? JSON.parse(v) as T : fallback } catch { return fallback }
+  }
+  function lsSet(key: string, val: unknown) { try { localStorage.setItem(key, JSON.stringify(val)) } catch {} }
+
+  const [scene, setSceneRaw] = React.useState<string>(() => lsGet('aiw:scene', AI_SCENES[0].key))
+  const setScene = (v: string) => { setSceneRaw(v); lsSet('aiw:scene', v) }
   const [input, setInput] = React.useState('')
   const [result, setResult] = React.useState('')
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState('')
-  const [langOverride, setLangOverride] = React.useState<'zh' | 'en' | 'auto'>('auto')
+  const [langOverride, setLangOverrideRaw] = React.useState<'zh' | 'en' | 'auto'>(() => lsGet('aiw:lang', 'auto'))
+  const setLangOverride = (v: 'zh' | 'en' | 'auto') => { setLangOverrideRaw(v); lsSet('aiw:lang', v) }
   const [inserted, setInserted] = React.useState(false)
+
+  // ── Tone & Length controls ──
+  const [tone, setToneRaw] = React.useState<'formal' | 'neutral' | 'casual'>(() => lsGet('aiw:tone', 'neutral'))
+  const setTone = (v: 'formal' | 'neutral' | 'casual') => { setToneRaw(v); lsSet('aiw:tone', v) }
+  const [length, setLengthRaw] = React.useState<'short' | 'medium' | 'long'>(() => lsGet('aiw:length', 'medium'))
+  const setLength = (v: 'short' | 'medium' | 'long') => { setLengthRaw(v); lsSet('aiw:length', v) }
+
+  // ── Generation history ──
+  type HistoryEntry = { id: string; scene: string; input: string; result: string; tone: string; length: string; ts: number }
+  const [history, setHistory] = React.useState<HistoryEntry[]>([])
+  const [historyOpen, setHistoryOpen] = React.useState(false)
 
   const currentScene = AI_SCENES.find(s => s.key === scene)!
 
   const langInstruction =
     langOverride === 'zh' ? ' Always respond in Simplified Chinese.' :
     langOverride === 'en' ? ' Always respond in English.' : ''
+
+  const toneInstruction =
+    tone === 'formal'  ? ' Use a formal, professional tone.' :
+    tone === 'casual'  ? ' Use a casual, conversational tone.' : ''
+
+  const lengthInstruction =
+    length === 'short'  ? ' Keep it brief: 80-120 words.' :
+    length === 'long'   ? ' Write in detail: 350-500 words.' :
+    ' Aim for 180-280 words.'
 
   async function handleGenerate() {
     if (!input.trim()) return
@@ -1216,13 +1410,27 @@ function AIWriterPanel({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          systemPrompt: currentScene.systemPrompt + langInstruction,
+          systemPrompt: currentScene.systemPrompt + langInstruction + toneInstruction + lengthInstruction,
           messages: [{ role: 'user', content: input.trim() }],
         }),
       })
       const data = await res.json()
       if (data.error) throw new Error(data.error)
-      setResult(data.result || '')
+      const resultText = data.result || ''
+      setResult(resultText)
+      // Save to history (keep latest 10)
+      if (resultText.trim()) {
+        const entry: HistoryEntry = {
+          id: Math.random().toString(36).slice(2),
+          scene,
+          input: input.trim(),
+          result: resultText,
+          tone,
+          length,
+          ts: Date.now(),
+        }
+        setHistory(prev => [entry, ...prev].slice(0, 10))
+      }
     } catch (e: any) {
       setError(e.message || 'Error')
     } finally {
@@ -1252,17 +1460,26 @@ function AIWriterPanel({
       <style>{`
         @keyframes _ai-spin { to { transform: rotate(360deg); } }
         ._ai-spinner { animation: _ai-spin 0.75s linear infinite; display: inline-block; }
-        ._ai-scene-btn:hover { background: rgba(26,26,26,0.04) !important; }
-        ._ai-gen-btn:not(:disabled):hover { background: #2a2a2a !important; }
-        ._ai-gen-btn:not(:disabled):active { transform: scale(0.985) !important; }
-        ._ai-insert-btn:not([data-inserted]):hover { background: #2a2a2a !important; }
-        ._ai-regen-btn:hover { background: rgba(26,26,26,0.05) !important; border-color: rgba(26,26,26,0.2) !important; }
+        ._ai-scene-btn {
+          transition: box-shadow 0.2s cubic-bezier(0.22,1,0.36,1), background 0.18s cubic-bezier(0.22,1,0.36,1), transform 0.15s cubic-bezier(0.22,1,0.36,1) !important;
+        }
+        ._ai-scene-btn:hover { background: rgba(255,255,255,0.7) !important; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 0 0 0.5px rgba(26,26,26,0.06) !important; }
+        ._ai-scene-btn:active { transform: scale(0.975) translateY(0) !important; }
+        ._ai-gen-btn { transition: background 0.15s cubic-bezier(0.22,1,0.36,1), transform 0.14s cubic-bezier(0.22,1,0.36,1), box-shadow 0.15s !important; }
+        ._ai-gen-btn:not(:disabled):hover { background: #2a2a2a !important; transform: translateY(-1px) !important; box-shadow: 0 3px 10px rgba(0,0,0,0.15) !important; }
+        ._ai-gen-btn:not(:disabled):active { transform: scale(0.975) translateY(0) !important; box-shadow: none !important; }
+        ._ai-insert-btn { transition: background 0.15s cubic-bezier(0.22,1,0.36,1), color 0.15s, transform 0.14s cubic-bezier(0.22,1,0.36,1), box-shadow 0.15s !important; }
+        ._ai-insert-btn:not([data-inserted]):hover { background: #2a2a2a !important; transform: translateY(-1px) !important; box-shadow: 0 3px 10px rgba(0,0,0,0.15) !important; }
+        ._ai-insert-btn:not([data-inserted]):active { transform: scale(0.975) translateY(0) !important; box-shadow: none !important; }
+        ._ai-regen-btn { transition: background 0.15s cubic-bezier(0.22,1,0.36,1), border-color 0.15s, transform 0.14s cubic-bezier(0.22,1,0.36,1) !important; }
+        ._ai-regen-btn:hover { background: rgba(26,26,26,0.04) !important; border-color: rgba(26,26,26,0.18) !important; transform: translateY(-1px) !important; }
+        ._ai-regen-btn:active { transform: scale(0.975) translateY(0) !important; }
       `}</style>
 
       {/* Scene picker */}
       <div>
         <span style={lb}>{isZh ? '场景' : 'Scene'}</span>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '5px', padding: '5px', background: 'rgba(26,26,26,0.03)', borderRadius: '11px' }}>
           {AI_SCENES.map(sc => {
             const active = scene === sc.key
             return (
@@ -1271,19 +1488,21 @@ function AIWriterPanel({
                 className="_ai-scene-btn"
                 onClick={() => { setScene(sc.key); setResult(''); setError(''); setInserted(false) }}
                 style={{
-                  padding: '8px 10px', borderRadius: '8px', cursor: 'pointer', textAlign: 'left',
-                  border: `1px solid ${active ? 'rgba(26,26,26,0.22)' : 'rgba(26,26,26,0.07)'}`,
-                  background: active ? 'rgba(26,26,26,0.055)' : 'transparent',
-                  fontFamily: 'Inter, DM Sans, sans-serif', transition: 'border-color 0.12s, background 0.12s',
+                  padding: '8px 10px', borderRadius: '9px', cursor: 'pointer', textAlign: 'left',
+                  border: 'none',
+                  background: active ? '#fff' : 'transparent',
+                  fontFamily: 'Inter, DM Sans, sans-serif',
                   display: 'flex', alignItems: 'center', gap: '7px', boxSizing: 'border-box',
-                  boxShadow: active ? 'inset 0 0 0 0.5px rgba(26,26,26,0.08)' : 'none',
+                  boxShadow: active
+                    ? '0 1px 5px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(26,26,26,0.07)'
+                    : 'none',
                 }}
               >
                 <span style={{
                   width: 22, height: 22, borderRadius: '5px', flexShrink: 0,
-                  background: active ? 'rgba(26,26,26,0.08)' : 'rgba(26,26,26,0.04)',
+                  background: active ? 'rgba(26,26,26,0.07)' : 'rgba(26,26,26,0.05)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '0.78rem', transition: 'background 0.12s',
+                  fontSize: '0.78rem', transition: 'background 0.18s cubic-bezier(0.22,1,0.36,1)',
                 }}>
                   {sc.icon}
                 </span>
@@ -1291,7 +1510,7 @@ function AIWriterPanel({
                   fontSize: '0.71rem', lineHeight: 1.2,
                   color: active ? '#1a1a1a' : '#777',
                   fontWeight: active ? 600 : 400,
-                  transition: 'color 0.12s, font-weight 0.12s',
+                  transition: 'color 0.18s cubic-bezier(0.22,1,0.36,1)',
                 }}>
                   {isZh ? sc.labelZh : sc.labelEn}
                 </span>
@@ -1308,8 +1527,8 @@ function AIWriterPanel({
           {/* sliding pill */}
           <div aria-hidden style={{
             position: 'absolute', top: 3, bottom: 3,
-            left: `calc(3px + ${(['auto','zh','en'] as const).indexOf(langOverride)} * 33.333%)`,
-            width: 'calc(33.333% - 0px)',
+            left: `calc(3px + ${(['auto','zh','en'] as const).indexOf(langOverride)} * ((100% - 6px) / 3))`,
+            width: 'calc((100% - 6px) / 3)',
             background: '#fff',
             borderRadius: '5px',
             boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(26,26,26,0.06)',
@@ -1331,6 +1550,64 @@ function AIWriterPanel({
               {l === 'auto' ? (isZh ? '自动' : 'Auto') : l === 'zh' ? '中文' : 'EN'}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* ── Tone & Length ── */}
+      <div style={{ display: 'flex', gap: '10px' }}>
+        {/* Tone */}
+        <div style={{ flex: 1 }}>
+          <span style={lb}>{isZh ? '语气' : 'Tone'}</span>
+          <div style={{ display: 'flex', padding: '3px', background: 'rgba(26,26,26,0.04)', borderRadius: '8px', position: 'relative' }}>
+            <div aria-hidden style={{
+              position: 'absolute', top: 3, bottom: 3,
+              left: `calc(3px + ${(['formal','neutral','casual'] as const).indexOf(tone)} * ((100% - 6px) / 3))`,
+              width: 'calc((100% - 6px) / 3)',
+              background: '#fff', borderRadius: '5px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(26,26,26,0.06)',
+              transition: 'left 0.22s cubic-bezier(0.34,1.2,0.64,1)', pointerEvents: 'none',
+            }} />
+            {(['formal','neutral','casual'] as const).map(t => (
+              <button key={t} onClick={() => setTone(t)} style={{
+                flex: 1, padding: '5px 0', borderRadius: '5px', cursor: 'pointer',
+                border: 'none', background: 'transparent',
+                fontSize: '0.62rem', fontFamily: 'Inter, DM Sans, sans-serif',
+                color: tone === t ? '#1a1a1a' : '#999', fontWeight: tone === t ? 600 : 400,
+                position: 'relative', zIndex: 1, transition: 'color 0.18s', letterSpacing: '0.01em',
+              }}>
+                {t === 'formal'  ? (isZh ? '正式' : 'Pro')
+                : t === 'neutral' ? (isZh ? '中性' : 'Mid')
+                : (isZh ? '轻松' : 'Easy')}
+              </button>
+            ))}
+          </div>
+        </div>
+        {/* Length */}
+        <div style={{ flex: 1 }}>
+          <span style={lb}>{isZh ? '长度' : 'Length'}</span>
+          <div style={{ display: 'flex', padding: '3px', background: 'rgba(26,26,26,0.04)', borderRadius: '8px', position: 'relative' }}>
+            <div aria-hidden style={{
+              position: 'absolute', top: 3, bottom: 3,
+              left: `calc(3px + ${(['short','medium','long'] as const).indexOf(length)} * ((100% - 6px) / 3))`,
+              width: 'calc((100% - 6px) / 3)',
+              background: '#fff', borderRadius: '5px',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(26,26,26,0.06)',
+              transition: 'left 0.22s cubic-bezier(0.34,1.2,0.64,1)', pointerEvents: 'none',
+            }} />
+            {(['short','medium','long'] as const).map(l => (
+              <button key={l} onClick={() => setLength(l)} style={{
+                flex: 1, padding: '5px 0', borderRadius: '5px', cursor: 'pointer',
+                border: 'none', background: 'transparent',
+                fontSize: '0.62rem', fontFamily: 'Inter, DM Sans, sans-serif',
+                color: length === l ? '#1a1a1a' : '#999', fontWeight: length === l ? 600 : 400,
+                position: 'relative', zIndex: 1, transition: 'color 0.18s',
+              }}>
+                {l === 'short'  ? (isZh ? '短' : 'S')
+                : l === 'medium' ? (isZh ? '中' : 'M')
+                : (isZh ? '长' : 'L')}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -1449,6 +1726,97 @@ function AIWriterPanel({
               <span>{isZh ? '重试' : 'Retry'}</span>
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ── Generation History ── */}
+      {history.length > 0 && (
+        <div style={{ borderTop: '1px solid rgba(26,26,26,0.06)', paddingTop: '16px' }}>
+          <button
+            onClick={() => setHistoryOpen(v => !v)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: historyOpen ? '10px' : 0,
+            }}
+          >
+            <span style={{ fontSize: '0.58rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: '#b0b0ac', fontFamily: 'Inter, DM Sans, sans-serif', fontWeight: 600 }}>
+              {isZh ? '历史记录' : 'History'}
+              <span style={{ marginLeft: '6px', color: '#d0d0cc', fontFamily: 'Space Mono, monospace', letterSpacing: 0, textTransform: 'none' }}>({history.length})</span>
+            </span>
+            <span style={{ fontSize: '0.6rem', color: '#ccc', fontFamily: 'Space Mono, monospace', transition: 'transform 0.18s', display: 'inline-block', transform: historyOpen ? 'rotate(180deg)' : 'none' }}>▼</span>
+          </button>
+
+          {historyOpen && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {history.map((h, i) => {
+                const sceneLabel = AI_SCENES.find(s => s.key === h.scene)
+                const ago = (() => {
+                  const s = Math.floor((Date.now() - h.ts) / 1000)
+                  if (s < 60) return isZh ? '刚刚' : 'just now'
+                  if (s < 3600) return isZh ? `${Math.floor(s/60)} 分前` : `${Math.floor(s/60)}m ago`
+                  return isZh ? `${Math.floor(s/3600)} 时前` : `${Math.floor(s/3600)}h ago`
+                })()
+                return (
+                  <div
+                    key={h.id}
+                    onClick={() => {
+                      setScene(h.scene)
+                      setInput(h.input)
+                      setResult(h.result)
+                      setTone(h.tone as any)
+                      setLength(h.length as any)
+                      setInserted(false)
+                      setHistoryOpen(false)
+                    }}
+                    style={{
+                      padding: '10px 12px', borderRadius: '9px', cursor: 'pointer',
+                      border: '1px solid rgba(26,26,26,0.07)', background: 'rgba(26,26,26,0.02)',
+                      transition: 'background 0.1s, border-color 0.1s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.05)'; e.currentTarget.style.borderColor = 'rgba(26,26,26,0.14)' }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(26,26,26,0.02)'; e.currentTarget.style.borderColor = 'rgba(26,26,26,0.07)' }}
+                  >
+                    {/* Top row: scene badge + time + delete */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                      <span style={{ fontSize: '0.7rem', lineHeight: 1 }}>{sceneLabel?.icon}</span>
+                      <span style={{ fontSize: '0.6rem', color: '#888', fontFamily: 'Inter, DM Sans, sans-serif', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {isZh ? sceneLabel?.labelZh : sceneLabel?.labelEn}
+                        {' · '}
+                        <span style={{ color: '#ccc', fontFamily: 'Space Mono, monospace', fontSize: '0.55rem' }}>
+                          {h.tone === 'formal' ? (isZh ? '正式' : 'Pro') : h.tone === 'casual' ? (isZh ? '轻松' : 'Easy') : (isZh ? '中性' : 'Mid')}
+                          {' / '}
+                          {h.length === 'short' ? (isZh ? '短' : 'S') : h.length === 'long' ? (isZh ? '长' : 'L') : (isZh ? '中' : 'M')}
+                        </span>
+                      </span>
+                      <span style={{ fontSize: '0.55rem', color: '#d0d0cc', fontFamily: 'Space Mono, monospace', flexShrink: 0 }}>{ago}</span>
+                      <button
+                        onClick={e => { e.stopPropagation(); setHistory(prev => prev.filter(x => x.id !== h.id)) }}
+                        style={{ width: 16, height: 16, flexShrink: 0, border: 'none', background: 'transparent', cursor: 'pointer', color: '#d0d0cc', fontSize: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '3px', padding: 0, transition: 'color 0.1s' }}
+                        onMouseEnter={e => (e.currentTarget.style.color = '#e05c5c')}
+                        onMouseLeave={e => (e.currentTarget.style.color = '#d0d0cc')}
+                      >✕</button>
+                    </div>
+                    {/* Input preview */}
+                    <p style={{ fontSize: '0.7rem', color: '#666', fontFamily: 'Inter, DM Sans, sans-serif', lineHeight: 1.4, marginBottom: '4px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' as any }}>
+                      {h.input}
+                    </p>
+                    {/* Result preview */}
+                    <p style={{ fontSize: '0.68rem', color: '#aaa', fontFamily: 'Inter, DM Sans, sans-serif', lineHeight: 1.45, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as any }}>
+                      {h.result}
+                    </p>
+                  </div>
+                )
+              })}
+              <button
+                onClick={() => setHistory([])}
+                style={{ padding: '5px', background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', fontSize: '0.6rem', fontFamily: 'Inter, DM Sans, sans-serif', letterSpacing: '0.06em', transition: 'color 0.12s', textAlign: 'center' }}
+                onMouseEnter={e => (e.currentTarget.style.color = '#e05c5c')}
+                onMouseLeave={e => (e.currentTarget.style.color = '#ccc')}
+              >
+                {isZh ? '清空历史 ×' : 'Clear history ×'}
+              </button>
+            </div>
+          )}
         </div>
       )}
 

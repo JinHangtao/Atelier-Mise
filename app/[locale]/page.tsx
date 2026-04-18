@@ -54,7 +54,60 @@ export default function Home() {
 
   return (
     <>
+      {/* ── SKELETON SCREEN ── */}
+      <div className={`skeleton-screen${mounted ? ' hide' : ''}`} aria-hidden>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '96px' }}>
+          <div className="sk sk-pill" style={{ width: '130px' }} />
+          <div className="sk sk-pill" style={{ width: '320px' }} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '18px', marginBottom: '80px' }}>
+          <div className="sk sk-badge" />
+          <div className="sk sk-h1" style={{ width: '52%' }} />
+          <div className="sk sk-h1" style={{ width: '68%' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '9px', width: '340px', marginTop: '8px' }}>
+            <div className="sk sk-desc" style={{ width: '100%' }} />
+            <div className="sk sk-desc" style={{ width: '83%' }} />
+            <div className="sk sk-desc" style={{ width: '91%' }} />
+          </div>
+          <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+            <div className="sk sk-btn" style={{ width: '130px' }} />
+            <div className="sk sk-btn" style={{ width: '112px' }} />
+          </div>
+        </div>
+        <div className="sk" style={{ height: '42px', borderRadius: '0', marginBottom: '52px', opacity: 0.4, animation: 'none' }} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', maxWidth: '1080px', margin: '0 auto', width: '100%' }}>
+          {[0,1,2,3].map(i => <div key={i} className="sk sk-card" style={{ animationDelay: `${i * 0.1}s` }} />)}
+        </div>
+      </div>
+
       <style>{`
+        @keyframes shimmer {
+          0%   { background-position: -600px 0; }
+          100% { background-position: 600px 0; }
+        }
+        .skeleton-screen {
+          position: fixed; inset: 0; z-index: 9999;
+          background: #f7f7f5;
+          display: flex; flex-direction: column;
+          padding: 20px 48px;
+          transition: opacity 0.45s cubic-bezier(.4,0,.2,1);
+        }
+        .skeleton-screen.hide {
+          opacity: 0;
+          pointer-events: none;
+        }
+        .sk {
+          border-radius: 8px;
+          background: linear-gradient(90deg, rgba(26,26,26,0.055) 25%, rgba(26,26,26,0.10) 50%, rgba(26,26,26,0.055) 75%);
+          background-size: 600px 100%;
+          animation: shimmer 1.5s ease-in-out infinite;
+        }
+        .sk-pill  { height: 36px; border-radius: 999px; }
+        .sk-badge { height: 22px; width: 160px; border-radius: 20px; }
+        .sk-h1    { height: clamp(42px, 7vw, 82px); border-radius: 12px; }
+        .sk-desc  { height: 13px; border-radius: 6px; }
+        .sk-btn   { height: 42px; border-radius: 14px; }
+        .sk-card  { border-radius: 20px; min-height: 170px; }
         @keyframes floatA {
           0%   { transform: translate(0px, 0px) scale(1); }
           33%  { transform: translate(18px, -22px) scale(1.03); }
@@ -123,10 +176,10 @@ export default function Home() {
           border: 1px solid rgba(26,26,26,0.08);
           border-left: 2.5px solid rgba(26,26,26,0.2);
           border-radius: 20px;
-          padding: 28px 24px;
+          padding: 32px 26px 28px;
           display: flex;
           flex-direction: column;
-          gap: 12px;
+          gap: 10px;
           backdrop-filter: blur(12px);
           -webkit-backdrop-filter: blur(12px);
           text-decoration: none;
@@ -185,7 +238,7 @@ export default function Home() {
           {/* 右药丸：导航链接 */}
           <div className="nav-pill" style={{ padding: '6px 8px', gap: '2px' }}>
             {(['schools','projects','roadmap','aiTools','settings'] as const).map(key => (
-              <Link key={key} href={navLinks[key]} style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.52rem', letterSpacing: '0.14em', textTransform: 'uppercase', color: '#888884', textDecoration: 'none', padding: '5px 12px', borderRadius: '999px', transition: 'all 0.15s' }}
+              <Link key={key} href={navLinks[key]} style={{ fontFamily: 'Space Mono, monospace', fontSize: '0.5rem', letterSpacing: '0.16em', textTransform: 'uppercase', color: '#8a8a86', textDecoration: 'none', padding: '5px 13px', borderRadius: '999px', transition: 'all 0.15s' }}
                 onMouseEnter={e => { e.currentTarget.style.color = '#1a1a1a'; e.currentTarget.style.background = 'rgba(26,26,26,0.05)' }}
                 onMouseLeave={e => { e.currentTarget.style.color = '#888884'; e.currentTarget.style.background = 'transparent' }}
               >
@@ -207,18 +260,18 @@ export default function Home() {
             {t('hero.badge')}
           </div>
 
-          <h1 className="font-mono fade-up fade-up-2" style={{ fontSize: 'clamp(3rem, 7vw, 6.5rem)', fontWeight: 700, color: '#1a1a1a', lineHeight: 1.05, maxWidth: '960px', letterSpacing: '-0.03em' }}>
+          <h1 className="font-mono fade-up fade-up-2" style={{ fontSize: 'clamp(2.8rem, 7vw, 6.2rem)', fontWeight: 700, color: '#1a1a1a', lineHeight: 1.04, maxWidth: '900px', letterSpacing: '-0.035em' }}>
             <span className="stroke-title">{t('hero.title1')}</span><br />
             <span style={{ color: '#aaaaaa', fontStyle: 'italic', fontFamily: 'Georgia, "DM Serif Display", serif', fontWeight: 400, letterSpacing: '-0.01em' }}>{t('hero.title2')}</span>{' '}
             {t('hero.title3')}
           </h1>
 
-          <p className="fade-up fade-up-3" style={{ fontSize: '0.83rem', color: '#888884', maxWidth: '460px', lineHeight: 1.9, fontWeight: 300 }}>
+          <p className="fade-up fade-up-3" style={{ fontSize: '0.8rem', color: '#888884', maxWidth: '420px', lineHeight: 2.0, fontWeight: 300, letterSpacing: '0.01em' }}>
             {t('hero.desc')}
           </p>
 
           <div className="fade-up fade-up-4" style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
-            <Link href={`/${locale}/schools`} style={{ background: '#1a1a1a', color: '#f7f7f5', border: 'none', padding: '12px 28px', borderRadius: '14px', fontFamily: 'Space Mono, monospace', fontSize: '0.58rem', letterSpacing: '0.16em', textTransform: 'uppercase', fontWeight: 700, cursor: 'pointer', textDecoration: 'none', display: 'inline-block', transition: 'opacity 0.15s, transform 0.15s' }}
+            <Link href={`/${locale}/projects`} style={{ background: '#1a1a1a', color: '#f7f7f5', border: 'none', padding: '12px 28px', borderRadius: '14px', fontFamily: 'Space Mono, monospace', fontSize: '0.58rem', letterSpacing: '0.16em', textTransform: 'uppercase', fontWeight: 700, cursor: 'pointer', textDecoration: 'none', display: 'inline-block', transition: 'opacity 0.15s, transform 0.15s' }}
               onMouseEnter={e => { e.currentTarget.style.opacity = '0.85'; e.currentTarget.style.transform = 'translateY(-1px)' }}
               onMouseLeave={e => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'translateY(0)' }}
             >
@@ -265,11 +318,11 @@ export default function Home() {
               ref={(el) => { cardRefs.current[i] = el }}
               style={{ transition: 'transform 0.2s ease-out, box-shadow 0.2s, border-left-color 0.2s' }}
             >
-              <span className="font-mono" style={{ fontSize: '0.52rem', color: '#b8b8b4', letterSpacing: '0.2em' }}>0{i + 1}</span>
-              <h3 className="font-mono" style={{ fontSize: '0.72rem', color: '#1a1a1a', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              <span className="font-mono" style={{ fontSize: '0.48rem', color: '#c8c8c4', letterSpacing: '0.28em' }}>0{i + 1}</span>
+              <h3 className="font-mono" style={{ fontSize: '0.68rem', color: '#1a1a1a', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', lineHeight: 1.3 }}>
                 {t(`features.${key}.title`)}
               </h3>
-              <p style={{ fontSize: '0.74rem', color: '#888884', lineHeight: 1.8, fontWeight: 300 }}>
+              <p style={{ fontSize: '0.72rem', color: '#8a8a86', lineHeight: 1.85, fontWeight: 300, marginTop: '2px' }}>
                 {t(`features.${key}.desc`)}
               </p>
             </Link>
@@ -278,10 +331,10 @@ export default function Home() {
 
         {/* ── FOOTER ── */}
         <footer style={{ padding: '22px 48px', borderTop: '1px solid rgba(26,26,26,0.07)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 3 }}>
-          <span className="font-mono" style={{ fontSize: '0.55rem', color: '#b8b8b4', letterSpacing: '0.12em' }}>
+          <span className="font-mono" style={{ fontSize: '0.52rem', color: '#c0c0bc', letterSpacing: '0.14em' }}>
             {t('footer.label')}
           </span>
-          <span className="font-mono" style={{ fontSize: '0.52rem', color: '#b8b8b4', letterSpacing: '0.18em' }}>
+          <span className="font-mono" style={{ fontSize: '0.48rem', color: '#c8c8c4', letterSpacing: '0.22em' }}>
             MIT LICENSE
           </span>
         </footer>

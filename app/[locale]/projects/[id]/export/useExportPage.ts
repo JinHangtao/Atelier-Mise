@@ -15,6 +15,8 @@ import {
   idbGetPages, idbSetPages,
 } from './pageHelpers'
 import { destroyDrawLayerManager } from './DrawLayerManager'
+import { makeLineBlock, makeArrowBlock } from './LineArrowLayer'
+import type { LineArrowBlock } from './LineArrowLayer'
 import type { UseGridSystemReturn } from './useGridSystem'
 import {
   saveMediaImage,
@@ -428,6 +430,7 @@ export function useExportPage() {
     // 删除页面时同时销毁其绘图数据（shapes + snapshot），
     // 否则 localStorage 残留会在"新建同 id 页面"时被错误恢复。
     destroyDrawLayerManager(pageId)
+    setLineArrowBlocks(prev => prev.filter(b => b.pageId !== pageId))
     setPages(prev => {
       const next = prev.filter(p => p.id !== pageId)
       if (activePageId === pageId) setActivePageId(next[0]?.id ?? '')
@@ -482,14 +485,27 @@ export function useExportPage() {
   const clearAll = useCallback(() => {
     idbSetPages(pagesKey(id), null).catch(() => {})
     idbSetPages(draftKey(id), null).catch(() => {})
+    idbSetPages(`line-arrows-${id}`, []).catch(() => {})
     // 清空所有页面的绘图数据，防止 _restoreShapes 在下次进入时读回旧图形
     pagesRef.current.forEach(p => destroyDrawLayerManager(p.id))
     const fresh = defaultPages()
     setPagesRaw(fresh)
     setActivePageId(fresh[0].id)
+    setLineArrowBlocks([])
     undoStack.current = []
     setSaveStatus('idle')
   }, [id])
+
+  // ── addLineArrowBlock ──
+  const addLineArrowBlock = useCallback((type: 'line-block' | 'arrow-block') => {
+    if (!activePageId) return
+    const cx = 860 / 2
+    const block = type === 'line-block'
+      ? makeLineBlock(activePageId, cx, 300)
+      : makeArrowBlock(activePageId, cx, 300)
+    setLineArrowBlocks(prev => [...prev, block])
+    setSelectedLineArrowId(block.id)
+  }, [activePageId])
 
   // ── Block editor state ──
   const [customText,           setCustomText]           = useState('')
@@ -510,6 +526,37 @@ export function useExportPage() {
   const [ctxMenu,              setCtxMenu]              = useState<{ x: number; y: number; gridX: number; gridY: number; blockId?: string } | null>(null)
   const [dragOverPageId,       setDragOverPageId]       = useState<string | null>(null)
   const [removingBgBlockId,    setRemovingBgBlockId]    = useState<string | null>(null)
+
+  // ── Line / Arrow blocks ──
+  const [lineArrowBlocks,    setLineArrowBlocks]    = useState<LineArrowBlock[]>([])
+  const [selectedLineArrowId, setSelectedLineArrowId] = useState<string | null>(null)
+  const lineArrowBlocksRef = useRef<LineArrowBlock[]>([])
+
+  // 从 IndexedDB 加载 lineArrowBlocks（与 pages 异步加载同步触发）
+  const hasLoadedLineArrows = useRef(false)
+  useEffect(() => {
+    if (hasLoadedLineArrows.current) return
+    hasLoadedLineArrows.current = true
+    idbGetPages(`line-arrows-${id}`).then(saved => {
+      if (Array.isArray(saved) && saved.length > 0) {
+        setLineArrowBlocks(saved as LineArrowBlock[])
+        lineArrowBlocksRef.current = saved as LineArrowBlock[]
+      }
+    }).catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
+
+  // lineArrowBlocks 变化时自动保存到 IndexedDB（防抖 600ms，与 pages auto-save 对齐）
+  const lineArrowSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    lineArrowBlocksRef.current = lineArrowBlocks
+    if (!hasLoadedLineArrows.current) return
+    if (lineArrowSaveTimer.current) clearTimeout(lineArrowSaveTimer.current)
+    lineArrowSaveTimer.current = setTimeout(() => {
+      idbSetPages(`line-arrows-${id}`, lineArrowBlocks).catch(() => {})
+    }, 600)
+    return () => { if (lineArrowSaveTimer.current) clearTimeout(lineArrowSaveTimer.current) }
+  }, [lineArrowBlocks, id])
 
   const dragIndex      = useRef<number | null>(null)
   const ctxImageInputRef   = useRef<HTMLInputElement | null>(null)
@@ -1401,5 +1448,9 @@ export function useExportPage() {
     visibleSchools,
     // theme labels
     THEMES, FONTS,
+    // line / arrow blocks
+    lineArrowBlocks, setLineArrowBlocks,
+    selectedLineArrowId, setSelectedLineArrowId,
+    addLineArrowBlock,
   }
 }

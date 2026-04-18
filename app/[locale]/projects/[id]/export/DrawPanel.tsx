@@ -567,6 +567,8 @@ const COLOR_PALETTE = [
 // DRAW STATE
 // ═══════════════════════════════════════════════════════════════════════════════
 
+export type LineCap = 'none' | 'arrow' | 'dot' | 'bar'
+
 export interface DrawState {
   brushType: BrushType
   color: string
@@ -580,12 +582,16 @@ export interface DrawState {
   shapeFill: boolean
   shapeStroke: number
   shapeSides: number
+  lineStartCap: LineCap   // line 起点端点样式
+  lineEndCap: LineCap     // line 终点端点样式
+  arrowStartCap: LineCap  // arrow 起点端点样式（终点固定为 arrow）
 }
 
 export const sharedDrawState: DrawState = {
   brushType: 'pen', color: '#1a1a1a', size: 2, alpha: 1,
   hardness: 100, mixRate: 0, dilution: 0, persistence: 0,
   shapeType: null, shapeFill: false, shapeStroke: 2, shapeSides: 6,
+  lineStartCap: 'none', lineEndCap: 'none', arrowStartCap: 'none',
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1275,7 +1281,8 @@ export function renderShape(
   x1: number, y1: number,
   bezierPts?: { x: number; y: number }[],
 ) {
-  const { color, alpha, shapeFill, shapeStroke, shapeSides, shapeType } = state
+  const { color, alpha, shapeFill, shapeStroke, shapeSides, shapeType,
+          lineStartCap, lineEndCap, arrowStartCap } = state
   if (!shapeType) return
   const [r, g, b] = hexToRgb(color)
   ctx.save()
@@ -1291,7 +1298,42 @@ export function renderShape(
   switch (shapeType) {
     case 'rect':    { ctx.rect(x0,y0,w,h); break }
     case 'ellipse': { ctx.ellipse(cx,cy,Math.abs(w/2)||1,Math.abs(h/2)||1,0,0,Math.PI*2); break }
-    case 'line':    { ctx.moveTo(x0,y0); ctx.lineTo(x1,y1); break }
+    case 'line': {
+      ctx.moveTo(x0,y0); ctx.lineTo(x1,y1)
+      ctx.stroke()
+      // ── 端点几何（tldraw 纯 SVG 几何方案，不用 <marker>）──
+      const ang = Math.atan2(y1-y0, x1-x0)
+      const hs = Math.max(shapeStroke * 3, 8)
+      const dotR = Math.max(shapeStroke * 1.8, 3.5)
+      const barHalf = Math.max(shapeStroke * 2.5, 6)
+      ctx.fillStyle = `rgb(${r},${g},${b})`
+      // 辅助：在 (px,py) 处根据 ang 方向画 cap
+      const drawCap = (px: number, py: number, capAng: number, cap: LineCap) => {
+        if (cap === 'arrow') {
+          ctx.beginPath()
+          const ha = Math.PI / 6
+          ctx.moveTo(px - Math.cos(capAng - ha)*hs, py - Math.sin(capAng - ha)*hs)
+          ctx.lineTo(px, py)
+          ctx.lineTo(px - Math.cos(capAng + ha)*hs, py - Math.sin(capAng + ha)*hs)
+          ctx.stroke()
+        } else if (cap === 'dot') {
+          ctx.beginPath()
+          ctx.arc(px, py, dotR, 0, Math.PI*2)
+          ctx.fill()
+        } else if (cap === 'bar') {
+          // 垂直于线方向的短线
+          const px1 = px + Math.sin(capAng) * barHalf
+          const py1 = py - Math.cos(capAng) * barHalf
+          const px2 = px - Math.sin(capAng) * barHalf
+          const py2 = py + Math.cos(capAng) * barHalf
+          ctx.beginPath(); ctx.moveTo(px1, py1); ctx.lineTo(px2, py2); ctx.stroke()
+        }
+      }
+      // 起点：capAng 方向朝向 start→end，所以起点的箭头指向 end，即 ang + PI 翻转
+      drawCap(x0, y0, ang + Math.PI, lineStartCap ?? 'none')
+      drawCap(x1, y1, ang, lineEndCap ?? 'none')
+      ctx.restore(); return
+    }
     case 'arrow': {
       const dx=x1-x0, dy=y1-y0, len=Math.sqrt(dx*dx+dy*dy)
       if (len < 2) { ctx.restore(); return }
@@ -1299,7 +1341,29 @@ export function renderShape(
       ctx.moveTo(x0,y0); ctx.lineTo(x1,y1)
       ctx.moveTo(x1,y1); ctx.lineTo(x1-hl*Math.cos(ang-ha),y1-hl*Math.sin(ang-ha))
       ctx.moveTo(x1,y1); ctx.lineTo(x1-hl*Math.cos(ang+ha),y1-hl*Math.sin(ang+ha))
-      ctx.stroke(); ctx.restore(); return
+      ctx.stroke()
+      // arrowStartCap
+      const startCap = arrowStartCap ?? 'none'
+      if (startCap !== 'none') {
+        const dotR = Math.max(shapeStroke * 1.8, 3.5)
+        const barHalf = Math.max(shapeStroke * 2.5, 6)
+        ctx.fillStyle = `rgb(${r},${g},${b})`
+        if (startCap === 'arrow') {
+          ctx.beginPath()
+          ctx.moveTo(x0 - Math.cos(ang+Math.PI - Math.PI/6)*hl, y0 - Math.sin(ang+Math.PI - Math.PI/6)*hl)
+          ctx.lineTo(x0, y0)
+          ctx.lineTo(x0 - Math.cos(ang+Math.PI + Math.PI/6)*hl, y0 - Math.sin(ang+Math.PI + Math.PI/6)*hl)
+          ctx.stroke()
+        } else if (startCap === 'dot') {
+          ctx.beginPath(); ctx.arc(x0, y0, dotR, 0, Math.PI*2); ctx.fill()
+        } else if (startCap === 'bar') {
+          ctx.beginPath()
+          ctx.moveTo(x0 + Math.sin(ang)*barHalf, y0 - Math.cos(ang)*barHalf)
+          ctx.lineTo(x0 - Math.sin(ang)*barHalf, y0 + Math.cos(ang)*barHalf)
+          ctx.stroke()
+        }
+      }
+      ctx.restore(); return
     }
     case 'triangle': { ctx.moveTo(cx,y0); ctx.lineTo(x0,y1); ctx.lineTo(x1,y1); ctx.closePath(); break }
     case 'polygon': {
@@ -1361,6 +1425,9 @@ export function DrawPanel({ isZh, addImageBlock, canvasWidth = 600, activePageId
   const [shapeFill,    setShapeFillState]   = useState(false)
   const [shapeStroke,  setShapeStrokeState] = useState(2)
   const [shapeSides,   setShapeSidesState]  = useState(6)
+  const [lineStartCap, setLineStartCapState] = useState<LineCap>('none')
+  const [lineEndCap,   setLineEndCapState]   = useState<LineCap>('none')
+  const [arrowStartCap, setArrowStartCapState] = useState<LineCap>('none')
 
   const brushTypeRef   = useRef<BrushType>('pen')
   const colorRef       = useRef('#1a1a1a')
@@ -1374,6 +1441,9 @@ export function DrawPanel({ isZh, addImageBlock, canvasWidth = 600, activePageId
   const shapeFillRef   = useRef(false)
   const shapeStrokeRef = useRef(2)
   const shapeSidesRef  = useRef(6)
+  const lineStartCapRef  = useRef<LineCap>('none')
+  const lineEndCapRef    = useRef<LineCap>('none')
+  const arrowStartCapRef = useRef<LineCap>('none')
 
   const setBrushType   = (v: BrushType) => { brushTypeRef.current = v; sharedDrawState.brushType = v; setBrushTypeState(v) }
   const setColor       = (v: string)    => { colorRef.current = v;     sharedDrawState.color = v;     setColorState(v) }
@@ -1387,6 +1457,9 @@ export function DrawPanel({ isZh, addImageBlock, canvasWidth = 600, activePageId
   const setShapeFill   = (v: boolean) => { shapeFillRef.current = v;   sharedDrawState.shapeFill = v;   setShapeFillState(v) }
   const setShapeStroke = (v: number)  => { shapeStrokeRef.current = v; sharedDrawState.shapeStroke = v; setShapeStrokeState(v) }
   const setShapeSides  = (v: number)  => { shapeSidesRef.current = v;  sharedDrawState.shapeSides = v;  setShapeSidesState(v) }
+  const setLineStartCap  = (v: LineCap) => { lineStartCapRef.current = v;  sharedDrawState.lineStartCap = v;  setLineStartCapState(v) }
+  const setLineEndCap    = (v: LineCap) => { lineEndCapRef.current = v;    sharedDrawState.lineEndCap = v;    setLineEndCapState(v) }
+  const setArrowStartCap = (v: LineCap) => { arrowStartCapRef.current = v; sharedDrawState.arrowStartCap = v; setArrowStartCapState(v) }
 
   const allPresets = [...BUILTIN_PRESETS, ...userPresets]
 
@@ -1552,6 +1625,60 @@ export function DrawPanel({ isZh, addImageBlock, canvasWidth = 600, activePageId
                 </div>
               </div>
             )}
+            {/* ── Line 端点选择器 ── */}
+            {shapeType === 'line' && (() => {
+              const CAP_OPTS: { val: LineCap; icon: string; labelEn: string; labelZh: string }[] = [
+                { val: 'none',  icon: '—',  labelEn: 'None',  labelZh: '无' },
+                { val: 'arrow', icon: '→',  labelEn: 'Arrow', labelZh: '箭头' },
+                { val: 'dot',   icon: '●',  labelEn: 'Dot',   labelZh: '圆点' },
+                { val: 'bar',   icon: '|',  labelEn: 'Bar',   labelZh: '竖线' },
+              ]
+              const capRow = (label: string, val: LineCap, set: (v: LineCap) => void) => (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <span style={{ fontSize: '0.58rem', color: '#b0b0ac', fontFamily: 'Inter, sans-serif', width: '28px', flexShrink: 0 }}>{label}</span>
+                  {CAP_OPTS.map(opt => (
+                    <button key={opt.val} onClick={() => set(opt.val)}
+                      title={isZh ? opt.labelZh : opt.labelEn}
+                      style={{ ...chipBtn(val === opt.val), padding: '4px 7px', fontSize: '0.75rem', fontFamily: 'monospace', minWidth: 0 }}>
+                      {opt.icon}
+                    </button>
+                  ))}
+                </div>
+              )
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <span style={{ ...labelStyle, marginBottom: 0 }}>{t('Endpoints','端点')}</span>
+                  {capRow(t('Start','起点'), lineStartCap, setLineStartCap)}
+                  {capRow(t('End','终点'),   lineEndCap,   setLineEndCap)}
+                </div>
+              )
+            })()}
+            {/* ── Arrow 起点 cap 选择器 ── */}
+            {shapeType === 'arrow' && (() => {
+              const CAP_OPTS: { val: LineCap; icon: string; labelEn: string; labelZh: string }[] = [
+                { val: 'none',  icon: '—',  labelEn: 'None',  labelZh: '无' },
+                { val: 'arrow', icon: '←',  labelEn: 'Arrow', labelZh: '箭头' },
+                { val: 'dot',   icon: '●',  labelEn: 'Dot',   labelZh: '圆点' },
+                { val: 'bar',   icon: '|',  labelEn: 'Bar',   labelZh: '竖线' },
+              ]
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <span style={{ ...labelStyle, marginBottom: 0 }}>{t('Start Cap','起点样式')}</span>
+                  <div style={{ display: 'flex', gap: '5px' }}>
+                    {CAP_OPTS.map(opt => (
+                      <button key={opt.val} onClick={() => setArrowStartCap(opt.val)}
+                        title={isZh ? opt.labelZh : opt.labelEn}
+                        style={{ ...chipBtn(arrowStartCap === opt.val), padding: '4px 7px', fontSize: '0.75rem', fontFamily: 'monospace', minWidth: 0 }}>
+                        {opt.icon}
+                      </button>
+                    ))}
+                  </div>
+                  <span style={{ fontSize: '0.58rem', color: '#b0b0ac', fontFamily: 'Inter, sans-serif', lineHeight: 1.4 }}>
+                    {t('End is always →','终点固定为箭头')}
+                  </span>
+                </div>
+              )
+            })()}
             <p style={{ fontSize: '0.6rem', color: '#b0b0ac', fontFamily: 'Inter, DM Sans, sans-serif', lineHeight: 1.5 }}>
               {t('Drag to draw · Shift = constrain','拖拽绘制 · Shift = 等比')}
             </p>
